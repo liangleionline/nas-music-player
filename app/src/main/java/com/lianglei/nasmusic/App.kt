@@ -17,7 +17,7 @@ class App : Application(), ImageLoaderFactory {
         instance = this
         CrashLogger.install(this)
         FnLogger.rotateIfLarge()
-        CrashLogger.log("App onCreate, versionName=0.6.2")
+        CrashLogger.log("App onCreate, versionName=0.6.3")
     }
 
     override fun newImageLoader(): ImageLoader {
@@ -27,7 +27,9 @@ class App : Application(), ImageLoaderFactory {
                 if (FnApi.token.isNotEmpty()) {
                     req.header("Authorization", FnApi.token)
                 }
-                chain.proceed(req.build())
+                val resp = chain.proceed(req.build())
+                CrashLogger.log("Coil: ${req.build().url} -> ${resp.code}")
+                resp
             })
             .build()
         return ImageLoader.Builder(this)
