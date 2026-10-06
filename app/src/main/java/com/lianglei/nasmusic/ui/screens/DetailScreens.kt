@@ -32,7 +32,8 @@ fun SongRow(song: Song, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(
-            model = artUri(song.albumId), contentDescription = null,
+            model = if (song.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(song.coverId) else artUri(song.albumId),
+            contentDescription = null,
             modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
         )
         Spacer(Modifier.width(14.dp))

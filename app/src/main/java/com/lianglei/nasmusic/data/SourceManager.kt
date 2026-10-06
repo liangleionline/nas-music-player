@@ -104,12 +104,11 @@ object SourceManager {
         refreshFeiniu()
     }
 
-    /** Fetch tracks for a specific playlist and set as current songs. */
-    suspend fun loadPlaylistTracks(playlistGuid: String): List<Song> {
+    /** Fetch tracks for a specific playlist. Does NOT overwrite global songs. */
+    suspend fun fetchPlaylistTracks(playlistGuid: String): List<Song> {
         _loading.value = true
         return try {
             val tracks = FnApi.fetchPlaylistTracks(playlistGuid)
-            _songs.value = tracks
             CrashLogger.log("Playlist tracks loaded: ${tracks.size}")
             tracks
         } catch (t: Throwable) {

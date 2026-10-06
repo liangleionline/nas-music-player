@@ -170,14 +170,16 @@ fun HomeRoot() {
                     }
                     composable("playlist/{guid}") { backStackEntry ->
                         val guid = backStackEntry.arguments?.getString("guid") ?: ""
-                        // If Feiniu source, fetch playlist tracks
+                        var playlistSongs by remember { mutableStateOf<List<com.lianglei.nasmusic.data.Song>>(emptyList()) }
                         LaunchedEffect(guid, currentSource) {
-                            if (currentSource == com.lianglei.nasmusic.data.MusicSource.FEINIU) {
-                                SourceManager.loadPlaylistTracks(guid)
+                            playlistSongs = if (currentSource == com.lianglei.nasmusic.data.MusicSource.FEINIU) {
+                                SourceManager.fetchPlaylistTracks(guid)
+                            } else {
+                                songs
                             }
                         }
                         val plName = playlists.find { it.guid == guid }?.name ?: "歌单"
-                        PlaylistDetailScreen(plName, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                        PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx) }
                     }
                 }
             }
