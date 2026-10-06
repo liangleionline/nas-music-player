@@ -168,6 +168,50 @@ object FnApi {
 
     fun coverUrl(coverId: String): String = "$baseUrl/static/cover?coverId=$coverId"
 
+    suspend fun fetchPlaylistTracks(playlistGuid: String): List<Song> = withContext(Dispatchers.IO) {
+        FnLogger.log("=== fetchPlaylistTracks: $playlistGuid ===")
+        val list = mutableListOf<Song>()
+        var page = 1
+        while (true) {
+            val url = "$baseUrl/track/playlist-detail/list?playlistGUID=$playlistGuid&page=$page&size=100&sort=trackAddedAt,desc"
+            FnLogger.request("GET", url, null, token)
+            val resp = httpGet(url)
+            FnLogger.response(if (resp.isNotEmpty()) 200 else 0, resp)
+            val json = JSONObject(resp)
+            if (json.optInt("code", -1) != 0) break
+            val data = json.optJSONObject("data") ?: break
+            val arr = data.optJSONArray("list") ?: break
+            for (i in 0 until arr.length()) {
+                val t = arr.getJSONObject(i)
+                val guid = t.getString("guid")
+                val title = t.optString("title", "Unknown")
+                val artist = t.optJSONArray("artists")?.let { a ->
+                    if (a.length() > 0) a.getJSONObject(0).optString("name", "") else ""
+                } ?: ""
+                val album = t.optJSONObject("album")?.optString("name", "") ?: ""
+                val duration = t.optLong("duration", 0)
+                val coverId = t.optString("coverId", "")
+                list.add(Song(
+                    id = guid.hashCode().toLong(),
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    albumId = coverId.hashCode().toLong(),
+                    duration = duration,
+                    data = "$baseUrl/track/stream?guid=$guid",
+                    folder = "飞牛NAS",
+                    isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
+                    coverId = coverId
+                ))
+            }
+            val total = data.optInt("total", 0)
+            if (list.size >= total || arr.length() == 0) break
+            page++
+        }
+        FnLogger.log("Playlist tracks fetched: ${list.size}")
+        list
+    }
+
     private fun sha256Hex(input: String): String {
         val md = MessageDigest.getInstance("SHA-256")
         return md.digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
