@@ -119,7 +119,7 @@ fun HomeRoot() {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(260.dp)) {
+            ModalDrawerSheet(modifier = Modifier.width(220.dp)) {
                 Spacer(Modifier.height(40.dp))
                 Row(Modifier.padding(horizontal=20.dp)) {
                     listOf(Icons.Filled.Login, Icons.Filled.LightMode, Icons.Filled.Equalizer).forEach {
@@ -246,7 +246,7 @@ private fun titleFor(route: String?) = when {
 private fun DrawerGroup(entries: List<DrawerEntry>, onClick: (String) -> Unit) {
     entries.forEach { e ->
         Row(
-            Modifier.fillMaxWidth().clickable { onClick(e.route) }.padding(horizontal = 20.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().clickable { onClick(e.route) }.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(e.icon, null, tint = e.tint, modifier = Modifier.size(22.dp))
