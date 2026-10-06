@@ -27,8 +27,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.data.MusicRepository
+import com.lianglei.nasmusic.data.MusicSource
 import com.lianglei.nasmusic.data.MusicStore
 import com.lianglei.nasmusic.data.Song
+import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
 import kotlinx.coroutines.launch
@@ -58,13 +60,17 @@ fun HomeRoot() {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        MusicStore.refresh(context)
-        loading = false
+    val currentSource by SourceManager.current.collectAsStateWithLifecycle()
+    val songs by SourceManager.songs.collectAsStateWithLifecycle()
+    val loading by SourceManager.loading.collectAsStateWithLifecycle()
+
+    LaunchedEffect(currentSource) {
+        if (currentSource == com.lianglei.nasmusic.data.MusicSource.LOCAL) {
+            SourceManager.refreshLocal(context)
+        } else {
+            SourceManager.refreshFeiniu()
+        }
     }
-    songs = MusicStore.songs.collectAsStateWithLifecycle().value
 
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
@@ -143,7 +149,7 @@ fun HomeRoot() {
                     composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> nav.navigate("folder/$name") }) }
                     composable("playlists") { PlaylistScreen(onOpenPlaylist = { name -> nav.navigate("playlist/$name") }) }
                     composable("scan") { ScanSourceScreen() }
-                    composable("library") { PlaceholderScreen("音乐库") }
+                    composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }) }
                     composable("stats") { PlaceholderScreen("统计") }
                     composable("settings") { PlaceholderScreen("设置") }
                     composable("about") { AboutScreen() }
