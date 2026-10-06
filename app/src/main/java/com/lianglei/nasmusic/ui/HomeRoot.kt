@@ -149,7 +149,8 @@ fun HomeRoot() {
                     composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> nav.navigate("folder/$name") }) }
                     composable("playlists") { PlaylistScreen(onOpenPlaylist = { name -> nav.navigate("playlist/$name") }) }
                     composable("scan") { ScanSourceScreen() }
-                    composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }) }
+                    composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
+                    composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
                     composable("stats") { PlaceholderScreen("统计") }
                     composable("settings") { PlaceholderScreen("设置") }
                     composable("about") { AboutScreen() }
