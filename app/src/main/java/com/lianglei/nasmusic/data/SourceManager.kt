@@ -159,8 +159,11 @@ object SourceManager {
         }
         _loading.value = true
         try {
+            val scanPrefs = ctx.getSharedPreferences("scan_prefs", Context.MODE_PRIVATE)
+            val allowed = scanPrefs.getStringSet("custom_folders", emptySet()) ?: emptySet()
+            val blocked = scanPrefs.getStringSet("blocked_folders", emptySet()) ?: emptySet()
             val repo = MusicRepository(ctx.applicationContext)
-            localCache = repo.loadSongs()
+            localCache = repo.loadSongs(allowed, blocked)
             if (_current.value == MusicSource.LOCAL) _songs.value = localCache
             CrashLogger.log("Local songs loaded: ${localCache.size}")
         } catch (t: Throwable) {
