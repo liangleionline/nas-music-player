@@ -200,6 +200,11 @@ object SourceManager {
         }
     }
 
+    suspend fun refreshLocalForce(ctx: Context) {
+        localCache = emptyList()
+        refreshLocal(ctx)
+    }
+
     suspend fun refreshFeiniuForce(onProgress: (String) -> Unit = {}) {
         feiniuCache = emptyList()
         _playlists.value = emptyList()

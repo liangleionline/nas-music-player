@@ -94,7 +94,46 @@ object PlayerManager {
 
     fun next() = controller?.seekToNext().let {}
     fun prev() = controller?.seekToPrevious().let {}
-    fun seekTo(ms: Long) { controller?.seekTo(ms); _positionMs.value = ms }
+    fun seekTo(ms: Long) { controller?.seekTo(ms); _positionMs.value = ms; saveState() }
+
+    private var prefs: android.content.SharedPreferences? = null
+    fun init(ctx: android.content.Context) {
+        prefs = ctx.getSharedPreferences("player_state", android.content.Context.MODE_PRIVATE)
+    }
+
+    fun saveState() {
+        val p = prefs ?: return
+        val c = controller ?: return
+        p.edit()
+            .putInt("index", c.currentMediaItemIndex)
+            .putLong("position", c.currentPosition)
+            .putString("source", com.lianglei.nasmusic.data.SourceManager.current.value.name)
+            .apply()
+    }
+
+    fun restoreState(songs: List<Song>) {
+        val p = prefs ?: return
+        val idx = p.getInt("index", -1)
+        val pos = p.getLong("position", 0L)
+        val src = p.getString("source", "")
+        if (idx >= 0 && idx < songs.size && src == com.lianglei.nasmusic.data.SourceManager.current.value.name) {
+            com.lianglei.nasmusic.util.CrashLogger.log("Restoring playback: idx=$idx, pos=$pos")
+            playQueueSilent(songs, idx, pos)
+        }
+    }
+
+    private fun playQueueSilent(songs: List<Song>, startIndex: Int, position: Long) {
+        val c = controller ?: return
+        _queue.value = songs
+        val items = songs.map { s ->
+            MediaItem.Builder().setUri(s.mediaUri).setMediaId(s.id.toString())
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).build())
+                .build()
+        }
+        c.setMediaItems(items, startIndex, position)
+        c.prepare()
+        // Don't auto-play, just restore position
+    }
 
     /** Call from a 500ms ticker in the UI. */
     fun tick() {

@@ -72,6 +72,13 @@ fun HomeRoot() {
         }
     }
 
+    // Restore last playback state when songs are first loaded
+    LaunchedEffect(songs.size) {
+        if (songs.isNotEmpty() && PlayerManager.queue.value.isEmpty()) {
+            PlayerManager.restoreState(songs)
+        }
+    }
+
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
 
