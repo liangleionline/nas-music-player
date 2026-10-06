@@ -11,7 +11,12 @@ import java.io.File
 
 class MusicRepository(private val ctx: Context) {
 
-    suspend fun loadSongs(): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun loadSongs(allowedFolders: Set<String> = emptySet(), blockedFolders: Set<String> = emptySet()): List<Song> = withContext(Dispatchers.IO) {
+        // If no custom folders configured, show empty list
+        if (allowedFolders.isEmpty()) {
+            CrashLogger.log("No custom folders configured, returning empty list")
+            return@withContext emptyList()
+        }
         val list = mutableListOf<Song>()
         try {
             val collection = if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -30,8 +35,6 @@ class MusicRepository(private val ctx: Context) {
                 MediaStore.MediaColumns.MIME_TYPE
             )
             val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 5000"
-            // Use Android's built-in title_key column for localized sort;
-            // "COLLATE LOCALIZED" is not a valid SQLite token on many devices.
             val sortOrder = MediaStore.Audio.Media.DEFAULT_SORT_ORDER
             ctx.contentResolver.query(collection, projection, selection, null, sortOrder)?.use { c ->
                 while (c.moveToNext()) {
@@ -43,6 +46,15 @@ class MusicRepository(private val ctx: Context) {
                     val duration = c.getLong(5)
                     val data = c.getString(6) ?: ""
                     val mime = c.getString(7) ?: ""
+                    // Filter: only include songs under allowed folders, exclude blocked folders
+                    val inAllowed = allowedFolders.any { folderPath ->
+                        data.contains(folderPath.substringAfterLast(':'), ignoreCase = true) ||
+                        data.startsWith(folderPath.removePrefix("content://com.android.externalstorage.documents/tree/primary%3A"))
+                    }
+                    val inBlocked = blockedFolders.any { folderPath ->
+                        data.contains(folderPath.substringAfterLast(':'), ignoreCase = true)
+                    }
+                    if (!inAllowed || inBlocked) continue
                     val folder = File(data).parentFile?.name ?: ""
                     val hq = mime.startsWith("audio/flac") ||
                             mime.startsWith("audio/wav") ||
@@ -51,7 +63,7 @@ class MusicRepository(private val ctx: Context) {
                     list.add(Song(id, title, artist, album, albumId, duration, data, folder, hq))
                 }
             }
-            CrashLogger.log("MediaStore scan returned ${list.size} songs")
+            CrashLogger.log("MediaStore scan returned ${list.size} songs (allowed=$allowedFolders)")
         } catch (t: Throwable) {
             CrashLogger.e("MediaStore scan failed", t)
         }
