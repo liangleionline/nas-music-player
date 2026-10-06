@@ -20,10 +20,10 @@ class PlayerService : MediaSessionService() {
         super.onCreate()
         CrashLogger.log("PlayerService onCreate")
 
-        // Local files + HTTP(S) streams; HTTP requests to Feiniu get the auth header injected.
+        // content:// for local MediaStore, http(s) for Feiniu stream (auth injected per-request).
         val dataSourceFactory = DefaultDataSource.Factory(
             this,
-            AuthHttpDataSource.factory()
+            AuthHttpDataSourceFactory()
         )
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
             .setDataSourceFactory(dataSourceFactory)
@@ -40,7 +40,6 @@ class PlayerService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        // Log playback errors for debugging.
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 CrashLogger.e("Player error: ${error.errorCodeName}", error)

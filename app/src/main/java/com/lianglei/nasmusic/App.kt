@@ -13,7 +13,7 @@ class App : Application() {
         instance = this
         CrashLogger.install(this)
         FnLogger.rotateIfLarge()
-        CrashLogger.log("App onCreate, versionName=0.5.4")
+        CrashLogger.log("App onCreate, versionName=0.5.5")
     }
 
     companion object {
