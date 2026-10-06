@@ -220,7 +220,19 @@ fun ScanSourceScreen() {
     var scanning by remember { mutableStateOf(false) }
     var scanLog by remember { mutableStateOf(listOf<String>()) }
     var showDialog by remember { mutableStateOf(false) }
-    var skipShort by remember { mutableStateOf(true) }
+    val prefs = remember { context.getSharedPreferences("scan_prefs", android.content.Context.MODE_PRIVATE) }
+    var skipShort by remember { mutableStateOf(prefs.getBoolean("skip_short", true)) }
+    var customFolders by remember { mutableStateOf(prefs.getStringSet("custom_folders", setOf())?.toList() ?: emptyList()) }
+    var blockedFolders by remember { mutableStateOf(prefs.getStringSet("blocked_folders", setOf())?.toList() ?: emptyList()) }
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let {
+            val path = it.toString()
+            customFolders = customFolders + path
+            prefs.edit().putStringSet("custom_folders", customFolders.toSet()).apply()
+        }
+    }
 
     // NAS mode: just a refresh button
     if (currentSource == com.lianglei.nasmusic.data.MusicSource.FEINIU) {
@@ -277,21 +289,88 @@ fun ScanSourceScreen() {
                     }
                 }
             }
-            item { Spacer(Modifier.height(16.dp)) }
+
+            // Custom folders
             item {
-                Card(Modifier.fillMaxWidth()) {
+                Text("自定义文件夹", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+            }
+            items(customFolders) { folder ->
+                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("不扫描 60 秒以下音频", Modifier.weight(1f))
-                        Switch(checked = skipShort, onCheckedChange = { skipShort = it })
+                        Icon(Icons.Filled.Folder, null, tint = Color.Gray)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(folder.takeLast(40), fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        }
+                        Icon(Icons.Filled.Close, null, tint = Color.Gray, modifier = Modifier.clickable {
+                            customFolders = customFolders - folder
+                            prefs.edit().putStringSet("custom_folders", customFolders.toSet()).apply()
+                        })
                     }
                 }
             }
-            item { Spacer(Modifier.height(16.dp)) }
             item {
-                Card(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(16.dp)) {
+                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(Modifier.clickable { launcher.launch(null) }.padding(16.dp)) {
+                        Icon(Icons.Filled.CreateNewFolder, null, tint = Color(0xFF1F6FEB))
+                        Spacer(Modifier.width(12.dp))
+                        Text("添加自定义文件夹", color = Color(0xFF1F6FEB))
+                    }
+                }
+            }
+
+            // Settings
+            item {
+                Text("设置", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+            }
+            item {
+                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("不扫描 60 秒以下音频", Modifier.weight(1f))
+                        Switch(checked = skipShort, onCheckedChange = {
+                            skipShort = it
+                            prefs.edit().putBoolean("skip_short", it).apply()
+                        })
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(Modifier.clickable {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        context.startActivity(intent)
+                    }.padding(16.dp)) {
                         Text("管理外部存储权限", Modifier.weight(1f))
                         Icon(Icons.Filled.OpenInNew, null, tint = Color.Gray)
+                    }
+                }
+            }
+
+            // Blocked folders
+            item {
+                Text("被屏蔽的文件夹", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+            }
+            items(blockedFolders) { folder ->
+                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.FolderOff, null, tint = Color.Gray)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(folder.takeLast(40), fontSize = 14.sp)
+                        }
+                        Icon(Icons.Filled.Close, null, tint = Color.Gray, modifier = Modifier.clickable {
+                            blockedFolders = blockedFolders - folder
+                            prefs.edit().putStringSet("blocked_folders", blockedFolders.toSet()).apply()
+                        })
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(Modifier.clickable { launcher.launch(null) }.padding(16.dp)) {
+                        Icon(Icons.Filled.Add, null, tint = Color(0xFF1F6FEB))
+                        Spacer(Modifier.width(12.dp))
+                        Text("添加屏蔽文件夹", color = Color(0xFF1F6FEB))
                     }
                 }
             }
