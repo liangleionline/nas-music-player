@@ -9,9 +9,10 @@ data class Song(
     val album: String,
     val albumId: Long,
     val duration: Long,
-    val data: String,          // file path
-    val folder: String,        // parent folder name
-    val isHighQuality: Boolean // crude "HQ" badge: lossless codec
+    val data: String,          // file path or stream URL
+    val folder: String,         // parent folder name
+    val isHighQuality: Boolean, // crude "HQ" badge: lossless codec
+    val coverId: String = ""    // Feiniu cover ID (empty for local)
 ) {
     val mediaUri: Uri
         get() = if (data.startsWith("http://") || data.startsWith("https://")) {
