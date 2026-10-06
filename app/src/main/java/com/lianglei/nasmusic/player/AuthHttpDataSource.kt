@@ -31,7 +31,7 @@ class AuthHttpDataSourceFactory : DataSource.Factory {
                 CrashLogger.log("AuthDS.open: ${dataSpec.uri}")
                 return try {
                     val bytes = ds.open(dataSpec)
-                    CrashLogger.log("AuthDS.open OK, bytes=$bytes, responseCode=${ds.responseCode}, contentType=${ds.getResponseHeader("Content-Type")}")
+                    CrashLogger.log("AuthDS.open OK, bytes=$bytes, responseCode=${ds.responseCode}")
                     bytes
                 } catch (e: Exception) {
                     CrashLogger.e("AuthDS.open FAILED: ${e.message}", e)
