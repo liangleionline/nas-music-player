@@ -25,8 +25,19 @@ object FnLogger {
 
     fun request(method: String, url: String, body: String?, token: String?) {
         append("→ $method $url")
-        if (!token.isNullOrEmpty()) append("  Authorization: Bearer ${token.take(12)}...")
+        if (!token.isNullOrEmpty()) append("  Authorization: ${token.take(12)}...")
         if (!body.isNullOrEmpty()) append("  Body: $body")
+    }
+
+    /** Call on app start: keep only the tail of the log to avoid unbounded growth. */
+    fun rotateIfLarge(maxBytes: Long = 500_000L) {
+        try {
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val f = File(dir, "fn-nas.log")
+            if (f.exists() && f.length() > maxBytes) {
+                f.writeText("=== rotated at ${tsFmt.format(Date())} ===\n")
+            }
+        } catch (_: Throwable) {}
     }
 
     fun response(code: Int, body: String) {
