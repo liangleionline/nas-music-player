@@ -3,7 +3,10 @@ package com.lianglei.nasmusic.player
 import android.app.PendingIntent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.lianglei.nasmusic.MainActivity
@@ -12,10 +15,21 @@ import com.lianglei.nasmusic.util.CrashLogger
 class PlayerService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
 
+    @UnstableApi
     override fun onCreate() {
         super.onCreate()
         CrashLogger.log("PlayerService onCreate")
+
+        // Local files + HTTP(S) streams; HTTP requests to Feiniu get the auth header injected.
+        val dataSourceFactory = DefaultDataSource.Factory(
+            this,
+            AuthHttpDataSource.factory()
+        )
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setDataSourceFactory(dataSourceFactory)
+
         val player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -25,6 +39,14 @@ class PlayerService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+
+        // Log playback errors for debugging.
+        player.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                CrashLogger.e("Player error: ${error.errorCodeName}", error)
+            }
+        })
+
         val activityIntent = packageManager.getLaunchIntentForPackage(packageName)
         val pi = PendingIntent.getActivity(
             this, 0, activityIntent,
