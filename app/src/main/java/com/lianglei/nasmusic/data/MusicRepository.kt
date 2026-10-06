@@ -1,0 +1,73 @@
+package com.lianglei.nasmusic.data
+
+import android.content.ContentUris
+import android.content.Context
+import android.net.Uri
+import android.provider.MediaStore
+import com.lianglei.nasmusic.util.CrashLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+
+class MusicRepository(private val ctx: Context) {
+
+    suspend fun loadSongs(): List<Song> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<Song>()
+        val collection = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        } else {
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        }
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATA,
+            MediaStore.MediaColumns.MIME_TYPE
+        )
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 5000"
+        ctx.contentResolver.query(collection, projection, selection, null,
+            "${MediaStore.Audio.Media.TITLE} COLLATE LOCALIZED ASC")?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0)
+                val title = c.getString(1) ?: "Unknown"
+                val artist = c.getString(2) ?: "<unknown>"
+                val album = c.getString(3) ?: "Unknown"
+                val albumId = c.getLong(4)
+                val duration = c.getLong(5)
+                val data = c.getString(6) ?: ""
+                val mime = c.getString(7) ?: ""
+                val folder = File(data).parentFile?.name ?: ""
+                val hq = mime.startsWith("audio/flac") ||
+                        mime.startsWith("audio/wav") ||
+                        mime.contains("ape") ||
+                        mime.contains("alac")
+                list.add(Song(id, title, artist, album, albumId, duration, data, folder, hq))
+            }
+        }
+        CrashLogger.log("MediaStore scan returned ${list.size} songs")
+        list
+    }
+
+    suspend fun buildAlbums(songs: List<Song>): List<Album> = withContext(Dispatchers.Default) {
+        songs.groupBy { it.albumId }.map { (id, group) ->
+            Album(id, group.first().album, group.first().artist, group.size, 0)
+        }.sortedBy { it.title }
+    }
+
+    suspend fun buildArtists(songs: List<Song>): List<Artist> = withContext(Dispatchers.Default) {
+        songs.groupBy { it.artist }.map { (name, g) -> Artist(name, g.size) }
+            .sortedBy { it.name }
+    }
+
+    suspend fun buildFolders(songs: List<Song>): List<Folder> = withContext(Dispatchers.Default) {
+        songs.groupBy { it.folder }.map { (name, g) -> Folder(name, g.first().data.substringBeforeLast('/'), g.size) }
+            .sortedBy { it.name }
+    }
+
+    fun albumArtUri(albumId: Long): Uri =
+        Uri.parse("content://media/external/audio/albumart/$albumId")
+}
