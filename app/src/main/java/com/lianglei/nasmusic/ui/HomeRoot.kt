@@ -67,9 +67,8 @@ fun HomeRoot() {
     LaunchedEffect(currentSource) {
         if (currentSource == com.lianglei.nasmusic.data.MusicSource.LOCAL) {
             SourceManager.refreshLocal(context)
-        } else {
-            SourceManager.refreshFeiniu()
         }
+        // FEINIU: login screen triggers fetch explicitly; cached tracks are served on switch.
     }
 
     val backStack by nav.currentBackStackEntryAsState()

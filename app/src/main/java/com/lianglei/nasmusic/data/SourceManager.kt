@@ -26,18 +26,32 @@ object SourceManager {
     private val _fnConnected = MutableStateFlow(false)
     val fnConnected: StateFlow<Boolean> = _fnConnected.asStateFlow()
 
+    // In-memory caches so switching sources back does not re-fetch.
+    private var localCache: List<Song> = emptyList()
+    private var feiniuCache: List<Song> = emptyList()
+
     fun switchTo(source: MusicSource) {
+        if (_current.value == source) return
         _current.value = source
         CrashLogger.log("Source switched to $source")
-        // Trigger reload in the caller / ViewModel
+        // Serve from cache immediately if available.
+        _songs.value = when (source) {
+            MusicSource.LOCAL -> localCache
+            MusicSource.FEINIU -> feiniuCache
+        }
     }
 
     suspend fun refreshLocal(ctx: Context) {
+        if (_current.value == MusicSource.LOCAL && localCache.isNotEmpty()) {
+            _songs.value = localCache
+            return
+        }
         _loading.value = true
         try {
             val repo = MusicRepository(ctx.applicationContext)
-            _songs.value = repo.loadSongs()
-            CrashLogger.log("Local songs loaded: ${_songs.value.size}")
+            localCache = repo.loadSongs()
+            if (_current.value == MusicSource.LOCAL) _songs.value = localCache
+            CrashLogger.log("Local songs loaded: ${localCache.size}")
         } catch (t: Throwable) {
             CrashLogger.e("Local scan failed", t)
         } finally {
@@ -46,14 +60,25 @@ object SourceManager {
     }
 
     suspend fun refreshFeiniu() {
+        if (feiniuCache.isNotEmpty()) {
+            _songs.value = feiniuCache
+            return
+        }
         _loading.value = true
         try {
-            _songs.value = FnApi.fetchAllTracks()
-            CrashLogger.log("Feiniu tracks loaded: ${_songs.value.size}")
+            feiniuCache = FnApi.fetchAllTracks()
+            _songs.value = feiniuCache
+            CrashLogger.log("Feiniu tracks loaded: ${feiniuCache.size}")
         } catch (t: Throwable) {
             CrashLogger.e("Feiniu fetch failed", t)
         } finally {
             _loading.value = false
         }
+    }
+
+    /** Call after a fresh login to force a re-fetch. */
+    suspend fun refreshFeiniuForce() {
+        feiniuCache = emptyList()
+        refreshFeiniu()
     }
 }
