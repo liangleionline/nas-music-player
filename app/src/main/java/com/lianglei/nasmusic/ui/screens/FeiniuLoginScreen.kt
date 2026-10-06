@@ -29,8 +29,8 @@ fun FeiniuLoginScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var host by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
+    var host by remember { mutableStateOf("https://nas.binarystar.space:2443") }
+    var username by remember { mutableStateOf("lianglei") }
     var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
