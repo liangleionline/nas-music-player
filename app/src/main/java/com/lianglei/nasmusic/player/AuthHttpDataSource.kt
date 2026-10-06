@@ -2,46 +2,26 @@ package com.lianglei.nasmusic.player
 
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import com.lianglei.nasmusic.data.FnApi
-import com.lianglei.nasmusic.util.CrashLogger
 
 /**
- * Wraps a DefaultHttpDataSource and adds the Authorization header
- * (raw token, no Bearer prefix) for any URL under the Feiniu music API.
+ * Wraps DefaultHttpDataSource.Factory and injects the Feiniu Authorization
+ * header on every createDataSource() call. Reads FnApi.token live, so it
+ * works even if the service was created before login.
  */
 @UnstableApi
-class AuthHttpDataSource(
-    private val upstream: DefaultHttpDataSource = DefaultHttpDataSource.Factory()
+class AuthHttpDataSourceFactory : DataSource.Factory {
+    private val delegate = DefaultHttpDataSource.Factory()
         .setConnectTimeoutMs(20_000)
         .setReadTimeoutMs(30_000)
         .setAllowCrossProtocolRedirects(true)
-        .createDataSource()
-) : DataSource by upstream {
+        .setUserAgent("NasMusic/0.5")
 
-    override fun open(dataSpec: DataSpec): Long {
-        val url = dataSpec.uri.toString()
-        if (url.startsWith("http")) {
-            if (FnApi.token.isNotEmpty() && url.contains("/music/api/v1/")) {
-                CrashLogger.log("AuthDS: intercepting stream, url=$url")
-                val headers = buildMap {
-                    putAll(dataSpec.httpRequestHeaders)
-                    put("Authorization", FnApi.token)
-                }
-                val modified = dataSpec.buildUpon()
-                    .setHttpRequestHeaders(headers)
-                    .build()
-                return upstream.open(modified)
-            }
-            CrashLogger.log("AuthDS: HTTP but no auth: $url")
+    override fun createDataSource(): DataSource {
+        if (FnApi.token.isNotEmpty()) {
+            delegate.setDefaultRequestProperties(mapOf("Authorization" to FnApi.token))
         }
-        return upstream.open(dataSpec)
-    }
-
-    companion object {
-        fun factory(): DataSource.Factory = object : DataSource.Factory {
-            override fun createDataSource(): DataSource = AuthHttpDataSource()
-        }
+        return delegate.createDataSource()
     }
 }
