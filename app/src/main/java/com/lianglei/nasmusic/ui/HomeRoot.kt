@@ -63,6 +63,7 @@ fun HomeRoot() {
     val currentSource by SourceManager.current.collectAsStateWithLifecycle()
     val songs by SourceManager.songs.collectAsStateWithLifecycle()
     val loading by SourceManager.loading.collectAsStateWithLifecycle()
+    val playlists by SourceManager.playlists.collectAsStateWithLifecycle()
 
     LaunchedEffect(currentSource) {
         if (currentSource == com.lianglei.nasmusic.data.MusicSource.LOCAL) {
@@ -146,7 +147,7 @@ fun HomeRoot() {
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
                     composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> nav.navigate("artist/$name") }) }
                     composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> nav.navigate("folder/$name") }) }
-                    composable("playlists") { PlaylistScreen(onOpenPlaylist = { name -> nav.navigate("playlist/$name") }) }
+                    composable("playlists") { PlaylistScreen(playlists = playlists, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
                     composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
@@ -167,9 +168,16 @@ fun HomeRoot() {
                         val name = backStackEntry.arguments?.getString("name") ?: ""
                         FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
                     }
-                    composable("playlist/{name}") { backStackEntry ->
-                        val name = backStackEntry.arguments?.getString("name") ?: ""
-                        PlaylistDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                    composable("playlist/{guid}") { backStackEntry ->
+                        val guid = backStackEntry.arguments?.getString("guid") ?: ""
+                        // If Feiniu source, fetch playlist tracks
+                        LaunchedEffect(guid, currentSource) {
+                            if (currentSource == com.lianglei.nasmusic.data.MusicSource.FEINIU) {
+                                SourceManager.loadPlaylistTracks(guid)
+                            }
+                        }
+                        val plName = playlists.find { it.guid == guid }?.name ?: "歌单"
+                        PlaylistDetailScreen(plName, songs) { idx -> PlayerManager.playQueue(songs, idx) }
                     }
                 }
             }

@@ -9,10 +9,6 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Which music library the app is currently browsing. */
 enum class MusicSource { LOCAL, FEINIU }
 
-/**
- * Process-wide source switch. The UI reads [songs] and shows either
- * MediaStore local songs or Feiniu NAS tracks, depending on [current].
- */
 object SourceManager {
     private val _current = MutableStateFlow(MusicSource.LOCAL)
     val current: StateFlow<MusicSource> = _current.asStateFlow()
@@ -25,6 +21,10 @@ object SourceManager {
 
     private val _fnConnected = MutableStateFlow(false)
     val fnConnected: StateFlow<Boolean> = _fnConnected.asStateFlow()
+
+    // Feiniu playlists
+    private val _playlists = MutableStateFlow<List<FnApi.FnPlaylist>>(emptyList())
+    val playlists: StateFlow<List<FnApi.FnPlaylist>> = _playlists.asStateFlow()
 
     @Volatile var fnHost: String = ""
         private set
@@ -39,13 +39,13 @@ object SourceManager {
 
     fun disconnectFeiniu() {
         feiniuCache = emptyList()
+        _playlists.value = emptyList()
         _fnConnected.value = false
         fnHost = ""
         fnUsername = ""
         switchTo(MusicSource.LOCAL)
     }
 
-    // In-memory caches so switching sources back does not re-fetch.
     private var localCache: List<Song> = emptyList()
     private var feiniuCache: List<Song> = emptyList()
 
@@ -53,7 +53,6 @@ object SourceManager {
         if (_current.value == source) return
         _current.value = source
         CrashLogger.log("Source switched to $source")
-        // Serve from cache immediately if available.
         _songs.value = when (source) {
             MusicSource.LOCAL -> localCache
             MusicSource.FEINIU -> feiniuCache
@@ -88,6 +87,10 @@ object SourceManager {
             feiniuCache = FnApi.fetchAllTracks()
             _songs.value = feiniuCache
             CrashLogger.log("Feiniu tracks loaded: ${feiniuCache.size}")
+            // Also fetch playlists
+            val pls = FnApi.fetchPlaylists()
+            _playlists.value = pls
+            CrashLogger.log("Feiniu playlists loaded: ${pls.size}")
         } catch (t: Throwable) {
             CrashLogger.e("Feiniu fetch failed", t)
         } finally {
@@ -95,9 +98,25 @@ object SourceManager {
         }
     }
 
-    /** Call after a fresh login to force a re-fetch. */
     suspend fun refreshFeiniuForce() {
         feiniuCache = emptyList()
+        _playlists.value = emptyList()
         refreshFeiniu()
+    }
+
+    /** Fetch tracks for a specific playlist and set as current songs. */
+    suspend fun loadPlaylistTracks(playlistGuid: String): List<Song> {
+        _loading.value = true
+        return try {
+            val tracks = FnApi.fetchPlaylistTracks(playlistGuid)
+            _songs.value = tracks
+            CrashLogger.log("Playlist tracks loaded: ${tracks.size}")
+            tracks
+        } catch (t: Throwable) {
+            CrashLogger.e("Playlist tracks fetch failed", t)
+            emptyList()
+        } finally {
+            _loading.value = false
+        }
     }
 }

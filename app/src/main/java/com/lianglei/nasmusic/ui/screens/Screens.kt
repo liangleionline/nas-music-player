@@ -29,6 +29,9 @@ private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$al
 
 @Composable
 fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
+    // Log cover diagnostics once per render
+    val sampleCoverId = songs.firstOrNull { it.coverId.isNotEmpty() }?.coverId
+    com.lianglei.nasmusic.util.CrashLogger.log("SongListScreen: ${songs.size} songs, sampleCoverId=$sampleCoverId")
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Shuffle, null, tint = Color.Gray)
@@ -147,10 +150,41 @@ fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
 }
 
 @Composable
-fun PlaylistScreen(onOpenPlaylist: (String) -> Unit = {}) {
+fun PlaylistScreen(
+    playlists: List<com.lianglei.nasmusic.data.FnApi.FnPlaylist>,
+    onOpenPlaylist: (String) -> Unit = {}
+) {
+    com.lianglei.nasmusic.util.CrashLogger.log("PlaylistScreen rendered, playlists=${playlists.size}")
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        PlaceholderRow("最终幻想", "7 首", onClick = { onOpenPlaylist("最终幻想") })
-        PlaceholderRow("高达", "65 首", onClick = { onOpenPlaylist("高达") })
+        if (playlists.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("暂无歌单", color = Color.Gray)
+            }
+            return@Column
+        }
+        LazyColumn {
+            items(playlists) { p ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onOpenPlaylist(p.guid) }.padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (p.coverId.isNotEmpty()) {
+                        AsyncImage(
+                            model = com.lianglei.nasmusic.data.FnApi.coverUrl(p.coverId),
+                            contentDescription = null,
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                        )
+                    } else {
+                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFE0E2E6)))
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(p.name, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                        Text("${p.trackCount} 首", color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
