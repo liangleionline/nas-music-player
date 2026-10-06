@@ -86,9 +86,11 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
 fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
     LazyVerticalGrid(columns = GridCells.Fixed(2), contentPadding = PaddingValues(12.dp)) {
         items(songs.groupBy { it.albumId }.entries.toList()) { (albumId, group) ->
+            val coverId = group.first().coverId
             Column(Modifier.padding(8.dp).clickable { onOpenAlbum(albumId) }) {
                 AsyncImage(
-                    model = artUri(albumId), contentDescription = null,
+                    model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId),
+                    contentDescription = null,
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))
                 )
                 Spacer(Modifier.height(8.dp))
@@ -104,9 +106,11 @@ fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
     val groups = songs.groupBy { it.artist }.entries.sortedBy { it.key }
     LazyColumn {
         items(groups) { (artist, group) ->
+            val coverId = group.first().coverId
             Row(Modifier.fillMaxWidth().padding(16.dp).clickable { onOpenArtist(artist) }, verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
-                    model = artUri(group.first().albumId), contentDescription = null,
+                    model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(group.first().albumId),
+                    contentDescription = null,
                     modifier = Modifier.size(52.dp).clip(CircleShape)
                 )
                 Spacer(Modifier.width(16.dp))
@@ -180,7 +184,9 @@ fun PlaylistScreen(
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text(p.name, fontWeight = FontWeight.Medium, fontSize = 16.sp)
-                        Text("${p.trackCount} 首", color = Color.Gray, fontSize = 12.sp)
+                        if (p.trackCount > 0) {
+                            Text("${p.trackCount} 首", color = Color.Gray, fontSize = 12.sp)
+                        }
                     }
                 }
             }
