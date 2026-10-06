@@ -13,42 +13,48 @@ class MusicRepository(private val ctx: Context) {
 
     suspend fun loadSongs(): List<Song> = withContext(Dispatchers.IO) {
         val list = mutableListOf<Song>()
-        val collection = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
-        } else {
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        }
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.ALBUM_ID,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATA,
-            MediaStore.MediaColumns.MIME_TYPE
-        )
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 5000"
-        ctx.contentResolver.query(collection, projection, selection, null,
-            "${MediaStore.Audio.Media.TITLE} COLLATE LOCALIZED ASC")?.use { c ->
-            while (c.moveToNext()) {
-                val id = c.getLong(0)
-                val title = c.getString(1) ?: "Unknown"
-                val artist = c.getString(2) ?: "<unknown>"
-                val album = c.getString(3) ?: "Unknown"
-                val albumId = c.getLong(4)
-                val duration = c.getLong(5)
-                val data = c.getString(6) ?: ""
-                val mime = c.getString(7) ?: ""
-                val folder = File(data).parentFile?.name ?: ""
-                val hq = mime.startsWith("audio/flac") ||
-                        mime.startsWith("audio/wav") ||
-                        mime.contains("ape") ||
-                        mime.contains("alac")
-                list.add(Song(id, title, artist, album, albumId, duration, data, folder, hq))
+        try {
+            val collection = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
             }
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.ALBUM_ID,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DATA,
+                MediaStore.MediaColumns.MIME_TYPE
+            )
+            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 5000"
+            // Use Android's built-in title_key column for localized sort;
+            // "COLLATE LOCALIZED" is not a valid SQLite token on many devices.
+            val sortOrder = MediaStore.Audio.Media.DEFAULT_SORT_ORDER
+            ctx.contentResolver.query(collection, projection, selection, null, sortOrder)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getLong(0)
+                    val title = c.getString(1) ?: "Unknown"
+                    val artist = c.getString(2) ?: "<unknown>"
+                    val album = c.getString(3) ?: "Unknown"
+                    val albumId = c.getLong(4)
+                    val duration = c.getLong(5)
+                    val data = c.getString(6) ?: ""
+                    val mime = c.getString(7) ?: ""
+                    val folder = File(data).parentFile?.name ?: ""
+                    val hq = mime.startsWith("audio/flac") ||
+                            mime.startsWith("audio/wav") ||
+                            mime.contains("ape") ||
+                            mime.contains("alac")
+                    list.add(Song(id, title, artist, album, albumId, duration, data, folder, hq))
+                }
+            }
+            CrashLogger.log("MediaStore scan returned ${list.size} songs")
+        } catch (t: Throwable) {
+            CrashLogger.e("MediaStore scan failed", t)
         }
-        CrashLogger.log("MediaStore scan returned ${list.size} songs")
         list
     }
 
