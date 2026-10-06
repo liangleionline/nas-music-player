@@ -75,6 +75,19 @@ fun HomeRoot() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
 
+    // Root-level back handling: first press shows toast, second exits
+    var lastBackPress by remember { mutableStateOf(0L) }
+    val rootRoutes = setOf("songs", "albums", "artists", "folders", "playlists")
+    androidx.activity.compose.BackHandler(enabled = currentRoute in rootRoutes) {
+        val now = System.currentTimeMillis()
+        if (now - lastBackPress < 2000) {
+            (context as? android.app.Activity)?.finish()
+        } else {
+            lastBackPress = now
+            android.widget.Toast.makeText(context, "再按一次退出", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Resolve actual title for detail routes (route pattern has {placeholders}, need args)
     val title = when {
         currentRoute == "songs" -> "歌曲"
@@ -99,13 +112,14 @@ fun HomeRoot() {
 
     val currentIndex by PlayerManager.currentIndex.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlaying.collectAsStateWithLifecycle()
+    val buffering by PlayerManager.buffering.collectAsStateWithLifecycle()
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val current = queue.getOrNull(currentIndex)
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
+            ModalDrawerSheet(modifier = Modifier.width(260.dp)) {
                 Spacer(Modifier.height(40.dp))
                 Row(Modifier.padding(horizontal=20.dp)) {
                     listOf(Icons.Filled.Login, Icons.Filled.LightMode, Icons.Filled.Equalizer).forEach {
@@ -133,7 +147,7 @@ fun HomeRoot() {
                         currentRoute?.startsWith("folder/") == true ||
                         currentRoute?.startsWith("playlist/") == true
                 CenterAlignedTopAppBar(
-                    title = { Text(title) },
+                    title = { Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, fontSize = 18.sp) },
                     navigationIcon = {
                         IconButton(onClick = {
                             if (isDetail) nav.popBackStack()
@@ -158,6 +172,7 @@ fun HomeRoot() {
                 MiniPlayer(
                     song = current,
                     isPlaying = isPlaying,
+                    buffering = buffering,
                     onClick = { nav.navigate("player") },
                     onQueue = { nav.navigate("queue") }
                 )
@@ -239,7 +254,7 @@ private fun DrawerGroup(entries: List<DrawerEntry>, onClick: (String) -> Unit) {
 }
 
 @Composable
-private fun MiniPlayer(song: Song?, isPlaying: Boolean, onClick: () -> Unit, onQueue: () -> Unit) {
+private fun MiniPlayer(song: Song?, isPlaying: Boolean, buffering: Boolean, onClick: () -> Unit, onQueue: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
         Row(
             Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 12.dp).clickable(onClick = onClick),
@@ -258,9 +273,13 @@ private fun MiniPlayer(song: Song?, isPlaying: Boolean, onClick: () -> Unit, onQ
                 Text(song?.title ?: "未在播放", fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 14.sp)
                 Text(song?.artist ?: "—", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
             }
-            IconButton(onClick = { PlayerManager.togglePlayPause() }) {
-                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    null, modifier = Modifier.size(28.dp))
+            if (buffering) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = { PlayerManager.togglePlayPause() }) {
+                    Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        null, modifier = Modifier.size(28.dp))
+                }
             }
             IconButton(onClick = onQueue) { Icon(Icons.Filled.QueueMusic, null) }
         }
