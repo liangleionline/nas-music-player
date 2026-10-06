@@ -14,9 +14,13 @@ data class Song(
     val isHighQuality: Boolean // crude "HQ" badge: lossless codec
 ) {
     val mediaUri: Uri
-        get() = Uri.withAppendedPath(
-            Uri.parse("content://media/external/audio/media"), id.toString()
-        )
+        get() = if (data.startsWith("http://") || data.startsWith("https://")) {
+            Uri.parse(data)
+        } else {
+            Uri.withAppendedPath(
+                Uri.parse("content://media/external/audio/media"), id.toString()
+            )
+        }
 }
 
 data class Album(
