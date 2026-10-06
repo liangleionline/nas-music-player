@@ -51,8 +51,12 @@ object PlayerManager {
     }
 
     fun playQueue(songs: List<Song>, startIndex: Int) {
-        val c = controller ?: return
+        val c = controller ?: run {
+            com.lianglei.nasmusic.util.CrashLogger.e("playQueue called but controller is null")
+            return
+        }
         _queue.value = songs
+        com.lianglei.nasmusic.util.CrashLogger.log("playQueue: ${songs.size} songs, start=$startIndex, title=${songs.getOrNull(startIndex)?.title}, uri=${songs.getOrNull(startIndex)?.mediaUri}")
         val items = songs.map { s ->
             MediaItem.Builder()
                 .setUri(s.mediaUri)

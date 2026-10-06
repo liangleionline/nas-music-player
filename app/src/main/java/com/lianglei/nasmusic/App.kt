@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Environment
 import android.util.Log
 import com.lianglei.nasmusic.util.CrashLogger
+import com.lianglei.nasmusic.util.FnLogger
 import java.io.File
 
 class App : Application() {
@@ -11,7 +12,8 @@ class App : Application() {
         super.onCreate()
         instance = this
         CrashLogger.install(this)
-        CrashLogger.log("App onCreate, versionName=0.5.2")
+        FnLogger.rotateIfLarge()
+        CrashLogger.log("App onCreate, versionName=0.5.3")
     }
 
     companion object {

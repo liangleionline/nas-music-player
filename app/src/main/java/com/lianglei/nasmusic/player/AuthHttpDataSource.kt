@@ -5,11 +5,11 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import com.lianglei.nasmusic.data.FnApi
+import com.lianglei.nasmusic.util.CrashLogger
 
 /**
  * Wraps a DefaultHttpDataSource and adds the Authorization header
  * (raw token, no Bearer prefix) for any URL under the Feiniu music API.
- * Local file URLs are passed through untouched.
  */
 @UnstableApi
 class AuthHttpDataSource(
@@ -22,15 +22,19 @@ class AuthHttpDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         val url = dataSpec.uri.toString()
-        if (FnApi.token.isNotEmpty() && url.startsWith("http") && url.contains("/music/api/v1/")) {
-            val headers = buildMap {
-                putAll(dataSpec.httpRequestHeaders)
-                put("Authorization", FnApi.token)
+        if (url.startsWith("http")) {
+            if (FnApi.token.isNotEmpty() && url.contains("/music/api/v1/")) {
+                CrashLogger.log("AuthDS: intercepting stream, url=$url")
+                val headers = buildMap {
+                    putAll(dataSpec.httpRequestHeaders)
+                    put("Authorization", FnApi.token)
+                }
+                val modified = dataSpec.buildUpon()
+                    .setHttpRequestHeaders(headers)
+                    .build()
+                return upstream.open(modified)
             }
-            val modified = dataSpec.buildUpon()
-                .setHttpRequestHeaders(headers)
-                .build()
-            return upstream.open(modified)
+            CrashLogger.log("AuthDS: HTTP but no auth: $url")
         }
         return upstream.open(dataSpec)
     }
