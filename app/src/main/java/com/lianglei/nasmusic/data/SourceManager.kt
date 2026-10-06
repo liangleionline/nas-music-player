@@ -119,7 +119,7 @@ object SourceManager {
         }
     }
 
-    suspend fun refreshFeiniu() {
+    suspend fun refreshFeiniu(onProgress: (String) -> Unit = {}) {
         if (feiniuCache.isNotEmpty()) {
             _songs.value = feiniuCache
             return
@@ -130,12 +130,15 @@ object SourceManager {
         }
         _loading.value = true
         try {
-            feiniuCache = FnApi.fetchAllTracks()
+            onProgress("正在连接服务器...")
+            feiniuCache = FnApi.fetchAllTracks(onProgress)
             _songs.value = feiniuCache
             CrashLogger.log("Feiniu tracks loaded: ${feiniuCache.size}")
+            onProgress("正在获取歌单列表...")
             val pls = FnApi.fetchPlaylists()
             _playlists.value = pls
             CrashLogger.log("Feiniu playlists loaded: ${pls.size}")
+            onProgress("完成！")
         } catch (t: Throwable) {
             CrashLogger.e("Feiniu fetch failed", t)
         } finally {
@@ -143,10 +146,10 @@ object SourceManager {
         }
     }
 
-    suspend fun refreshFeiniuForce() {
+    suspend fun refreshFeiniuForce(onProgress: (String) -> Unit = {}) {
         feiniuCache = emptyList()
         _playlists.value = emptyList()
-        refreshFeiniu()
+        refreshFeiniu(onProgress)
     }
 
     private val playlistCache = mutableMapOf<String, List<Song>>()
