@@ -44,6 +44,16 @@ class PlayerService : MediaSessionService() {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 CrashLogger.e("Player error: ${error.errorCodeName}", error)
             }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                val stateName = when (playbackState) {
+                    androidx.media3.common.Player.STATE_IDLE -> "IDLE"
+                    androidx.media3.common.Player.STATE_BUFFERING -> "BUFFERING"
+                    androidx.media3.common.Player.STATE_READY -> "READY"
+                    androidx.media3.common.Player.STATE_ENDED -> "ENDED"
+                    else -> "UNKNOWN($playbackState)"
+                }
+                CrashLogger.log("Playback state: $stateName")
+            }
         })
 
         val activityIntent = packageManager.getLaunchIntentForPackage(packageName)
