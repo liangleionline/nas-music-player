@@ -44,7 +44,10 @@ fun PlayerScreen() {
             }
             Spacer(Modifier.height(40.dp))
             AsyncImage(
-                model = song?.let { "content://media/external/audio/albumart/${it.albumId}" },
+                model = song?.let {
+                    if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
+                    else "content://media/external/audio/albumart/${it.albumId}"
+                },
                 contentDescription = null,
                 modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp))
             )
