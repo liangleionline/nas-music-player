@@ -1,15 +1,54 @@
 package com.lianglei.nasmusic.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.lianglei.nasmusic.util.CrashLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Which music library the app is currently browsing. */
 enum class MusicSource { LOCAL, FEINIU }
 
 object SourceManager {
+    private const val PREFS = "nas_music_prefs"
+    private const val KEY_SOURCE = "current_source"
+    private const val KEY_FN_HOST = "fn_host"
+    private const val KEY_FN_USER = "fn_username"
+    private const val KEY_FN_BASE = "fn_base_url"
+    private const val KEY_FN_TOKEN = "fn_token"
+
+    private var prefs: SharedPreferences? = null
+
+    fun init(ctx: Context) {
+        prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // Restore persisted state
+        val savedSource = prefs?.getString(KEY_SOURCE, "LOCAL") ?: "LOCAL"
+        val savedToken = prefs?.getString(KEY_FN_TOKEN, "") ?: ""
+        val savedBase = prefs?.getString(KEY_FN_BASE, "") ?: ""
+        fnHost = prefs?.getString(KEY_FN_HOST, "") ?: ""
+        fnUsername = prefs?.getString(KEY_FN_USER, "") ?: ""
+        if (savedToken.isNotEmpty() && savedBase.isNotEmpty()) {
+            FnApi.restoreSession(savedBase, savedToken)
+            
+            _fnConnected.value = true
+            CrashLogger.log("Restored Feiniu session: host=$fnHost, token=${savedToken.take(8)}")
+        }
+        if (savedSource == "FEINIU" && _fnConnected.value) {
+            _current.value = MusicSource.FEINIU
+            CrashLogger.log("Restored source: FEINIU")
+        }
+    }
+
+    private fun save() {
+        prefs?.edit()?.apply {
+            putString(KEY_SOURCE, _current.value.name)
+            putString(KEY_FN_HOST, fnHost)
+            putString(KEY_FN_USER, fnUsername)
+            putString(KEY_FN_BASE, FnApi.baseUrl)
+            putString(KEY_FN_TOKEN, FnApi.token)
+        }?.apply()
+    }
+
     private val _current = MutableStateFlow(MusicSource.LOCAL)
     val current: StateFlow<MusicSource> = _current.asStateFlow()
 
@@ -22,7 +61,6 @@ object SourceManager {
     private val _fnConnected = MutableStateFlow(false)
     val fnConnected: StateFlow<Boolean> = _fnConnected.asStateFlow()
 
-    // Feiniu playlists
     private val _playlists = MutableStateFlow<List<FnApi.FnPlaylist>>(emptyList())
     val playlists: StateFlow<List<FnApi.FnPlaylist>> = _playlists.asStateFlow()
 
@@ -35,6 +73,7 @@ object SourceManager {
         fnHost = host
         fnUsername = username
         _fnConnected.value = true
+        save()
     }
 
     fun disconnectFeiniu() {
@@ -43,7 +82,9 @@ object SourceManager {
         _fnConnected.value = false
         fnHost = ""
         fnUsername = ""
+        FnApi.restoreSession("", "")
         switchTo(MusicSource.LOCAL)
+        save()
     }
 
     private var localCache: List<Song> = emptyList()
@@ -57,6 +98,7 @@ object SourceManager {
             MusicSource.LOCAL -> localCache
             MusicSource.FEINIU -> feiniuCache
         }
+        save()
     }
 
     suspend fun refreshLocal(ctx: Context) {
@@ -82,12 +124,15 @@ object SourceManager {
             _songs.value = feiniuCache
             return
         }
+        if (!_fnConnected.value) {
+            CrashLogger.log("refreshFeiniu called but not connected")
+            return
+        }
         _loading.value = true
         try {
             feiniuCache = FnApi.fetchAllTracks()
             _songs.value = feiniuCache
             CrashLogger.log("Feiniu tracks loaded: ${feiniuCache.size}")
-            // Also fetch playlists
             val pls = FnApi.fetchPlaylists()
             _playlists.value = pls
             CrashLogger.log("Feiniu playlists loaded: ${pls.size}")
@@ -104,7 +149,6 @@ object SourceManager {
         refreshFeiniu()
     }
 
-    /** Fetch tracks for a specific playlist. Does NOT overwrite global songs. Cached by guid. */
     private val playlistCache = mutableMapOf<String, List<Song>>()
 
     suspend fun fetchPlaylistTracks(playlistGuid: String): List<Song> {

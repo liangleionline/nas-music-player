@@ -17,7 +17,8 @@ class App : Application(), ImageLoaderFactory {
         instance = this
         CrashLogger.install(this)
         FnLogger.rotateIfLarge()
-        CrashLogger.log("App onCreate, versionName=0.6.4")
+        com.lianglei.nasmusic.data.SourceManager.init(this)
+        CrashLogger.log("App onCreate, versionName=0.6.5")
     }
 
     override fun newImageLoader(): ImageLoader {
