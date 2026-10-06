@@ -11,7 +11,7 @@ class App : Application() {
         super.onCreate()
         instance = this
         CrashLogger.install(this)
-        CrashLogger.log("App onCreate, versionName=0.4.3")
+        CrashLogger.log("App onCreate, versionName=0.5.0")
     }
 
     companion object {

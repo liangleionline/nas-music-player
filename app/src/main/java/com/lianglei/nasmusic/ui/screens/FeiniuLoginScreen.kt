@@ -98,6 +98,7 @@ fun FeiniuLoginScreen(
                     val result = FnApi.login(host.trim(), username.trim(), password)
                     if (result.isSuccess) {
                         CrashLogger.log("Feiniu login UI success, fetching tracks...")
+                        SourceManager.setFnConnected(host.trim(), username.trim())
                         SourceManager.switchTo(MusicSource.FEINIU)
                         SourceManager.refreshFeiniuForce()
                         loading = false

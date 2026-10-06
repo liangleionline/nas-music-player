@@ -4,15 +4,12 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -32,6 +29,8 @@ fun NasLibraryScreen(
 ) {
     val context = LocalContext.current
     val current by SourceManager.current.collectAsStateWithLifecycle()
+    val fnConnected by SourceManager.fnConnected.collectAsStateWithLifecycle()
+    var showDisconfirm by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(Color(0xFFF2F3F5))) {
         // Top bar
@@ -80,24 +79,63 @@ fun NasLibraryScreen(
             color = Color.Gray, fontSize = 13.sp
         )
 
-        // NAS list
-        val entries = listOf(
-            NasEntry("飞牛 fnOS", Icons.Filled.LibraryMusic, true, Color(0xFF1F6FEB)),
+        // Feiniu card — behaves differently depending on connection state.
+        Card(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().clickable {
+                    if (fnConnected) {
+                        // Already connected: just switch to Feiniu source (serves from cache).
+                        SourceManager.switchTo(MusicSource.FEINIU)
+                        Toast.makeText(context, "已切换到飞牛NAS", Toast.LENGTH_SHORT).show()
+                    } else {
+                        // Not connected: open login form.
+                        onOpenFeiniuLogin()
+                    }
+                }.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.LibraryMusic, null,
+                    tint = Color(0xFF1F6FEB),
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("飞牛 fnOS", fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                    Text(
+                        when {
+                            fnConnected && current == MusicSource.FEINIU -> "当前使用中 · ${SourceManager.fnUsername}@${SourceManager.fnHost}"
+                            fnConnected -> "已连接 · ${SourceManager.fnUsername}@${SourceManager.fnHost}"
+                            else -> "点击登录"
+                        },
+                        color = Color.Gray, fontSize = 12.sp
+                    )
+                }
+                if (fnConnected) {
+                    IconButton(onClick = { showDisconfirm = true }) {
+                        Icon(Icons.Filled.Logout, null, tint = Color.Gray)
+                    }
+                } else if (current == MusicSource.FEINIU) {
+                    Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF4CAF50))
+                }
+            }
+        }
+
+        // Other NAS entries (disabled)
+        val others = listOf(
             NasEntry("群晖 Synology", Icons.Filled.Storage, false, Color.Gray),
             NasEntry("威联通 QNAP", Icons.Filled.Dns, false, Color.Gray),
             NasEntry("绿联 UGREEN", Icons.Filled.Cloud, false, Color.Gray),
         )
-        entries.forEach { e ->
+        others.forEach { e ->
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Row(
                     Modifier.fillMaxWidth().clickable {
-                        if (e.enabled) {
-                            onOpenFeiniuLogin()
-                        } else {
-                            Toast.makeText(context, "${e.name} 敬请期待", Toast.LENGTH_SHORT).show()
-                        }
+                        Toast.makeText(context, "${e.name} 敬请期待", Toast.LENGTH_SHORT).show()
                     }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -105,13 +143,7 @@ fun NasLibraryScreen(
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(e.name, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                        Text(
-                            if (e.enabled) "已接入" else "暂未支持",
-                            color = Color.Gray, fontSize = 12.sp
-                        )
-                    }
-                    if (current == MusicSource.FEINIU && e.enabled) {
-                        Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF4CAF50))
+                        Text("暂未支持", color = Color.Gray, fontSize = 12.sp)
                     }
                 }
             }
@@ -122,6 +154,24 @@ fun NasLibraryScreen(
             "选择音乐源后，歌曲/专辑/艺术家列表将自动切换",
             Modifier.fillMaxWidth().padding(24.dp),
             color = Color.Gray, fontSize = 12.sp
+        )
+    }
+
+    if (showDisconfirm) {
+        AlertDialog(
+            onDismissRequest = { showDisconfirm = false },
+            title = { Text("退出飞牛 NAS？") },
+            text = { Text("退出后将切回本地播放器，下次使用需要重新登录。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDisconfirm = false
+                    SourceManager.disconnectFeiniu()
+                    Toast.makeText(context, "已退出飞牛 NAS", Toast.LENGTH_SHORT).show()
+                }) { Text("退出", color = Color(0xFFD32F2F)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisconfirm = false }) { Text("取消") }
+            }
         )
     }
 }
