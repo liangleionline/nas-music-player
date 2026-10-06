@@ -27,6 +27,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.data.MusicRepository
+import com.lianglei.nasmusic.data.MusicStore
 import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
@@ -57,13 +58,13 @@ fun HomeRoot() {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    val repo = remember { MusicRepository(context) }
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
-        songs = repo.loadSongs()
+        MusicStore.refresh(context)
         loading = false
     }
+    songs = MusicStore.songs.collectAsStateWithLifecycle().value
 
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
@@ -99,18 +100,27 @@ fun HomeRoot() {
     ) {
         Scaffold(
             topBar = {
+                val isDetail = currentRoute?.startsWith("artist/") == true ||
+                        currentRoute?.startsWith("album/") == true ||
+                        currentRoute?.startsWith("folder/") == true ||
+                        currentRoute?.startsWith("playlist/") == true
                 CenterAlignedTopAppBar(
                     title = { Text(titleFor(currentRoute)) },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Filled.Menu, null)
+                        IconButton(onClick = {
+                            if (isDetail) nav.popBackStack()
+                            else scope.launch { drawerState.open() }
+                        }) {
+                            Icon(if (isDetail) Icons.Filled.ArrowBack else Icons.Filled.Menu, null)
                         }
                     },
                     actions = {
-                        when (currentRoute) {
-                            "songs" -> Icon(Icons.Filled.Search, null)
-                            "albums", "artists" -> Icon(Icons.Filled.ViewList, null)
-                            "folders" -> Icon(Icons.Filled.Search, null)
+                        when {
+                            currentRoute == "songs" || currentRoute?.startsWith("folder/") == true ->
+                                Icon(Icons.Filled.Search, null)
+                            currentRoute == "albums" || currentRoute == "artists" || currentRoute?.startsWith("artist/") == true ->
+                                Icon(Icons.Filled.ViewList, null)
+                            currentRoute?.startsWith("album/") == true -> Icon(Icons.Filled.Search, null)
                             else -> {}
                         }
                     }
@@ -128,10 +138,10 @@ fun HomeRoot() {
             Box(Modifier.padding(pad)) {
                 NavHost(nav, startDestination = "songs") {
                     composable("songs") { SongListScreen(songs, loading) { idx -> PlayerManager.playQueue(songs, idx) } }
-                    composable("albums") { AlbumGridScreen(repo, songs) }
-                    composable("artists") { ArtistListScreen(repo, songs) }
-                    composable("folders") { FolderListScreen(repo, songs) }
-                    composable("playlists") { PlaylistScreen() }
+                    composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
+                    composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> nav.navigate("artist/$name") }) }
+                    composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> nav.navigate("folder/$name") }) }
+                    composable("playlists") { PlaylistScreen(onOpenPlaylist = { name -> nav.navigate("playlist/$name") }) }
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { PlaceholderScreen("音乐库") }
                     composable("stats") { PlaceholderScreen("统计") }
@@ -139,16 +149,40 @@ fun HomeRoot() {
                     composable("about") { AboutScreen() }
                     composable("player") { PlayerScreen() }
                     composable("queue") { QueueScreen() }
+                    composable("artist/{name}") { backStackEntry ->
+                        val name = backStackEntry.arguments?.getString("name") ?: ""
+                        ArtistDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                    }
+                    composable("album/{albumId}") { backStackEntry ->
+                        val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
+                        AlbumDetailScreen(albumId, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                    }
+                    composable("folder/{name}") { backStackEntry ->
+                        val name = backStackEntry.arguments?.getString("name") ?: ""
+                        FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                    }
+                    composable("playlist/{name}") { backStackEntry ->
+                        val name = backStackEntry.arguments?.getString("name") ?: ""
+                        PlaylistDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                    }
                 }
             }
         }
     }
 }
 
-private fun titleFor(route: String?) = when (route) {
-    "songs" -> "歌曲"; "albums" -> "专辑"; "artists" -> "艺术家"
-    "folders" -> "文件夹"; "playlists" -> "歌单"; "scan" -> "媒体来源"
-    "player" -> ""; "queue" -> "播放队列"
+private fun titleFor(route: String?) = when {
+    route == "songs" -> "歌曲"
+    route == "albums" -> "专辑"
+    route == "artists" -> "艺术家"
+    route == "folders" -> "文件夹"
+    route == "playlists" -> "歌单"
+    route == "scan" -> "媒体来源"
+    route == "player" || route == "queue" -> ""
+    route?.startsWith("artist/") == true -> ""
+    route?.startsWith("album/") == true -> ""
+    route?.startsWith("folder/") == true -> route.substringAfter("folder/")
+    route?.startsWith("playlist/") == true -> route.substringAfter("playlist/")
     else -> "NAS Music"
 }
 

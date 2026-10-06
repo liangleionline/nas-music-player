@@ -79,10 +79,10 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
 }
 
 @Composable
-fun AlbumGridScreen(repo: MusicRepository, songs: List<Song>) {
+fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
     LazyVerticalGrid(columns = GridCells.Fixed(2), contentPadding = PaddingValues(12.dp)) {
         items(songs.groupBy { it.albumId }.entries.toList()) { (albumId, group) ->
-            Column(Modifier.padding(8.dp)) {
+            Column(Modifier.padding(8.dp).clickable { onOpenAlbum(albumId) }) {
                 AsyncImage(
                     model = artUri(albumId), contentDescription = null,
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))
@@ -96,11 +96,11 @@ fun AlbumGridScreen(repo: MusicRepository, songs: List<Song>) {
 }
 
 @Composable
-fun ArtistListScreen(repo: MusicRepository, songs: List<Song>) {
+fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
     val groups = songs.groupBy { it.artist }.entries.sortedBy { it.key }
     LazyColumn {
         items(groups) { (artist, group) ->
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(16.dp).clickable { onOpenArtist(artist) }, verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
                     model = artUri(group.first().albumId), contentDescription = null,
                     modifier = Modifier.size(52.dp).clip(CircleShape)
@@ -116,7 +116,7 @@ fun ArtistListScreen(repo: MusicRepository, songs: List<Song>) {
 }
 
 @Composable
-fun FolderListScreen(repo: MusicRepository, songs: List<Song>) {
+fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
     val groups = songs.groupBy { it.folder }.entries.sortedBy { it.key }
     LazyColumn {
         item {
@@ -132,7 +132,7 @@ fun FolderListScreen(repo: MusicRepository, songs: List<Song>) {
             }
         }
         items(groups) { (folder, group) ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).clickable { onOpenFolder(folder) }, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Folder, null, tint = Color(0xFF7E57C2), modifier = Modifier.size(32.dp))
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
@@ -146,16 +146,16 @@ fun FolderListScreen(repo: MusicRepository, songs: List<Song>) {
 }
 
 @Composable
-fun PlaylistScreen() {
+fun PlaylistScreen(onOpenPlaylist: (String) -> Unit = {}) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        PlaceholderRow("最终幻想", "7 首")
-        PlaceholderRow("高达", "65 首")
+        PlaceholderRow("最终幻想", "7 首", onClick = { onOpenPlaylist("最终幻想") })
+        PlaceholderRow("高达", "65 首", onClick = { onOpenPlaylist("高达") })
     }
 }
 
 @Composable
-private fun PlaceholderRow(title: String, sub: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun PlaceholderRow(title: String, sub: String, onClick: () -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFE0E2E6)))
         Spacer(Modifier.width(16.dp))
         Column {
