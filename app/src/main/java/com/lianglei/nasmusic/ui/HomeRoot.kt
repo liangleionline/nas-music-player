@@ -241,7 +241,10 @@ private fun MiniPlayer(song: Song?, isPlaying: Boolean, onClick: () -> Unit, onQ
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
-                model = song?.let { "content://media/external/audio/albumart/${it.albumId}" },
+                model = song?.let {
+                    if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
+                    else "content://media/external/audio/albumart/${it.albumId}"
+                },
                 contentDescription = null,
                 modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp))
             )

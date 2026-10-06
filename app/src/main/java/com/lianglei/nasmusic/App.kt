@@ -17,7 +17,7 @@ class App : Application(), ImageLoaderFactory {
         instance = this
         CrashLogger.install(this)
         FnLogger.rotateIfLarge()
-        CrashLogger.log("App onCreate, versionName=0.6.3")
+        CrashLogger.log("App onCreate, versionName=0.6.4")
     }
 
     override fun newImageLoader(): ImageLoader {
