@@ -8,22 +8,28 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.data.MusicRepository
 import com.lianglei.nasmusic.data.Song
+import com.lianglei.nasmusic.player.PlayerManager
+import kotlinx.coroutines.launch
 
 private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$albumId"
 
@@ -208,54 +214,109 @@ private fun PlaceholderRow(title: String, sub: String, onClick: () -> Unit = {})
 
 @Composable
 fun ScanSourceScreen() {
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
-        item {
-            Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Refresh, null, tint = Color(0xFF1F6FEB))
-                    Spacer(Modifier.width(12.dp))
-                    Text("开始扫描", color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium)
-                }
-            }
-            Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("使用 Android 媒体库", Modifier.weight(1f))
-                    Switch(checked = false, onCheckedChange = {})
-                }
-            }
-            Text("自定义文件夹", color = Color.Gray, modifier = Modifier.padding(top = 16.dp, bottom = 6.dp))
-            Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Folder, null, tint = Color.Gray)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Music", fontWeight = FontWeight.Medium)
-                        Text("/storage/emulated/0/Music", color = Color.Gray, fontSize = 12.sp)
+    val context = LocalContext.current
+    val currentSource by com.lianglei.nasmusic.data.SourceManager.current.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var scanning by remember { mutableStateOf(false) }
+    var scanLog by remember { mutableStateOf(listOf<String>()) }
+    var showDialog by remember { mutableStateOf(false) }
+    var skipShort by remember { mutableStateOf(true) }
+
+    // NAS mode: just a refresh button
+    if (currentSource == com.lianglei.nasmusic.data.MusicSource.FEINIU) {
+        LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
+            item {
+                Spacer(Modifier.height(40.dp))
+                Card(
+                    Modifier.fillMaxWidth().clickable(enabled = !scanning) {
+                        scanning = true
+                        scope.launch {
+                            com.lianglei.nasmusic.data.SourceManager.refreshFeiniuForce { msg ->
+                                scanLog = scanLog + msg
+                            }
+                            scanning = false
+                            showDialog = true
+                        }
                     }
-                    Icon(Icons.Filled.Close, null, tint = Color.Gray)
-                }
-            }
-            Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Row(Modifier.padding(16.dp)) {
-                    Icon(Icons.Filled.CreateNewFolder, null, tint = Color(0xFF1F6FEB))
-                    Spacer(Modifier.width(12.dp))
-                    Text("添加自定义文件夹", color = Color(0xFF1F6FEB))
-                }
-            }
-            Text("设置", color = Color.Gray, modifier = Modifier.padding(top = 16.dp, bottom = 6.dp))
-            Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Row(Modifier.padding(16.dp)) {
-                    Text("管理外部存储权限", Modifier.weight(1f))
-                    Icon(Icons.Filled.OpenInNew, null, tint = Color.Gray)
-                }
-            }
-            Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("不扫描 60 秒以下音频", Modifier.weight(1f))
-                    Switch(checked = false, onCheckedChange = {})
+                ) {
+                    Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Refresh, null, tint = Color(0xFF1F6FEB))
+                        Spacer(Modifier.width(12.dp))
+                        Text("从飞牛服务器重新加载", color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium)
+                    }
                 }
             }
         }
+    } else {
+        // Local mode: folder scanner
+        LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
+            item { Spacer(Modifier.height(20.dp)) }
+            item {
+                Card(
+                    Modifier.fillMaxWidth().clickable(enabled = !scanning) {
+                        scanning = true
+                        scanLog = emptyList()
+                        scope.launch {
+                            try {
+                                scanLog = scanLog + "正在扫描本地音乐文件..."
+                                com.lianglei.nasmusic.data.SourceManager.refreshLocalForce(context)
+                                val count = com.lianglei.nasmusic.data.SourceManager.songs.value.size
+                                scanLog = scanLog + "扫描完成，共 $count 首歌曲"
+                            } catch (t: Throwable) {
+                                scanLog = scanLog + "错误: ${t.message}"
+                            }
+                            scanning = false
+                            showDialog = true
+                        }
+                    }
+                ) {
+                    Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Refresh, null, tint = Color(0xFF1F6FEB))
+                        Spacer(Modifier.width(12.dp))
+                        Text("开始扫描本地音乐", color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(16.dp)) }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("不扫描 60 秒以下音频", Modifier.weight(1f))
+                        Switch(checked = skipShort, onCheckedChange = { skipShort = it })
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(16.dp)) }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp)) {
+                        Text("管理外部存储权限", Modifier.weight(1f))
+                        Icon(Icons.Filled.OpenInNew, null, tint = Color.Gray)
+                    }
+                }
+            }
+        }
+    }
+
+    // Scanning progress dialog
+    if (showDialog || scanning) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(if (scanning) "正在扫描..." else "扫描完成") },
+            text = {
+                Column(
+                    Modifier.height(200.dp).verticalScroll(rememberScrollState())
+                ) {
+                    scanLog.takeLast(30).forEach { Text(it, fontSize = 11.sp, maxLines = 1) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showDialog = false },
+                    enabled = !scanning
+                ) { Text("确定") }
+            }
+        )
     }
 }
 
