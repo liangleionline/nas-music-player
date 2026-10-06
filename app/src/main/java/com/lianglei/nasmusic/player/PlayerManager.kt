@@ -25,6 +25,9 @@ object PlayerManager {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    private val _buffering = MutableStateFlow(false)
+    val buffering: StateFlow<Boolean> = _buffering.asStateFlow()
+
     private val _positionMs = MutableStateFlow(0L)
     val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
 
@@ -42,6 +45,9 @@ object PlayerManager {
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 _isPlaying.value = playing
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                _buffering.value = playbackState == Player.STATE_BUFFERING
             }
             override fun onPositionDiscontinuity(
                 oldPos: Player.PositionInfo, newPos: Player.PositionInfo, reason: Int
