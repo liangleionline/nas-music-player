@@ -129,7 +129,10 @@ fun HomeRoot() {
                 Spacer(Modifier.height(20.dp))
                 DrawerGroup(mainEntries) { route ->
                     scope.launch { drawerState.close() }
-                    nav.navigate(route) { launchSingleTop = true }
+                    nav.navigate(route) {
+                        launchSingleTop = true
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
                 DrawerGroup(systemEntries) { route ->
@@ -199,7 +202,7 @@ fun HomeRoot() {
                     }
                     composable("album/{albumId}") { backStackEntry ->
                         val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
-                        AlbumDetailScreen(albumId, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenArtist = { name -> nav.navigate("artist/$name") })
                     }
                     composable("folder/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""

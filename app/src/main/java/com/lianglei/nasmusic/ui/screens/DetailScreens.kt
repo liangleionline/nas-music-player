@@ -132,7 +132,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
 
 /** Album detail page: cover + title/artist/sample rate + stats + songs + participating artists. */
 @Composable
-fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit) {
+fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, onOpenArtist: (String) -> Unit = {}) {
     val albumSongs = remember(songs, albumId) { songs.filter { it.albumId == albumId } }
     val totalMs = remember(albumSongs) { albumSongs.sumOf { it.duration } }
     val first = albumSongs.firstOrNull()
@@ -199,7 +199,11 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit) {
         items(artists.size) { i ->
             val (name, group) = artists.elementAt(i)
             val artCoverId = group.firstOrNull()?.coverId ?: ""
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.clickable { onOpenArtist(name) }
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 AsyncImage(
                     model = if (artCoverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(artCoverId) else artUri(group.first().albumId),
                     contentDescription = null,
