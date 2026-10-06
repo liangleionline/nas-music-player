@@ -129,7 +129,8 @@ object FnApi {
                     duration = duration,
                     data = "$baseUrl/track/stream?guid=$guid",
                     folder = "飞牛NAS",
-                    isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true
+                    isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
+                    coverId = coverId
                 ))
             }
             val total = data.optInt("total", 0)
@@ -139,6 +140,33 @@ object FnApi {
         FnLogger.log("Fetched ${list.size} tracks total")
         list
     }
+
+    data class FnPlaylist(val guid: String, val name: String, val coverId: String, val trackCount: Int)
+
+    suspend fun fetchPlaylists(): List<FnPlaylist> = withContext(Dispatchers.IO) {
+        FnLogger.log("=== fetchPlaylists ===")
+        val url = "$baseUrl/playlist/list?page=1&size=100"
+        FnLogger.request("GET", url, null, token)
+        val resp = httpGet(url)
+        FnLogger.response(if (resp.isNotEmpty()) 200 else 0, resp)
+        val json = JSONObject(resp)
+        if (json.optInt("code", -1) != 0) return@withContext emptyList()
+        val arr = json.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
+        val result = mutableListOf<FnPlaylist>()
+        for (i in 0 until arr.length()) {
+            val p = arr.getJSONObject(i)
+            result.add(FnPlaylist(
+                guid = p.optString("guid", ""),
+                name = p.optString("name", "未命名"),
+                coverId = p.optString("coverId", ""),
+                trackCount = p.optInt("trackCount", 0)
+            ))
+        }
+        FnLogger.log("Fetched ${result.size} playlists")
+        result
+    }
+
+    fun coverUrl(coverId: String): String = "$baseUrl/static/cover?coverId=$coverId"
 
     private fun sha256Hex(input: String): String {
         val md = MessageDigest.getInstance("SHA-256")

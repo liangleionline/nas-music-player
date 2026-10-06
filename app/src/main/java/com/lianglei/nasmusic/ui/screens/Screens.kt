@@ -53,7 +53,8 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     AsyncImage(
-                        model = artUri(s.albumId), contentDescription = null,
+                        model = if (s.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(s.coverId) else artUri(s.albumId),
+                        contentDescription = null,
                         modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
                     )
                     Spacer(Modifier.width(14.dp))
