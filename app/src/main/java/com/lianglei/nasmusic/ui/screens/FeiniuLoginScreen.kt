@@ -1,9 +1,12 @@
 package com.lianglei.nasmusic.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -34,6 +37,8 @@ fun FeiniuLoginScreen(
     var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
+    val logLines = remember { mutableStateListOf<String>() }
+    val logScroll = rememberScrollState()
 
     Column(
         Modifier
@@ -94,13 +99,17 @@ fun FeiniuLoginScreen(
                 }
                 loading = true
                 errorMsg = ""
+                logLines.clear()
                 scope.launch {
                     val result = FnApi.login(host.trim(), username.trim(), password)
                     if (result.isSuccess) {
                         CrashLogger.log("Feiniu login UI success, fetching tracks...")
                         SourceManager.setFnConnected(host.trim(), username.trim())
                         SourceManager.switchTo(MusicSource.FEINIU)
-                        SourceManager.refreshFeiniuForce()
+                        SourceManager.refreshFeiniuForce { msg ->
+                            logLines.add(msg)
+                            scope.launch { logScroll.animateScrollTo(logScroll.maxValue) }
+                        }
                         loading = false
                         Toast.makeText(context, "连接成功，已加载 ${SourceManager.songs.value.size} 首", Toast.LENGTH_LONG).show()
                         onSuccess()
@@ -119,6 +128,24 @@ fun FeiniuLoginScreen(
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
             } else {
                 Text("连接", fontSize = 16.sp)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (loading && logLines.isNotEmpty()) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                    .padding(12.dp)
+            ) {
+                Column(Modifier.verticalScroll(logScroll)) {
+                    logLines.takeLast(15).forEach { line ->
+                        Text(line, fontSize = 11.sp, color = Color.DarkGray, maxLines = 1)
+                    }
+                }
             }
         }
 

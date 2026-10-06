@@ -103,12 +103,14 @@ object FnApi {
         }
     }
 
-    suspend fun fetchAllTracks(): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllTracks(onProgress: (String) -> Unit = {}): List<Song> = withContext(Dispatchers.IO) {
         FnLogger.log("=== fetchAllTracks ===")
+        onProgress("开始连接飞牛音乐服务器...")
         val list = mutableListOf<Song>()
         var page = 1
         while (true) {
             val url = "$baseUrl/track/list?page=$page&size=100&sort=createdAt,desc"
+            onProgress("正在获取第 $page 页歌曲列表...")
             FnLogger.request("GET", url, null, token)
             val resp = httpGet(url)
             FnLogger.response(if (resp.isNotEmpty()) 200 else 0, resp)
@@ -138,11 +140,14 @@ object FnApi {
                     isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
                     coverId = coverId
                 ))
+                if (i % 20 == 0) onProgress("已加载 ${list.size} 首: $title - $artist")
             }
             val total = data.optInt("total", 0)
+            onProgress("第 $page 页完成，共 ${list.size}/$total 首")
             if (list.size >= total || arr.length() == 0) break
             page++
         }
+        onProgress("歌曲加载完成，共 ${list.size} 首")
         FnLogger.log("Fetched ${list.size} tracks total")
         list
     }
