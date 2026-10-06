@@ -1,9 +1,17 @@
 package com.lianglei.nasmusic.data
 
+import android.content.Context
 import com.lianglei.nasmusic.util.CrashLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Feiniu (fnOS) music API client.
@@ -18,37 +26,58 @@ object FnApi {
         private set
     @Volatile var token: String = ""
         private set
+    @Volatile var host: String = ""
+        private set
 
-    fun configure(host: String, useHttps: Boolean = false, port: Int = DEFAULT_PORT) {
-        val scheme = if (useHttps) "https" else "http"
-        baseUrl = "$scheme://$host:$port$API_PATH"
+    private val client by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
     }
 
-    suspend fun login(host: String, username: String, password: String, deviceId: String): Result<String> {
-        configure(host)
-        return try {
-            val body = JSONObject().apply {
+    fun configure(h: String, useHttps: Boolean = false, port: Int = DEFAULT_PORT) {
+        host = h
+        val scheme = if (useHttps) "https" else "http"
+        baseUrl = "$scheme://$h:$port$API_PATH"
+    }
+
+    suspend fun login(hostInput: String, username: String, password: String): Result<String> = withContext(Dispatchers.IO) {
+        configure(hostInput)
+        try {
+            val deviceId = UUID.randomUUID().toString()
+            val bodyObj = JSONObject().apply {
                 put("username", username)
                 put("password", sha256Hex(password))
                 put("deviceId", deviceId)
-            }.toString()
-            val resp = httpPost("$baseUrl/user/password-login", body, auth = false)
-            val json = JSONObject(resp)
-            if (json.optInt("code", -1) == 0) {
-                val data = json.getJSONObject("data")
-                token = data.getString("userToken")
-                CrashLogger.log("Feiniu login success, token=${token.take(8)}...")
-                Result.success(token)
-            } else {
-                Result.failure(Exception("Login failed: code=${json.optInt("code")} msg=${json.optString("msg")}"))
+            }
+            val mediaType = "application/json".toMediaType()
+            val req = Request.Builder()
+                .url("$baseUrl/user/password-login")
+                .post(bodyObj.toString().toRequestBody(mediaType))
+                .build()
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string() ?: ""
+                CrashLogger.log("Feiniu login resp: ${resp.code} $text")
+                val json = JSONObject(text)
+                if (json.optInt("code", -1) == 0) {
+                    val data = json.getJSONObject("data")
+                    token = data.getString("userToken")
+                    CrashLogger.log("Feiniu login OK, token=${token.take(10)}...")
+                    Result.success(token)
+                } else {
+                    val msg = json.optString("msg", "unknown error")
+                    CrashLogger.e("Feiniu login failed: code=${json.optInt("code")} msg=$msg")
+                    Result.failure(Exception("登录失败: $msg"))
+                }
             }
         } catch (e: Exception) {
-            CrashLogger.e("Feiniu login error", e)
+            CrashLogger.e("Feiniu login exception", e)
             Result.failure(e)
         }
     }
 
-    suspend fun fetchAllTracks(): List<Song> {
+    suspend fun fetchAllTracks(): List<Song> = withContext(Dispatchers.IO) {
         val list = mutableListOf<Song>()
         var page = 1
         while (true) {
@@ -83,7 +112,8 @@ object FnApi {
             if (list.size >= total || arr.length() == 0) break
             page++
         }
-        return list
+        CrashLogger.log("Feiniu fetched ${list.size} tracks")
+        list
     }
 
     private fun sha256Hex(input: String): String {
@@ -92,20 +122,9 @@ object FnApi {
     }
 
     private fun httpGet(url: String): String {
-        val client = okhttp3.OkHttpClient()
-        val req = okhttp3.Request.Builder().url(url).apply {
+        val req = Request.Builder().url(url).apply {
             if (token.isNotEmpty()) header("Authorization", "Bearer $token")
         }.build()
-        return client.newCall(req).execute().use { it.body?.string() ?: "" }
-    }
-
-    private fun httpPost(url: String, body: String, auth: Boolean = true): String {
-        val client = okhttp3.OkHttpClient()
-        val mediaType = "application/json".toMediaType()
-        val req = okhttp3.Request.Builder().url(url)
-            .post(okhttp3.RequestBody.create(mediaType, body))
-            .apply { if (auth && token.isNotEmpty()) header("Authorization", "Bearer $token") }
-            .build()
         return client.newCall(req).execute().use { it.body?.string() ?: "" }
     }
 }

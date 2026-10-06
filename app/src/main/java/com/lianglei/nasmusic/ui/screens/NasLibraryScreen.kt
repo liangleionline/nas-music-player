@@ -27,7 +27,8 @@ private data class NasEntry(val name: String, val icon: ImageVector, val enabled
 
 @Composable
 fun NasLibraryScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenFeiniuLogin: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val current by SourceManager.current.collectAsStateWithLifecycle()
@@ -93,8 +94,7 @@ fun NasLibraryScreen(
                 Row(
                     Modifier.fillMaxWidth().clickable {
                         if (e.enabled) {
-                            SourceManager.switchTo(MusicSource.FEINIU)
-                            Toast.makeText(context, "已切换到飞牛NAS（开发中）", Toast.LENGTH_SHORT).show()
+                            onOpenFeiniuLogin()
                         } else {
                             Toast.makeText(context, "${e.name} 敬请期待", Toast.LENGTH_SHORT).show()
                         }
