@@ -3,9 +3,14 @@ package com.lianglei.nasmusic.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.lianglei.nasmusic.util.CrashLogger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 enum class MusicSource { LOCAL, FEINIU }
 
@@ -20,7 +25,10 @@ object SourceManager {
     private var prefs: SharedPreferences? = null
 
     fun init(ctx: Context) {
+        appContext = ctx.applicationContext
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // Load cached Feiniu songs immediately so UI shows data instantly
+        loadFeiniuCache()
         // Restore persisted state
         val savedSource = prefs?.getString(KEY_SOURCE, "LOCAL") ?: "LOCAL"
         val savedToken = prefs?.getString(KEY_FN_TOKEN, "") ?: ""
@@ -29,13 +37,13 @@ object SourceManager {
         fnUsername = prefs?.getString(KEY_FN_USER, "") ?: ""
         if (savedToken.isNotEmpty() && savedBase.isNotEmpty()) {
             FnApi.restoreSession(savedBase, savedToken)
-            
             _fnConnected.value = true
             CrashLogger.log("Restored Feiniu session: host=$fnHost, token=${savedToken.take(8)}")
         }
         if (savedSource == "FEINIU" && _fnConnected.value) {
             _current.value = MusicSource.FEINIU
-            CrashLogger.log("Restored source: FEINIU")
+            _songs.value = feiniuCache
+            CrashLogger.log("Restored source: FEINIU, cache=${feiniuCache.size} songs")
         }
     }
 
@@ -89,6 +97,49 @@ object SourceManager {
 
     private var localCache: List<Song> = emptyList()
     private var feiniuCache: List<Song> = emptyList()
+    private var appContext: Context? = null
+
+    private fun cacheFile(): File? = appContext?.let { File(it.filesDir, "feiniu_cache.json") }
+
+    private fun saveFeiniuCache() {
+        try {
+            val f = cacheFile() ?: return
+            val arr = JSONArray()
+            feiniuCache.forEach { s ->
+                arr.put(JSONObject().apply {
+                    put("id", s.id); put("title", s.title); put("artist", s.artist)
+                    put("album", s.album); put("albumId", s.albumId); put("folder", s.folder)
+                    put("duration", s.duration); put("data", s.data)
+                    put("coverId", s.coverId); put("isHighQuality", s.isHighQuality)
+                })
+            }
+            f.writeText(arr.toString())
+            CrashLogger.log("Feiniu cache saved: ${feiniuCache.size} songs to ${f.absolutePath}")
+        } catch (t: Throwable) { CrashLogger.e("saveFeiniuCache failed", t) }
+    }
+
+    private fun loadFeiniuCache() {
+        try {
+            val f = cacheFile() ?: return
+            if (!f.exists()) return
+            val arr = JSONArray(f.readText())
+            val list = mutableListOf<Song>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                list.add(Song(
+                    id = o.optLong("id"), title = o.optString("title"),
+                    artist = o.optString("artist"), album = o.optString("album"),
+                    albumId = o.optLong("albumId"),
+                    duration = o.optLong("duration"),
+                    data = o.optString("data"), folder = o.optString("folder"),
+                    isHighQuality = o.optBoolean("isHighQuality"),
+                    coverId = o.optString("coverId")
+                ))
+            }
+            feiniuCache = list
+            CrashLogger.log("Feiniu cache loaded: ${list.size} songs")
+        } catch (t: Throwable) { CrashLogger.e("loadFeiniuCache failed", t) }
+    }
 
     fun switchTo(source: MusicSource) {
         if (_current.value == source) return
@@ -120,19 +171,22 @@ object SourceManager {
     }
 
     suspend fun refreshFeiniu(onProgress: (String) -> Unit = {}) {
-        if (feiniuCache.isNotEmpty()) {
-            _songs.value = feiniuCache
-            return
-        }
         if (!_fnConnected.value) {
             CrashLogger.log("refreshFeiniu called but not connected")
             return
         }
-        _loading.value = true
+        // If we have cached data, show it immediately and refresh in background
+        if (feiniuCache.isNotEmpty()) {
+            _songs.value = feiniuCache
+            CrashLogger.log("Showing Feiniu cache (${feiniuCache.size} songs), refreshing in background...")
+        } else {
+            _loading.value = true
+        }
         try {
             onProgress("正在连接服务器...")
             feiniuCache = FnApi.fetchAllTracks(onProgress)
             _songs.value = feiniuCache
+            saveFeiniuCache()
             CrashLogger.log("Feiniu tracks loaded: ${feiniuCache.size}")
             onProgress("正在获取歌单列表...")
             val pls = FnApi.fetchPlaylists()
