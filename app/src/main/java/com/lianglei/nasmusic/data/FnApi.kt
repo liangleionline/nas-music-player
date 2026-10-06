@@ -30,6 +30,12 @@ object FnApi {
     @Volatile var token: String = ""
         private set
 
+    /** Restore a saved session after process restart. */
+    fun restoreSession(base: String, tok: String) {
+        baseUrl = base
+        token = tok
+    }
+
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)

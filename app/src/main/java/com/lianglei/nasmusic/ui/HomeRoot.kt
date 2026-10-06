@@ -66,10 +66,10 @@ fun HomeRoot() {
     val playlists by SourceManager.playlists.collectAsStateWithLifecycle()
 
     LaunchedEffect(currentSource) {
-        if (currentSource == com.lianglei.nasmusic.data.MusicSource.LOCAL) {
-            SourceManager.refreshLocal(context)
+        when (currentSource) {
+            com.lianglei.nasmusic.data.MusicSource.LOCAL -> SourceManager.refreshLocal(context)
+            com.lianglei.nasmusic.data.MusicSource.FEINIU -> SourceManager.refreshFeiniu()
         }
-        // FEINIU: login screen triggers fetch explicitly; cached tracks are served on switch.
     }
 
     val backStack by nav.currentBackStackEntryAsState()
