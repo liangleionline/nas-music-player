@@ -104,11 +104,18 @@ object SourceManager {
         refreshFeiniu()
     }
 
-    /** Fetch tracks for a specific playlist. Does NOT overwrite global songs. */
+    /** Fetch tracks for a specific playlist. Does NOT overwrite global songs. Cached by guid. */
+    private val playlistCache = mutableMapOf<String, List<Song>>()
+
     suspend fun fetchPlaylistTracks(playlistGuid: String): List<Song> {
+        playlistCache[playlistGuid]?.let {
+            CrashLogger.log("Playlist cache hit: $playlistGuid (${it.size} songs)")
+            return it
+        }
         _loading.value = true
         return try {
             val tracks = FnApi.fetchPlaylistTracks(playlistGuid)
+            playlistCache[playlistGuid] = tracks
             CrashLogger.log("Playlist tracks loaded: ${tracks.size}")
             tracks
         } catch (t: Throwable) {

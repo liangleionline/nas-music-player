@@ -75,6 +75,23 @@ fun HomeRoot() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
 
+    // Resolve actual title for detail routes (route pattern has {placeholders}, need args)
+    val title = when {
+        currentRoute == "songs" -> "歌曲"
+        currentRoute == "albums" -> "专辑"
+        currentRoute == "artists" -> "艺术家"
+        currentRoute == "folders" -> "文件夹"
+        currentRoute == "playlists" -> "歌单"
+        currentRoute == "scan" -> "媒体来源"
+        currentRoute == "player" || currentRoute == "queue" -> ""
+        currentRoute?.startsWith("folder/") == true -> backStack?.arguments?.getString("name") ?: ""
+        currentRoute?.startsWith("playlist/") == true -> {
+            val guid = backStack?.arguments?.getString("guid")
+            playlists.find { it.guid == guid }?.name ?: "歌单"
+        }
+        else -> "NAS Music"
+    }
+
     val currentIndex by PlayerManager.currentIndex.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlaying.collectAsStateWithLifecycle()
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
@@ -111,7 +128,7 @@ fun HomeRoot() {
                         currentRoute?.startsWith("folder/") == true ||
                         currentRoute?.startsWith("playlist/") == true
                 CenterAlignedTopAppBar(
-                    title = { Text(titleFor(currentRoute)) },
+                    title = { Text(title) },
                     navigationIcon = {
                         IconButton(onClick = {
                             if (isDetail) nav.popBackStack()
