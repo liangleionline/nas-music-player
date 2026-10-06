@@ -147,7 +147,8 @@ object FnApi {
 
     private fun httpGet(url: String): String {
         val req = Request.Builder().url(url).apply {
-            if (token.isNotEmpty()) header("Authorization", "Bearer $token")
+            // Feiniu API expects raw token in Authorization header, NOT "Bearer <token>"
+            if (token.isNotEmpty()) header("Authorization", token)
         }.build()
         return client.newCall(req).execute().use { it.body?.string() ?: "" }
     }
