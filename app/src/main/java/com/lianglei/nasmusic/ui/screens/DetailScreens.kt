@@ -71,16 +71,17 @@ fun SongListHeader(count: Int) {
 
 /** Artist detail page: circular avatar + artist name + songs + albums by this artist. */
 @Composable
-fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> Unit) {
+fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> Unit, onOpenAlbum: (Long) -> Unit = {}) {
     val artistSongs = remember(songs, artistName) { songs.filter { it.artist == artistName } }
     val artistAlbums = remember(artistSongs) { artistSongs.groupBy { it.albumId }.entries }
-    val coverAlbumId = artistSongs.firstOrNull()?.albumId ?: 0L
+    val coverId = artistSongs.firstOrNull()?.coverId ?: ""
+    val coverModel = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(artistSongs.firstOrNull()?.albumId ?: 0L)
 
     LazyColumn(Modifier.fillMaxSize()) {
         item { Spacer(Modifier.height(40.dp)) }
         item {
             AsyncImage(
-                model = artUri(coverAlbumId), contentDescription = null,
+                model = coverModel, contentDescription = null,
                 modifier = Modifier.fillMaxWidth().wrapContentSize(Alignment.Center)
                     .size(180.dp).clip(CircleShape)
             )
@@ -108,9 +109,15 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
         }
         items(artistAlbums.size) { i ->
             val (albumId, group) = artistAlbums.elementAt(i)
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val albumCoverId = group.firstOrNull()?.coverId ?: ""
+            val albumCover = if (albumCoverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(albumCoverId) else artUri(albumId)
+            Row(
+                Modifier.fillMaxWidth().clickable { onOpenAlbum(albumId) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 AsyncImage(
-                    model = artUri(albumId), contentDescription = null,
+                    model = albumCover, contentDescription = null,
                     modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
                 )
                 Spacer(Modifier.width(16.dp))
@@ -130,13 +137,15 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit) {
     val totalMs = remember(albumSongs) { albumSongs.sumOf { it.duration } }
     val first = albumSongs.firstOrNull()
     val artists = remember(albumSongs) { albumSongs.groupBy { it.artist }.entries }
+    val coverId = first?.coverId ?: ""
+    val coverModel = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId)
 
     LazyColumn(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
         item { Spacer(Modifier.height(24.dp)) }
         item {
             Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
-                    model = artUri(albumId), contentDescription = null,
+                    model = coverModel, contentDescription = null,
                     modifier = Modifier.size(150.dp).clip(RoundedCornerShape(12.dp))
                 )
                 Spacer(Modifier.width(20.dp))
@@ -189,9 +198,11 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit) {
         }
         items(artists.size) { i ->
             val (name, group) = artists.elementAt(i)
+            val artCoverId = group.firstOrNull()?.coverId ?: ""
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
-                    model = artUri(group.first().albumId), contentDescription = null,
+                    model = if (artCoverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(artCoverId) else artUri(group.first().albumId),
+                    contentDescription = null,
                     modifier = Modifier.size(48.dp).clip(CircleShape)
                 )
                 Spacer(Modifier.width(16.dp))

@@ -85,6 +85,11 @@ fun HomeRoot() {
         currentRoute == "scan" -> "媒体来源"
         currentRoute == "player" || currentRoute == "queue" -> ""
         currentRoute?.startsWith("folder/") == true -> backStack?.arguments?.getString("name") ?: ""
+        currentRoute?.startsWith("artist/") == true -> backStack?.arguments?.getString("name") ?: ""
+        currentRoute?.startsWith("album/") == true -> {
+            val albumId = backStack?.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
+            songs.find { it.albumId == albumId }?.album ?: ""
+        }
         currentRoute?.startsWith("playlist/") == true -> {
             val guid = backStack?.arguments?.getString("guid")
             playlists.find { it.guid == guid }?.name ?: "歌单"
@@ -175,7 +180,7 @@ fun HomeRoot() {
                     composable("queue") { QueueScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
-                        ArtistDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                        ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
                     }
                     composable("album/{albumId}") { backStackEntry ->
                         val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
