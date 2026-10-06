@@ -26,6 +26,25 @@ object SourceManager {
     private val _fnConnected = MutableStateFlow(false)
     val fnConnected: StateFlow<Boolean> = _fnConnected.asStateFlow()
 
+    @Volatile var fnHost: String = ""
+        private set
+    @Volatile var fnUsername: String = ""
+        private set
+
+    fun setFnConnected(host: String, username: String) {
+        fnHost = host
+        fnUsername = username
+        _fnConnected.value = true
+    }
+
+    fun disconnectFeiniu() {
+        feiniuCache = emptyList()
+        _fnConnected.value = false
+        fnHost = ""
+        fnUsername = ""
+        switchTo(MusicSource.LOCAL)
+    }
+
     // In-memory caches so switching sources back does not re-fetch.
     private var localCache: List<Song> = emptyList()
     private var feiniuCache: List<Song> = emptyList()
