@@ -96,14 +96,15 @@ fun FeiniuLoginScreen(
                 errorMsg = ""
                 scope.launch {
                     val result = FnApi.login(host.trim(), username.trim(), password)
-                    loading = false
                     if (result.isSuccess) {
                         CrashLogger.log("Feiniu login UI success, fetching tracks...")
                         SourceManager.switchTo(MusicSource.FEINIU)
-                        SourceManager.refreshFeiniu()
+                        SourceManager.refreshFeiniuForce()
+                        loading = false
                         Toast.makeText(context, "连接成功，已加载 ${SourceManager.songs.value.size} 首", Toast.LENGTH_LONG).show()
                         onSuccess()
                     } else {
+                        loading = false
                         val msg = result.exceptionOrNull()?.message ?: "连接失败"
                         CrashLogger.e("Feiniu login UI failed: $msg")
                         errorMsg = msg
