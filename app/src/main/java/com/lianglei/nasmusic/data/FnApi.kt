@@ -1,7 +1,6 @@
 package com.lianglei.nasmusic.data
 
-import android.content.Context
-import com.lianglei.nasmusic.util.CrashLogger
+import com.lianglei.nasmusic.util.FnLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -9,14 +8,18 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.net.URI
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
  * Feiniu (fnOS) music API client.
- * Base URL: http://<host>:5666/music/api/v1/
- * Auth: POST user/password-login -> Bearer token
+ * Accepts user input like:
+ *   - 192.168.1.100            (defaults to http, port 5666)
+ *   - nas.example.com           (defaults to http, port 5666)
+ *   - https://nas.example.com:244  (explicit scheme + port)
+ * API base: <scheme>://<host>:<port>/music/api/v1/
  */
 object FnApi {
     private const val DEFAULT_PORT = 5666
@@ -26,8 +29,6 @@ object FnApi {
         private set
     @Volatile var token: String = ""
         private set
-    @Volatile var host: String = ""
-        private set
 
     private val client by lazy {
         OkHttpClient.Builder()
@@ -36,14 +37,29 @@ object FnApi {
             .build()
     }
 
-    fun configure(h: String, useHttps: Boolean = false, port: Int = DEFAULT_PORT) {
-        host = h
-        val scheme = if (useHttps) "https" else "http"
-        baseUrl = "$scheme://$h:$port$API_PATH"
+    /** Parse user input and configure base URL. Handles full URLs or bare hosts. */
+    fun configure(input: String) {
+        val trimmed = input.trim().trimEnd('/')
+        val (scheme, parsedHost, port) = try {
+            val withScheme = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                trimmed
+            } else {
+                "http://$trimmed"
+            }
+            val uri = URI(withScheme)
+            Triple(uri.scheme ?: "http", uri.host ?: trimmed, if (uri.port > 0) uri.port else DEFAULT_PORT)
+        } catch (e: Exception) {
+            FnLogger.error("Failed to parse host: $input", e)
+            Triple("http", trimmed, DEFAULT_PORT)
+        }
+        baseUrl = "$scheme://$parsedHost:$port$API_PATH"
+        FnLogger.log("Configured baseUrl=$baseUrl (input=$input)")
     }
 
     suspend fun login(hostInput: String, username: String, password: String): Result<String> = withContext(Dispatchers.IO) {
         configure(hostInput)
+        FnLogger.log("=== login attempt ===")
+        FnLogger.log("hostInput=$hostInput, username=$username, baseUrl=$baseUrl")
         try {
             val deviceId = UUID.randomUUID().toString()
             val bodyObj = JSONObject().apply {
@@ -51,37 +67,45 @@ object FnApi {
                 put("password", sha256Hex(password))
                 put("deviceId", deviceId)
             }
+            val bodyStr = bodyObj.toString()
+            val url = "$baseUrl/user/password-login"
+            FnLogger.request("POST", url, bodyStr, null)
+
             val mediaType = "application/json".toMediaType()
             val req = Request.Builder()
-                .url("$baseUrl/user/password-login")
-                .post(bodyObj.toString().toRequestBody(mediaType))
+                .url(url)
+                .post(bodyStr.toRequestBody(mediaType))
                 .build()
             client.newCall(req).execute().use { resp ->
                 val text = resp.body?.string() ?: ""
-                CrashLogger.log("Feiniu login resp: ${resp.code} $text")
+                FnLogger.response(resp.code, text)
                 val json = JSONObject(text)
                 if (json.optInt("code", -1) == 0) {
                     val data = json.getJSONObject("data")
                     token = data.getString("userToken")
-                    CrashLogger.log("Feiniu login OK, token=${token.take(10)}...")
+                    FnLogger.log("Login OK, token=${token.take(12)}...")
                     Result.success(token)
                 } else {
                     val msg = json.optString("msg", "unknown error")
-                    CrashLogger.e("Feiniu login failed: code=${json.optInt("code")} msg=$msg")
+                    FnLogger.error("Login failed: code=${json.optInt("code")} msg=$msg")
                     Result.failure(Exception("登录失败: $msg"))
                 }
             }
         } catch (e: Exception) {
-            CrashLogger.e("Feiniu login exception", e)
+            FnLogger.error("Login exception", e)
             Result.failure(e)
         }
     }
 
     suspend fun fetchAllTracks(): List<Song> = withContext(Dispatchers.IO) {
+        FnLogger.log("=== fetchAllTracks ===")
         val list = mutableListOf<Song>()
         var page = 1
         while (true) {
-            val resp = httpGet("$baseUrl/track/list?page=$page&size=100&sort=createdAt,desc")
+            val url = "$baseUrl/track/list?page=$page&size=100&sort=createdAt,desc"
+            FnLogger.request("GET", url, null, token)
+            val resp = httpGet(url)
+            FnLogger.response(if (resp.isNotEmpty()) 200 else 0, resp)
             val json = JSONObject(resp)
             if (json.optInt("code", -1) != 0) break
             val data = json.optJSONObject("data") ?: break
@@ -112,7 +136,7 @@ object FnApi {
             if (list.size >= total || arr.length() == 0) break
             page++
         }
-        CrashLogger.log("Feiniu fetched ${list.size} tracks")
+        FnLogger.log("Fetched ${list.size} tracks total")
         list
     }
 

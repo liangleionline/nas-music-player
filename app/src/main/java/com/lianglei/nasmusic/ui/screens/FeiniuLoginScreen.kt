@@ -52,7 +52,7 @@ fun FeiniuLoginScreen(
             value = host,
             onValueChange = { host = it },
             label = { Text("NAS 地址") },
-            placeholder = { Text("例如 192.168.1.100 或 nas.example.com") },
+            placeholder = { Text("如 https://nas.example.com:244 或 192.168.1.100") },
             leadingIcon = { Icon(Icons.Filled.Dns, null) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
