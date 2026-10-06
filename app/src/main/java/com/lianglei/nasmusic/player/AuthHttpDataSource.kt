@@ -4,6 +4,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import com.lianglei.nasmusic.data.FnApi
+import com.lianglei.nasmusic.util.CrashLogger
 
 /**
  * Wraps DefaultHttpDataSource.Factory and injects the Feiniu Authorization
@@ -19,6 +20,7 @@ class AuthHttpDataSourceFactory : DataSource.Factory {
         .setUserAgent("NasMusic/0.5")
 
     override fun createDataSource(): DataSource {
+        CrashLogger.log("AuthFactory.createDataSource, token=${if (FnApi.token.isNotEmpty()) FnApi.token.take(8) else "EMPTY"}")
         if (FnApi.token.isNotEmpty()) {
             delegate.setDefaultRequestProperties(mapOf("Authorization" to FnApi.token))
         }
