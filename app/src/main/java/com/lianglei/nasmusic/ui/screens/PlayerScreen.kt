@@ -46,7 +46,7 @@ fun parseLrc(text: String): List<LrcLine> {
 }
 
 @Composable
-fun PlayerScreen() {
+fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val idx by PlayerManager.currentIndex.collectAsStateWithLifecycle()
     val playing by PlayerManager.isPlaying.collectAsStateWithLifecycle()
@@ -177,16 +177,14 @@ fun PlayerScreen() {
             Spacer(Modifier.height(20.dp))
 
             // Bottom action row
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                listOf(
-                    Icons.Filled.Shuffle to {},
-                    Icons.Filled.Timer to {},
-                    Icons.Filled.Equalizer to {},
-                    Icons.Filled.QueueMusic to {},
-                    Icons.Filled.MoreVert to {}
-                ).forEach { (icon, action) ->
-                    Icon(icon, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Shuffle, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
+                Icon(Icons.Filled.Timer, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
+                Icon(Icons.Filled.Equalizer, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
+                IconButton(onClick = onOpenQueue) {
+                    Icon(Icons.Filled.QueueMusic, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
                 }
+                Icon(Icons.Filled.MoreVert, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
             }
             Spacer(Modifier.height(20.dp))
         }
