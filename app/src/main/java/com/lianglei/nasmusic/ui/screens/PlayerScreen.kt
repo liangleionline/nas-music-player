@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
@@ -239,10 +240,12 @@ private fun MarqueeText(
             .fillMaxWidth()
             .onSizeChanged { containerWidth = it.width }
             .drawBehind {
-                drawText(
-                    textLayoutResult = measured,
-                    topLeft = androidx.compose.ui.geometry.Offset(offset, 0f)
-                )
+                clipRect {
+                    drawText(
+                        textLayoutResult = measured,
+                        topLeft = androidx.compose.ui.geometry.Offset(offset, 0f)
+                    )
+                }
             }
             .heightIn(min = 32.dp)
     )
