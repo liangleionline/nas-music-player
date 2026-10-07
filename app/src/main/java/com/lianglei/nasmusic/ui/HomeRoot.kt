@@ -166,6 +166,7 @@ fun HomeRoot() {
         Scaffold(
             containerColor = Color(0xFFF2F3F5),
             topBar = {
+                if (!showPlayer && !showQueue) {
                 val isDetail = currentRoute?.startsWith("artist/") == true ||
                         currentRoute?.startsWith("album/") == true ||
                         currentRoute?.startsWith("folder/") == true ||
@@ -198,6 +199,7 @@ fun HomeRoot() {
                         actionIconContentColor = Color.Black
                     )
                 )
+                }
             },
             bottomBar = {
                 if (!showPlayer && !showQueue) {
