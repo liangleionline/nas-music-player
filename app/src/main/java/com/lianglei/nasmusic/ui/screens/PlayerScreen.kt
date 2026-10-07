@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,52 +93,52 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
 
     Box(Modifier.fillMaxSize().background(bg)) {
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
-            // Top bar: title + artist + cast
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            // Top bar: marquee title + artist + cast
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(song?.title ?: "—", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
+                    MarqueeText(
+                        text = song?.title ?: "—",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Spacer(Modifier.height(4.dp))
                     Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 15.sp)
                 }
-                Icon(Icons.Filled.Cast, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(12.dp))
+                Icon(Icons.Filled.Cast, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(26.dp))
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(28.dp))
 
-            // Album cover
-            AsyncImage(
-                model = song?.let {
-                    if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
-                    else "content://media/external/audio/albumart/${it.albumId}"
-                },
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(16.dp))
-            )
-            Spacer(Modifier.height(24.dp))
+            // Album cover with white frame
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.15f)).padding(12.dp)
+            ) {
+                AsyncImage(
+                    model = song?.let {
+                        if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
+                        else "content://media/external/audio/albumart/${it.albumId}"
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))
+                )
+            }
+            Spacer(Modifier.height(28.dp))
 
-            // Lyrics area (shows current + next line)
-            Column(Modifier.fillMaxWidth().height(80.dp)) {
+            // Lyrics area: prev / current / next
+            Column(Modifier.fillMaxWidth().height(100.dp), horizontalAlignment = Alignment.Start) {
                 if (lrcLines.isEmpty()) {
                     Text("暂无歌词", color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
                 } else {
+                    val prev = lrcLines.getOrNull(activeLrcIndex - 1)
                     val active = lrcLines.getOrNull(activeLrcIndex)
                     val next = lrcLines.getOrNull(activeLrcIndex + 1)
-                    Text(
-                        active?.text ?: "",
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        next?.text ?: "",
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 14.sp,
-                        maxLines = 1
-                    )
+                    Text(prev?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1)
+                    Spacer(Modifier.height(8.dp))
+                    Text(active?.text ?: "", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Spacer(Modifier.height(8.dp))
+                    Text(next?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1)
                 }
             }
 
@@ -189,6 +190,35 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             Spacer(Modifier.height(20.dp))
         }
     }
+}
+
+@Composable
+private fun MarqueeText(
+    text: String,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    fontWeight: FontWeight,
+    maxLines: Int = 1
+) {
+    val infinite = androidx.compose.ui.geometry.Offset.Zero
+    val transition = rememberInfiniteTransition(label = "marquee")
+    val offset by transition.animateFloat(
+        initialValue = 0f, targetValue = -2000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 15000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ), label = "offset"
+    )
+    Text(
+        text = text,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        maxLines = maxLines,
+        modifier = Modifier
+            .fillMaxWidth()
+            .offset(x = offset.dp)
+    )
 }
 
 private fun fmtTime(ms: Long): String {
