@@ -104,7 +104,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                         fontWeight = FontWeight.Normal,
                         maxLines = 1
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(2.dp))
                     Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
                 }
                 Spacer(Modifier.width(12.dp))
