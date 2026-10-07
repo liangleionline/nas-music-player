@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Remove
@@ -31,19 +31,21 @@ fun QueueScreen() {
 
     val bg = Brush.verticalGradient(listOf(Color(0xFF8B6914), Color(0xFF6B4E1A), Color(0xFF4A3728)))
 
-    Column(Modifier.fillMaxSize().background(bg)) {
+    Column(Modifier.fillMaxSize().background(bg).systemBarsPadding()) {
         // Top hint
         Text(
             "此处向下轻扫以返回播放界面",
             color = Color.White.copy(alpha = 0.5f),
             fontSize = 13.sp,
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(16.dp))
 
         // Current song mini bar
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             AsyncImage(
                 model = current?.let {
                     if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
@@ -54,41 +56,41 @@ fun QueueScreen() {
             )
             Spacer(Modifier.width(16.dp))
             Column {
-                Text(current?.title ?: "—", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                Spacer(Modifier.height(4.dp))
+                Text(current?.title ?: "—", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(2.dp))
                 Text(
                     "${current?.artist ?: ""} - ${current?.album ?: ""}",
                     color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     maxLines = 1
                 )
             }
         }
-        Spacer(Modifier.height(20.dp))
 
         // Header row
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text("${idx + 1} / ${queue.size}", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, modifier = Modifier.weight(1f))
             Text("播放队列", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("清除", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp,
                 modifier = Modifier.weight(1f).clickable { PlayerManager.clearQueue() },
                 textAlign = TextAlign.End)
         }
-        Spacer(Modifier.height(12.dp))
-        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
 
-        // Queue list
-        LazyColumn(Modifier.weight(1f)) {
-            items(queue) { s ->
-                val i = queue.indexOf(s)
+        // Queue list - compact rows
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 4.dp)) {
+            itemsIndexed(queue) { i, s ->
                 val selected = i == idx
                 Row(
                     Modifier.fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                        .padding(horizontal = 20.dp, vertical = 2.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(if (selected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
                         .clickable { PlayerManager.playQueue(queue, i) }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -96,27 +98,27 @@ fun QueueScreen() {
                             s.title,
                             color = Color.White,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            maxLines = 1, fontSize = 16.sp
+                            maxLines = 1, fontSize = 17.sp
                         )
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(1.dp))
                         Text(
                             "${s.artist} - ${s.album}",
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = Color.White.copy(alpha = 0.55f),
                             maxLines = 1, fontSize = 13.sp
                         )
                     }
-                    IconButton(onClick = { PlayerManager.removeFromQueue(i) }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.Remove, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                    IconButton(onClick = { PlayerManager.removeFromQueue(i) }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.Remove, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
                     }
                 }
             }
         }
 
         // Bottom mode button
-        Box(Modifier.padding(20.dp)) {
+        Box(Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
             AssistChip(
                 onClick = {},
-                label = { Text("随机播放模式", color = Color.White) },
+                label = { Text("随机播放模式", color = Color.White, fontSize = 14.sp) },
                 colors = AssistChipDefaults.assistChipColors(containerColor = Color.White.copy(alpha = 0.15f))
             )
         }
