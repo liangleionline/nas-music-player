@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.player.PlayerManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -66,26 +68,20 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     val bg = Brush.verticalGradient(listOf(Color(0xFF8B6914), Color(0xFF6B4E1A), Color(0xFF4A3728)))
     val ctx = androidx.compose.ui.platform.LocalContext.current
 
-    val lrcLines = remember(song?.id) {
-        if (song == null) emptyList()
-        else {
+    var lrcLines by remember(song?.id) { mutableStateOf(emptyList<LrcLine>()) }
+    LaunchedEffect(song?.id) {
+        if (song == null) { lrcLines = emptyList(); return@LaunchedEffect }
+        lrcLines = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val file = File(song.data)
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
                 if (lrcFile.exists()) {
                     parseLrc(lrcFile.readText())
-                } else {
-                    if (file.exists()) {
-                        // Direct ID3 USLT parser (MMR doesn't support it on many devices)
-                        val embedded = readId3Uslt(file)
-                        com.lianglei.nasmusic.util.CrashLogger.log("ID3 USLT for ${song.title}: len=${embedded.length}, preview=${embedded.take(100)}")
-                        if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
-                    } else {
-                        emptyList()
-                    }
-                }
+                } else if (file.exists()) {
+                    val embedded = readId3Uslt(file)
+                    if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
+                } else emptyList()
             } catch (e: Exception) {
-                com.lianglei.nasmusic.util.CrashLogger.e("LRC load failed", e)
                 emptyList()
             }
         }
