@@ -1,5 +1,6 @@
 package com.lianglei.nasmusic.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,11 +16,12 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -211,23 +213,19 @@ private fun MarqueeText(
     maxLines: Int = 1
 ) {
     var offset by remember { mutableStateOf(0f) }
-    val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
-    val containerWidthPx = remember { mutableStateOf(0) }
-    val textLayoutResult = remember(text, fontSize, fontWeight) {
-        textMeasurer.measure(
-            text = AnnotatedString(text),
-            style = androidx.compose.ui.text.TextStyle(fontSize = fontSize, fontWeight = fontWeight)
-        )
+    var containerWidth by remember { mutableStateOf(0) }
+    val style = androidx.compose.ui.text.TextStyle(fontSize = fontSize, fontWeight = fontWeight, color = color)
+    val measured = remember(text, fontSize, fontWeight) {
+        textMeasurer.measure(text = AnnotatedString(text), style = style, constraints = androidx.compose.ui.unit.Constraints(maxWidth = Int.MAX_VALUE))
     }
-    val textWidth = textLayoutResult.size.width
-    val scrollDistance = (textWidth - containerWidthPx.value).coerceAtLeast(0)
-    com.lianglei.nasmusic.util.CrashLogger.log("Marquee: text='$text' textWidth=$textWidth containerW=${containerWidthPx.value} scroll=$scrollDistance")
-    LaunchedEffect(text, scrollDistance, containerWidthPx.value) {
-        if (containerWidthPx.value <= 0 || scrollDistance <= 0) { offset = 0f; return@LaunchedEffect }
+    val textW = measured.size.width
+    val scroll = (textW - containerWidth).coerceAtLeast(0)
+    LaunchedEffect(text, scroll, containerWidth) {
         offset = 0f
+        if (containerWidth <= 0 || scroll <= 0) return@LaunchedEffect
         kotlinx.coroutines.delay(3000)
-        val anim = android.animation.ValueAnimator.ofFloat(0f, -scrollDistance.toFloat()).apply {
+        val anim = android.animation.ValueAnimator.ofFloat(0f, -scroll.toFloat()).apply {
             duration = 5000
             interpolator = android.view.animation.LinearInterpolator()
         }
@@ -239,22 +237,15 @@ private fun MarqueeText(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clipToBounds()
-            .onSizeChanged { containerWidthPx.value = it.width }
-    ) {
-        Text(
-            text = text,
-            color = color,
-            fontSize = fontSize,
-            fontWeight = fontWeight,
-            maxLines = 1,
-            softWrap = false,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
-            modifier = Modifier
-                .offset(x = offset.dp)
-                .width(with(LocalDensity.current) { textWidth.toDp() })
-        )
-    }
+            .onSizeChanged { containerWidth = it.width }
+            .drawBehind {
+                drawText(
+                    textLayoutResult = measured,
+                    topLeft = androidx.compose.ui.geometry.Offset(offset, 0f)
+                )
+            }
+            .heightIn(min = 32.dp)
+    )
 }
 
 private fun readId3Uslt(file: File): String {
