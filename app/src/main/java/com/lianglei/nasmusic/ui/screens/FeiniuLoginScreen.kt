@@ -100,9 +100,12 @@ fun FeiniuLoginScreen(
                 loading = true
                 errorMsg = ""
                 logLines.clear()
+                logLines.add("正在连接服务器 ${host.trim()} ...")
                 scope.launch {
+                    logLines.add("正在验证用户名和密码...")
                     val result = FnApi.login(host.trim(), username.trim(), password)
                     if (result.isSuccess) {
+                        logLines.add("登录成功，正在获取音乐库...")
                         CrashLogger.log("Feiniu login UI success, fetching tracks...")
                         SourceManager.setFnConnected(host.trim(), username.trim())
                         SourceManager.switchTo(MusicSource.FEINIU)
@@ -110,12 +113,14 @@ fun FeiniuLoginScreen(
                             logLines.add(msg)
                             scope.launch { logScroll.animateScrollTo(logScroll.maxValue) }
                         }
+                        logLines.add("完成！共加载 ${SourceManager.songs.value.size} 首歌曲")
                         loading = false
                         Toast.makeText(context, "连接成功，已加载 ${SourceManager.songs.value.size} 首", Toast.LENGTH_LONG).show()
                         onSuccess()
                     } else {
                         loading = false
                         val msg = result.exceptionOrNull()?.message ?: "连接失败"
+                        logLines.add("登录失败: $msg")
                         CrashLogger.e("Feiniu login UI failed: $msg")
                         errorMsg = msg
                     }
