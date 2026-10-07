@@ -99,21 +99,21 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     MarqueeText(
                         text = song?.title ?: "—",
                         color = Color.White,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Normal,
                         maxLines = 1
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 15.sp)
+                    Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
                 }
                 Spacer(Modifier.width(12.dp))
                 Icon(Icons.Filled.Cast, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(26.dp))
             }
             Spacer(Modifier.height(28.dp))
 
-            // Album cover with white frame
+            // Album cover with subtle frame
             Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.15f)).padding(12.dp)
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.08f)).padding(16.dp)
             ) {
                 AsyncImage(
                     model = song?.let {
@@ -218,7 +218,7 @@ private fun MarqueeText(
         fontSize = fontSize,
         fontWeight = fontWeight,
         maxLines = maxLines,
-        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
         modifier = Modifier
             .fillMaxWidth()
             .offset(x = offset.dp)
