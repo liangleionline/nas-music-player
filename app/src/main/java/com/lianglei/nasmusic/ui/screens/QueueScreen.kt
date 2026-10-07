@@ -84,11 +84,11 @@ fun QueueScreen() {
                 val selected = i == idx
                 Row(
                     Modifier.fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(if (selected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
                         .clickable { PlayerManager.playQueue(queue, i) }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -98,15 +98,15 @@ fun QueueScreen() {
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1, fontSize = 16.sp
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(2.dp))
                         Text(
                             "${s.artist} - ${s.album}",
                             color = Color.White.copy(alpha = 0.6f),
                             maxLines = 1, fontSize = 13.sp
                         )
                     }
-                    IconButton(onClick = { PlayerManager.removeFromQueue(i) }) {
-                        Icon(Icons.Filled.Remove, null, tint = Color.White.copy(alpha = 0.6f))
+                    IconButton(onClick = { PlayerManager.removeFromQueue(i) }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Remove, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
                     }
                 }
             }

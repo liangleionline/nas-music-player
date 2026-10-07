@@ -153,6 +153,7 @@ fun HomeRoot() {
     ) {
         Scaffold(
             topBar = {
+                if (currentRoute != "player" && currentRoute != "queue") {
                 val isDetail = currentRoute?.startsWith("artist/") == true ||
                         currentRoute?.startsWith("album/") == true ||
                         currentRoute?.startsWith("folder/") == true ||
@@ -179,8 +180,10 @@ fun HomeRoot() {
                         }
                     }
                 )
+                }
             },
             bottomBar = {
+                if (currentRoute != "player" && currentRoute != "queue") {
                 MiniPlayer(
                     song = current,
                     isPlaying = isPlaying,
@@ -188,6 +191,7 @@ fun HomeRoot() {
                     onClick = { nav.navigate("player") },
                     onQueue = { nav.navigate("queue") }
                 )
+                }
             }
         ) { pad ->
             Box(Modifier.padding(pad)) {
