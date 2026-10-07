@@ -97,6 +97,11 @@ fun HomeRoot() {
     }
 
     // Resolve actual title for detail routes (route pattern has {placeholders}, need args)
+    val isPlayerRoute = currentRoute == "player" || currentRoute == "queue"
+    androidx.compose.runtime.LaunchedEffect(isPlayerRoute) {
+        val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !isPlayerRoute
+    }
     val title = when {
         currentRoute == "songs" -> "歌曲"
         currentRoute == "albums" -> "专辑"
@@ -201,7 +206,10 @@ fun HomeRoot() {
                 }
             }
         ) { pad ->
-            Box(Modifier.padding(pad)) {
+            val isFullscreen = currentRoute == "player" || currentRoute == "queue"
+            Box(Modifier.fillMaxSize().then(
+                if (isFullscreen) Modifier else Modifier.padding(pad)
+            )) {
                 NavHost(nav, startDestination = "songs") {
                     composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
