@@ -2,6 +2,7 @@ package com.lianglei.nasmusic.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -55,15 +57,31 @@ fun PlayerScreen() {
     var showLyrics by remember { mutableStateOf(false) }
 
     val bg = Brush.verticalGradient(listOf(Color(0xFF6B5D4F), Color(0xFFB8AE9E), Color(0xFF8E8577)))
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
-    // Load lyrics from LRC file next to song
+    // Load lyrics: first try LRC file, then embedded lyrics from MediaStore
     val lrcLines = remember(song?.id) {
         if (song == null) emptyList()
         else {
             try {
+                // Try LRC file first
                 val file = File(song.data)
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
-                if (lrcFile.exists()) parseLrc(lrcFile.readText()) else emptyList()
+                if (lrcFile.exists()) {
+                    parseLrc(lrcFile.readText())
+                } else {
+                    // Try embedded lyrics from MediaStore
+                    val proj = arrayOf("lyrics")
+                    ctx.contentResolver.query(
+                        android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        proj, "_id=?", arrayOf(song.id.toString()), null
+                    )?.use { c ->
+                        if (c.moveToFirst()) {
+                            val embedded = c.getString(0) ?: ""
+                            if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
+                        } else emptyList()
+                    } ?: emptyList()
+                }
             } catch (e: Exception) { emptyList() }
         }
     }
@@ -91,7 +109,11 @@ fun PlayerScreen() {
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .clip(RoundedCornerShape(16.dp))
-                        .clickable { showLyrics = true }
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures { _, dragAmount ->
+                                if (dragAmount < -30) showLyrics = true
+                            }
+                        }
                 )
             } else {
                 // Lyrics view
@@ -101,7 +123,11 @@ fun PlayerScreen() {
                         .aspectRatio(1f)
                         .clip(RoundedCornerShape(16.dp))
                         .background(Color.Black.copy(alpha = 0.2f))
-                        .clickable { showLyrics = false }
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures { _, dragAmount ->
+                                if (dragAmount > 30) showLyrics = false
+                            }
+                        }
                         .verticalScroll(rememberScrollState())
                         .padding(20.dp)
                 ) {
