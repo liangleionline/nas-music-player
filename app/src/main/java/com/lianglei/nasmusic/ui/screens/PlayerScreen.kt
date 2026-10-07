@@ -72,9 +72,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                         val mmr = android.media.MediaMetadataRetriever()
                         try {
                             mmr.setDataSource(file.absolutePath)
-                            val embedded = mmr.extractMetadata(100) ?: "" // METADATA_KEY_LYRICS
-                                ?: ""
-                            com.lianglei.nasmusic.util.CrashLogger.log("Embedded lyrics for ${song.title}: ${if (embedded.isNotEmpty()) "found ${embedded.length} chars" else "empty"}")
+                            val embedded = mmr.extractMetadata(100) ?: ""
+                            com.lianglei.nasmusic.util.CrashLogger.log("Embedded lyrics for ${song.title}: len=${embedded.length}, preview=${embedded.take(100)}")
                             if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
                         } catch (e: Exception) {
                             com.lianglei.nasmusic.util.CrashLogger.e("MMR lyrics failed", e)
@@ -103,23 +102,24 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
 
     Box(Modifier.fillMaxSize().background(bg)) {
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
+            Spacer(Modifier.height(20.dp))
             // Top bar: marquee title + artist + cast
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     MarqueeText(
                         text = song?.title ?: "—",
                         color = Color.White,
-                        fontSize = 24.sp,
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.Normal,
                         maxLines = 1
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
                 }
                 Spacer(Modifier.width(12.dp))
                 Icon(Icons.Filled.Cast, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(26.dp))
             }
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(32.dp))
 
             // Album cover with subtle frame
             Box(
