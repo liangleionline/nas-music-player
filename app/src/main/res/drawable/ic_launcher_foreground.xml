@@ -1,16 +1,13 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- Vertical stem -->
+    <!-- Bold music note stem -->
     <path android:fillColor="#FFFFFF"
-        android:pathData="M58,30 L58,72 L64,72 L64,30 Z"/>
-    <!-- Left note head (ellipse) -->
+        android:pathData="M56,28 L56,72 L62,72 L62,28 Z"/>
+    <!-- Note head -->
     <path android:fillColor="#FFFFFF"
-        android:pathData="M40,76 m-10,0 a10,7 0 1,0 20,0 a10,7 0 1,0 -20,0 z"/>
-    <!-- Right note head (ellipse) -->
+        android:pathData="M44,76 m-9,0 a9,6 0 1,0 18,0 a9,6 0 1,0 -18,0 z"/>
+    <!-- Flag -->
     <path android:fillColor="#FFFFFF"
-        android:pathData="M64,70 m-10,0 a10,7 0 1,0 20,0 a10,7 0 1,0 -20,0 z"/>
-    <!-- Beam connecting top -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M58,30 L78,24 L78,32 L64,36 Z"/>
+        android:pathData="M62,28 C72,30 76,38 74,46 C72,40 68,36 62,35 Z"/>
 </vector>

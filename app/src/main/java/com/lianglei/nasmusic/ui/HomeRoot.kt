@@ -207,7 +207,7 @@ fun HomeRoot() {
                     composable("stats") { PlaceholderScreen("统计") }
                     composable("settings") { PlaceholderScreen("设置") }
                     composable("about") { AboutScreen() }
-                    composable("player") { PlayerScreen() }
+                    composable("player") { PlayerScreen(onOpenQueue = { nav.navigate("queue") }) }
                     composable("queue") { QueueScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""

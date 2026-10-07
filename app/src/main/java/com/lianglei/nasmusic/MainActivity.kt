@@ -32,6 +32,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLogger.log("MainActivity onCreate")
+        // Transparent status bar for immersive look
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
         requestPermissionsIfNeeded()
         setContent { NasMusicTheme { HomeRoot() } }
     }
