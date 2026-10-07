@@ -18,6 +18,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -207,9 +210,17 @@ private fun MarqueeText(
     maxLines: Int = 1
 ) {
     var offset by remember { mutableStateOf(0f) }
-    var textWidth by remember { mutableStateOf(0) }
-    var containerWidth by remember { mutableStateOf(0) }
-    val scrollDistance = (textWidth - containerWidth).coerceAtLeast(0)
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val containerWidthPx = remember { mutableStateOf(0) }
+    val textLayoutResult = remember(text, fontSize, fontWeight) {
+        textMeasurer.measure(
+            text = AnnotatedString(text),
+            style = androidx.compose.ui.text.TextStyle(fontSize = fontSize, fontWeight = fontWeight)
+        )
+    }
+    val textWidth = textLayoutResult.size.width
+    val scrollDistance = (textWidth - containerWidthPx.value).coerceAtLeast(0)
     LaunchedEffect(text, scrollDistance) {
         offset = 0f
         if (scrollDistance <= 0) return@LaunchedEffect
@@ -226,7 +237,7 @@ private fun MarqueeText(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .onSizeChanged { containerWidth = it.width }
+            .onSizeChanged { containerWidthPx.value = it.width }
     ) {
         Text(
             text = text,
@@ -236,9 +247,7 @@ private fun MarqueeText(
             maxLines = 1,
             softWrap = false,
             overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
-            onTextLayout = { result -> textWidth = result.size.width },
-            modifier = Modifier
-                .offset(x = offset.dp)
+            modifier = Modifier.offset(x = offset.dp)
         )
     }
 }
