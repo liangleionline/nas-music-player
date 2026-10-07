@@ -94,7 +94,6 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
 
     Box(Modifier.fillMaxSize().background(bg)) {
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
-            Spacer(Modifier.height(20.dp))
             // Top bar: marquee title + artist + cast
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -105,17 +104,17 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                         fontWeight = FontWeight.Normal,
                         maxLines = 1
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
                     Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
                 }
                 Spacer(Modifier.width(12.dp))
                 Icon(Icons.Filled.Cast, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(26.dp))
             }
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(24.dp))
 
             // Album cover with subtle frame
             Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.08f)).padding(16.dp)
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.08f)).padding(12.dp)
             ) {
                 AsyncImage(
                     model = song?.let {
@@ -126,7 +125,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))
                 )
             }
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(24.dp))
 
             // Lyrics area: prev / current / next
             Column(Modifier.fillMaxWidth().height(100.dp), horizontalAlignment = Alignment.Start) {
