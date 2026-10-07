@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -206,30 +207,40 @@ private fun MarqueeText(
     maxLines: Int = 1
 ) {
     var offset by remember { mutableStateOf(0f) }
-    LaunchedEffect(text) {
+    var textWidth by remember { mutableStateOf(0) }
+    var containerWidth by remember { mutableStateOf(0) }
+    val scrollDistance = (textWidth - containerWidth).coerceAtLeast(0)
+    LaunchedEffect(text, scrollDistance) {
         offset = 0f
+        if (scrollDistance <= 0) return@LaunchedEffect
         kotlinx.coroutines.delay(3000)
-        val anim = android.animation.ValueAnimator.ofFloat(0f, -400f).apply {
-            duration = 4000
+        val anim = android.animation.ValueAnimator.ofFloat(0f, -scrollDistance.toFloat()).apply {
+            duration = 5000
             interpolator = android.view.animation.LinearInterpolator()
         }
         anim.addUpdateListener { offset = it.animatedValue as Float }
         anim.start()
-        kotlinx.coroutines.delay(4500)
+        kotlinx.coroutines.delay(5500)
         offset = 0f
     }
-    Text(
-        text = text,
-        color = color,
-        fontSize = fontSize,
-        fontWeight = fontWeight,
-        maxLines = 1,
-        softWrap = false,
-        overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .offset(x = offset.dp)
-    )
+            .onSizeChanged { containerWidth = it.width }
+    ) {
+        Text(
+            text = text,
+            color = color,
+            fontSize = fontSize,
+            fontWeight = fontWeight,
+            maxLines = 1,
+            softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
+            onTextLayout = { result -> textWidth = result.size.width },
+            modifier = Modifier
+                .offset(x = offset.dp)
+        )
+    }
 }
 
 private fun readId3Uslt(file: File): String {
