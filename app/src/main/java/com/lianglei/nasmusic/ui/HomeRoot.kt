@@ -152,6 +152,7 @@ fun HomeRoot() {
         }
     ) {
         Scaffold(
+            containerColor = Color(0xFFF2F3F5),
             topBar = {
                 if (currentRoute != "player" && currentRoute != "queue") {
                 val isDetail = currentRoute?.startsWith("artist/") == true ||
