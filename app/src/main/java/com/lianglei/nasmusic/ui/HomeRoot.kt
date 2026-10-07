@@ -166,7 +166,6 @@ fun HomeRoot() {
         Scaffold(
             containerColor = Color(0xFFF2F3F5),
             topBar = {
-                if (!showPlayer && !showQueue) {
                 val isDetail = currentRoute?.startsWith("artist/") == true ||
                         currentRoute?.startsWith("album/") == true ||
                         currentRoute?.startsWith("folder/") == true ||
@@ -199,18 +198,15 @@ fun HomeRoot() {
                         actionIconContentColor = Color.Black
                     )
                 )
-                }
             },
             bottomBar = {
-                if (!showPlayer && !showQueue) {
-                    MiniPlayer(
-                        song = current,
-                        isPlaying = isPlaying,
-                        buffering = buffering,
-                        onClick = { showPlayer = true },
-                        onQueue = { showQueue = true }
-                    )
-                }
+                MiniPlayer(
+                    song = current,
+                    isPlaying = isPlaying,
+                    buffering = buffering,
+                    onClick = { showPlayer = true },
+                    onQueue = { showQueue = true }
+                )
             }
         ) { pad ->
             Box(Modifier.fillMaxSize()) {
