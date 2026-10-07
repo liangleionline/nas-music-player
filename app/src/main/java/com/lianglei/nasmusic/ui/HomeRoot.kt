@@ -192,8 +192,8 @@ fun HomeRoot() {
                 NavHost(nav, startDestination = "songs") {
                     composable("songs") { SongListScreen(songs, loading) { idx -> PlayerManager.playQueue(songs, idx) } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
-                    composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> nav.navigate("artist/$name") }) }
-                    composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> nav.navigate("folder/$name") }) }
+                    composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8")) }) }
+                    composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8")) }) }
                     composable("playlists") { PlaylistScreen(playlists = playlists, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
@@ -209,7 +209,7 @@ fun HomeRoot() {
                     }
                     composable("album/{albumId}") { backStackEntry ->
                         val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
-                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenArtist = { name -> nav.navigate("artist/$name") })
+                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenArtist = { name -> nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8")) })
                     }
                     composable("folder/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
