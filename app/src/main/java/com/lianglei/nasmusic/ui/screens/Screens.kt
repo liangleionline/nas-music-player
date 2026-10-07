@@ -40,14 +40,12 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
     var searchQuery by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(0) }
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSortSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(searchTrigger) {
-        if (searchTrigger) {
-            searching = true
-            searchQuery = ""
-        }
+        searching = searchTrigger
+        if (!searchTrigger) searchQuery = ""
     }
 
     val sorted = remember(songs, sortMode) {

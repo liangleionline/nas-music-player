@@ -1,6 +1,16 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Vertical stem -->
     <path android:fillColor="#FFFFFF"
-        android:pathData="M64,32 L64,66 a10,10 0 1 1 -6,-9.17 L58,40 L46,43 L46,70 a10,10 0 1 1 -6,-9.17 L40,36 Z"/>
+        android:pathData="M58,30 L58,72 L64,72 L64,30 Z"/>
+    <!-- Left note head (ellipse) -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M40,76 m-10,0 a10,7 0 1,0 20,0 a10,7 0 1,0 -20,0 z"/>
+    <!-- Right note head (ellipse) -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M64,70 m-10,0 a10,7 0 1,0 20,0 a10,7 0 1,0 -20,0 z"/>
+    <!-- Beam connecting top -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M58,30 L78,24 L78,32 L64,36 Z"/>
 </vector>
