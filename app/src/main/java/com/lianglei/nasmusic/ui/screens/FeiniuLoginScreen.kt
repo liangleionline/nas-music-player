@@ -39,8 +39,8 @@ fun FeiniuLoginScreen(
     val prefs = remember { context.getSharedPreferences("fn_login_history", android.content.Context.MODE_PRIVATE) }
     var history by remember { mutableStateOf(prefs.getStringSet("history", emptySet())?.toList() ?: emptyList()) }
 
-    var host by remember { mutableStateOf("https://nas.binarystar.space:2443") }
-    var username by remember { mutableStateOf("lianglei") }
+    var host by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
