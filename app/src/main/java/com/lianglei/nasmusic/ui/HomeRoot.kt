@@ -211,7 +211,9 @@ fun HomeRoot() {
                 }
             }
         ) { pad ->
-            Box(Modifier.fillMaxSize().padding(pad)) {
+            Box(Modifier.fillMaxSize()) {
+                // Main content padded by Scaffold
+                Box(Modifier.fillMaxSize().padding(pad)) {
                 NavHost(nav, startDestination = "songs") {
                     composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
@@ -250,8 +252,9 @@ fun HomeRoot() {
                         PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx) }
                     }
                 }
+                }
 
-                // Overlay player & queue on top, keeping underlying screen composed
+                // Fullscreen overlay - covers entire window including status bar
                 AnimatedVisibility(
                     visible = showPlayer,
                     enter = slideInVertically { it },
