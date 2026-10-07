@@ -100,12 +100,12 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     MarqueeText(
                         text = song?.title ?: "—",
                         color = Color.White,
-                        fontSize = 26.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Normal,
                         maxLines = 1
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+                    Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
                 }
                 Spacer(Modifier.width(12.dp))
                 Icon(Icons.Filled.Cast, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(26.dp))
@@ -178,17 +178,21 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             }
             Spacer(Modifier.height(20.dp))
 
-            // Bottom action row
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Shuffle, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
-                Icon(Icons.Filled.Timer, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
-                Icon(Icons.Filled.Equalizer, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
-                IconButton(onClick = onOpenQueue) {
-                    Icon(Icons.Filled.QueueMusic, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
+            // Bottom action row - 5 items evenly weighted so center aligns with play button
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                listOf(
+                    Icons.Filled.Shuffle to {},
+                    Icons.Filled.Timer to {},
+                    Icons.Filled.Equalizer to {},
+                    Icons.Filled.QueueMusic to { onOpenQueue() },
+                    Icons.Filled.MoreVert to {}
+                ).forEach { (icon, action) ->
+                    IconButton(onClick = action, modifier = Modifier.weight(1f)) {
+                        Icon(icon, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(24.dp))
+                    }
                 }
-                Icon(Icons.Filled.MoreVert, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
