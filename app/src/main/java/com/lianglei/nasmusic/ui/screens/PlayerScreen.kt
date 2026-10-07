@@ -15,6 +15,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
@@ -238,6 +239,7 @@ private fun MarqueeText(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .clipToBounds()
             .onSizeChanged { containerWidthPx.value = it.width }
     ) {
         Text(
@@ -247,7 +249,7 @@ private fun MarqueeText(
             fontWeight = fontWeight,
             maxLines = 1,
             softWrap = false,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Visible,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
             modifier = Modifier
                 .offset(x = offset.dp)
                 .width(with(LocalDensity.current) { textWidth.toDp() })
