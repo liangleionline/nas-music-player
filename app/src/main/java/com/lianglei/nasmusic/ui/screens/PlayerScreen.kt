@@ -67,20 +67,12 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                 if (lrcFile.exists()) {
                     parseLrc(lrcFile.readText())
                 } else {
-                    // Try embedded lyrics via MediaMetadataRetriever
                     if (file.exists()) {
-                        val mmr = android.media.MediaMetadataRetriever()
-                        try {
-                            mmr.setDataSource(file.absolutePath)
-                            val embedded = mmr.extractMetadata(100) ?: ""
-                            com.lianglei.nasmusic.util.CrashLogger.log("Embedded lyrics for ${song.title}: len=${embedded.length}, preview=${embedded.take(100)}")
-                            if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
-                        } catch (e: Exception) {
-                            com.lianglei.nasmusic.util.CrashLogger.e("MMR lyrics failed", e)
-                            emptyList()
-                        } finally { mmr.release() }
+                        // Direct ID3 USLT parser (MMR doesn't support it on many devices)
+                        val embedded = readId3Uslt(file)
+                        com.lianglei.nasmusic.util.CrashLogger.log("ID3 USLT for ${song.title}: len=${embedded.length}, preview=${embedded.take(100)}")
+                        if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
                     } else {
-                        // NAS song - no local file, no embedded lyrics access
                         emptyList()
                     }
                 }
@@ -234,6 +226,50 @@ private fun MarqueeText(
             .fillMaxWidth()
             .offset(x = offset.dp)
     )
+}
+
+private fun readId3Uslt(file: File): String {
+    return try {
+        file.inputStream().use { fis ->
+            val header = ByteArray(10)
+            if (fis.read(header) != 10) return ""
+            if (!(header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte() && header[2] == '3'.code.toByte())) return ""
+            val major = header[3].toInt() and 0xFF
+            val tagSize = ((header[6].toInt() and 0x7F) shl 21) or ((header[7].toInt() and 0x7F) shl 14) or ((header[8].toInt() and 0x7F) shl 7) or (header[9].toInt() and 0x7F)
+            val data = ByteArray(tagSize)
+            if (fis.read(data) != tagSize) return ""
+            var pos = 0
+            while (pos + 10 <= data.size) {
+                val frameId = String(data, pos, 4, Charsets.ISO_8859_1)
+                val frameSize = if (major == 4) {
+                    ((data[pos+4].toInt() and 0x7F) shl 21) or ((data[pos+5].toInt() and 0x7F) shl 14) or ((data[pos+6].toInt() and 0x7F) shl 7) or (data[pos+7].toInt() and 0x7F)
+                } else {
+                    ((data[pos+4].toInt() and 0xFF) shl 24) or ((data[pos+5].toInt() and 0xFF) shl 16) or ((data[pos+6].toInt() and 0xFF) shl 8) or (data[pos+7].toInt() and 0xFF)
+                }
+                if (frameSize <= 0 || pos + 10 + frameSize > data.size) break
+                if (frameId == "USLT") {
+                    val encoding = data[pos+10].toInt() and 0xFF
+                    var p = pos + 14 // skip encoding(1) + language(3)
+                    // skip content descriptor (null-terminated)
+                    while (p < pos + 10 + frameSize && data[p].toInt() != 0) p++
+                    p++ // skip null
+                    val lyricsBytes = data.copyOfRange(p, pos + 10 + frameSize)
+                    return when (encoding) {
+                        0 -> String(lyricsBytes, Charsets.ISO_8859_1)
+                        1 -> String(lyricsBytes, Charsets.UTF_16)
+                        2 -> String(lyricsBytes, Charsets.UTF_16BE)
+                        3 -> String(lyricsBytes, Charsets.UTF_8)
+                        else -> String(lyricsBytes, Charsets.UTF_8)
+                    }.trim()
+                }
+                pos += 10 + frameSize
+            }
+            ""
+        }
+    } catch (e: Exception) {
+        com.lianglei.nasmusic.util.CrashLogger.e("readId3Uslt failed", e)
+        ""
+    }
 }
 
 private fun fmtTime(ms: Long): String {
