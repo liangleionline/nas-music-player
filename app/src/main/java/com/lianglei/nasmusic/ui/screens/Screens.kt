@@ -408,13 +408,37 @@ fun PlaceholderScreen(name: String) {
 
 @Composable
 fun AboutScreen() {
-    Column(Modifier.fillMaxSize().padding(24.dp)) {
-        Text("NAS Music Player", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        Spacer(Modifier.height(8.dp))
-        Text("Version 0.1.0", color = Color.Gray)
+    Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
+        Text("NAS Music Player", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("Version 0.7.4", color = Color.Gray, fontSize = 13.sp)
         Spacer(Modifier.height(20.dp))
-        Text("本地音乐播放 · 后续接入飞牛 NAS (WebDAV) 流媒体。", color = Color.DarkGray)
-        Spacer(Modifier.height(12.dp))
-        Text("UI 参考 Salt Player。许可：GPL-3.0。", color = Color.DarkGray, fontSize = 12.sp)
+
+        Text("关于本程序", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "一款基于 Android Jetpack Compose 开发的开源音乐播放器，支持本地音乐扫描播放，同时支持通过飞牛 NAS 官方音乐接口流式播放 NAS 中的音乐库。",
+            color = Color.DarkGray, fontSize = 13.sp
+        )
+        Spacer(Modifier.height(20.dp))
+
+        Text("开源引用", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("• Media3 / ExoPlayer — 媒体播放引擎 (Apache 2.0)", color = Color.DarkGray, fontSize = 12.sp)
+        Text("• Compose Material3 — UI 组件库 (Apache 2.0)", color = Color.DarkGray, fontSize = 12.sp)
+        Text("• Coil — 图片加载 (Apache 2.0)", color = Color.DarkGray, fontSize = 12.sp)
+        Text("• Salt Player / SaltUI — UI 设计参考 (GPL-3.0)", color = Color.DarkGray, fontSize = 12.sp)
+        Text("• SaltAudioTag — 音频标签读取参考 (GPL-3.0)", color = Color.DarkGray, fontSize = 12.sp)
+        Text("• fn-music-tv — 飞牛音乐 API 参考", color = Color.DarkGray, fontSize = 12.sp)
+        Spacer(Modifier.height(20.dp))
+
+        Text("开源协议", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "本程序以 GNU General Public License v3.0 (GPL-3.0) 协议开源发布。\n" +
+            "你可以自由使用、修改和分发本程序，但衍生作品必须同样采用 GPL-3.0 协议开源。\n" +
+            "源代码托管于 GitHub: liangleionline/nas-music-player",
+            color = Color.DarkGray, fontSize = 12.sp
+        )
     }
 }

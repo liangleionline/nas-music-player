@@ -1,8 +1,11 @@
 package com.lianglei.nasmusic.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,8 +21,28 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.player.PlayerManager
+import java.io.File
 import java.util.Locale
 import kotlin.math.roundToLong
+
+data class LrcLine(val time: Long, val text: String)
+
+fun parseLrc(text: String): List<LrcLine> {
+    val lines = mutableListOf<LrcLine>()
+    text.lines().forEach { line ->
+        val matcher = Regex("\\[(\\d+):(\\d+)(?:[.:](\\d+))?]").findAll(line)
+        val content = line.replace(Regex("\\[\\d+:\\d+([.:]\\d+)?]"), "").trim()
+        if (content.isNotEmpty()) {
+            matcher.forEach { m ->
+                val min = m.groupValues[1].toLong()
+                val sec = m.groupValues[2].toLong()
+                val ms = if (m.groupValues[3].isNotEmpty()) m.groupValues[3].toLong() * 10 else 0L
+                lines.add(LrcLine(min * 60000 + sec * 1000 + ms, content))
+            }
+        }
+    }
+    return lines.sortedBy { it.time }
+}
 
 @Composable
 fun PlayerScreen() {
@@ -29,8 +52,21 @@ fun PlayerScreen() {
     val pos by PlayerManager.positionMs.collectAsStateWithLifecycle()
     val dur by PlayerManager.durationMs.collectAsStateWithLifecycle()
     val song = queue.getOrNull(idx)
+    var showLyrics by remember { mutableStateOf(false) }
 
     val bg = Brush.verticalGradient(listOf(Color(0xFF6B5D4F), Color(0xFFB8AE9E), Color(0xFF8E8577)))
+
+    // Load lyrics from LRC file next to song
+    val lrcLines = remember(song?.id) {
+        if (song == null) emptyList()
+        else {
+            try {
+                val file = File(song.data)
+                val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
+                if (lrcFile.exists()) parseLrc(lrcFile.readText()) else emptyList()
+            } catch (e: Exception) { emptyList() }
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(bg)) {
         Column(Modifier.fillMaxSize().padding(20.dp)) {
@@ -42,15 +78,50 @@ fun PlayerScreen() {
                 }
                 Icon(Icons.Filled.Cast, null, tint = Color.White)
             }
-            Spacer(Modifier.height(40.dp))
-            AsyncImage(
-                model = song?.let {
-                    if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
-                    else "content://media/external/audio/albumart/${it.albumId}"
-                },
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp))
-            )
+            Spacer(Modifier.height(20.dp))
+
+            if (!showLyrics) {
+                AsyncImage(
+                    model = song?.let {
+                        if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
+                        else "content://media/external/audio/albumart/${it.albumId}"
+                    },
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { showLyrics = true }
+                )
+            } else {
+                // Lyrics view
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.2f))
+                        .clickable { showLyrics = false }
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp)
+                ) {
+                    if (lrcLines.isEmpty()) {
+                        Text("暂无歌词", color = Color.White.copy(alpha = 0.6f), fontSize = 16.sp,
+                            modifier = Modifier.fillMaxWidth().wrapContentSize(Alignment.Center))
+                    } else {
+                        lrcLines.forEach { line ->
+                            val isActive = line.time <= pos && (lrcLines.getOrNull(lrcLines.indexOf(line) + 1)?.time ?: Long.MAX_VALUE) > pos
+                            Text(
+                                line.text,
+                                color = if (isActive) Color.White else Color.White.copy(alpha = 0.5f),
+                                fontSize = if (isActive) 16.sp else 14.sp,
+                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.weight(1f))
 
             // progress
