@@ -200,21 +200,25 @@ private fun MarqueeText(
     fontWeight: FontWeight,
     maxLines: Int = 1
 ) {
-    val infinite = androidx.compose.ui.geometry.Offset.Zero
-    val transition = rememberInfiniteTransition(label = "marquee")
-    val offset by transition.animateFloat(
-        initialValue = 0f, targetValue = -2000f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 15000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = "offset"
-    )
+    var offset by remember { mutableStateOf(0f) }
+    LaunchedEffect(text) {
+        kotlinx.coroutines.delay(500)
+        val anim = android.animation.ValueAnimator.ofFloat(0f, -400f).apply {
+            duration = 4000
+            interpolator = android.view.animation.LinearInterpolator()
+        }
+        anim.addUpdateListener { offset = it.animatedValue as Float }
+        anim.start()
+        kotlinx.coroutines.delay(4500)
+        offset = 0f
+    }
     Text(
         text = text,
         color = color,
         fontSize = fontSize,
         fontWeight = fontWeight,
         maxLines = maxLines,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxWidth()
             .offset(x = offset.dp)
