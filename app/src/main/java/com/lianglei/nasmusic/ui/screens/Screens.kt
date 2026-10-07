@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,13 +34,36 @@ import kotlinx.coroutines.launch
 
 private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$albumId"
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
+fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean = false, onPlay: (Int) -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
-    val filtered = remember(songs, searchQuery) {
-        if (searchQuery.isBlank()) songs
-        else songs.filter {
+    var sortMode by remember { mutableStateOf(0) }
+    val sheetState = rememberModalBottomSheetState()
+    var showSortSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchTrigger) {
+        if (searchTrigger) {
+            searching = true
+            searchQuery = ""
+        }
+    }
+
+    val sorted = remember(songs, sortMode) {
+        when (sortMode) {
+            0 -> songs
+            1 -> songs.sortedBy { it.title }
+            2 -> songs.sortedBy { it.artist }
+            3 -> songs.sortedBy { it.album }
+            4 -> songs.sortedBy { it.duration }
+            5 -> songs.sortedByDescending { it.duration }
+            else -> songs
+        }
+    }
+    val filtered = remember(sorted, searchQuery) {
+        if (searchQuery.isBlank()) sorted
+        else sorted.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
             it.album.contains(searchQuery, ignoreCase = true) ||
             it.artist.contains(searchQuery, ignoreCase = true)
@@ -51,10 +75,8 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
             Spacer(Modifier.width(12.dp))
             Text("${filtered.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
-            Icon(Icons.Filled.Sort, null, tint = Color.Gray)
-            Spacer(Modifier.width(20.dp))
-            IconButton(onClick = { searching = !searching; searchQuery = "" }) {
-                Icon(Icons.Filled.Search, null, tint = Color.Gray)
+            IconButton(onClick = { showSortSheet = true }) {
+                Icon(Icons.Filled.Sort, null, tint = Color.Gray)
             }
         }
         if (searching) {
@@ -101,6 +123,27 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
                     }
                     Icon(Icons.Filled.Add, "add", tint = Color.Gray, modifier = Modifier.padding(8.dp))
                     Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
+                }
+            }
+        }
+    }
+
+    if (showSortSheet) {
+        ModalBottomSheet(onDismissRequest = { showSortSheet = false }, sheetState = sheetState) {
+            Column(Modifier.padding(20.dp).padding(bottom = 24.dp)) {
+                Text("排序", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(16.dp))
+                val options = listOf("自定义", "标题", "艺术家", "专辑", "时长（短→长）", "时长（长→短）")
+                options.forEachIndexed { idx, label ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            sortMode = idx
+                            showSortSheet = false
+                        }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(label, fontSize = 15.sp, color = if (sortMode == idx) MaterialTheme.colorScheme.primary else Color.Black)
+                    }
                 }
             }
         }
