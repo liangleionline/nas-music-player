@@ -93,7 +93,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     }
 
     Box(Modifier.fillMaxSize().background(bg)) {
-        Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
+        Column(Modifier.fillMaxSize().systemBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp)) {
             // Top bar: marquee title + artist + cast
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
