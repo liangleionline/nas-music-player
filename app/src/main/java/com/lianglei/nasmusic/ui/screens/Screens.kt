@@ -109,7 +109,7 @@ fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
 
 @Composable
 fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
-    val groups = songs.groupBy { it.artist }.entries.sortedBy { it.key }
+    val groups = songs.groupBy { it.artist }.entries.filter { it.key.isNotBlank() }.sortedBy { it.key }
     LazyColumn {
         items(groups) { (artist, group) ->
             val coverId = group.first().coverId

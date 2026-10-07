@@ -192,8 +192,8 @@ fun HomeRoot() {
                 NavHost(nav, startDestination = "songs") {
                     composable("songs") { SongListScreen(songs, loading) { idx -> PlayerManager.playQueue(songs, idx) } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
-                    composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8")) }) }
-                    composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8")) }) }
+                    composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8")) }) }
+                    composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8")) }) }
                     composable("playlists") { PlaylistScreen(playlists = playlists, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
