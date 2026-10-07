@@ -207,7 +207,8 @@ private fun MarqueeText(
 ) {
     var offset by remember { mutableStateOf(0f) }
     LaunchedEffect(text) {
-        kotlinx.coroutines.delay(500)
+        offset = 0f
+        kotlinx.coroutines.delay(3000)
         val anim = android.animation.ValueAnimator.ofFloat(0f, -400f).apply {
             duration = 4000
             interpolator = android.view.animation.LinearInterpolator()
