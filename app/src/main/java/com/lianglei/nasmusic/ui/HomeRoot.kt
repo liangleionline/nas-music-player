@@ -225,20 +225,8 @@ fun HomeRoot() {
                     composable("stats") { PlaceholderScreen("统计") }
                     composable("settings") { PlaceholderScreen("设置") }
                     composable("about") { AboutScreen() }
-                    composable(
-                        "player",
-                        enterTransition = { slideInVertically(animationSpec = tween(300)) { it } },
-                        exitTransition = { slideOutVertically(animationSpec = tween(300)) { it } },
-                        popEnterTransition = { slideInVertically(animationSpec = tween(300)) { it } },
-                        popExitTransition = { slideOutVertically(animationSpec = tween(300)) { it } }
-                    ) { PlayerScreen(onOpenQueue = { nav.navigate("queue") }) }
-                    composable(
-                        "queue",
-                        enterTransition = { slideInVertically(animationSpec = tween(300)) { it } },
-                        exitTransition = { slideOutVertically(animationSpec = tween(300)) { it } },
-                        popEnterTransition = { slideInVertically(animationSpec = tween(300)) { it } },
-                        popExitTransition = { slideOutVertically(animationSpec = tween(300)) { it } }
-                    ) { QueueScreen() }
+                    composable("player") { PlayerScreen(onOpenQueue = { nav.navigate("queue") }) }
+                    composable("queue") { QueueScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
                         ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
