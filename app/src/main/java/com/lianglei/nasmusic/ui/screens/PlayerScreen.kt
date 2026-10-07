@@ -221,9 +221,9 @@ private fun MarqueeText(
     }
     val textWidth = textLayoutResult.size.width
     val scrollDistance = (textWidth - containerWidthPx.value).coerceAtLeast(0)
-    LaunchedEffect(text, scrollDistance) {
+    LaunchedEffect(text, scrollDistance, containerWidthPx.value) {
+        if (containerWidthPx.value <= 0 || scrollDistance <= 0) { offset = 0f; return@LaunchedEffect }
         offset = 0f
-        if (scrollDistance <= 0) return@LaunchedEffect
         kotlinx.coroutines.delay(3000)
         val anim = android.animation.ValueAnimator.ofFloat(0f, -scrollDistance.toFloat()).apply {
             duration = 5000
