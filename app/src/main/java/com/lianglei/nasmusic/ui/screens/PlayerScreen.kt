@@ -221,6 +221,7 @@ private fun MarqueeText(
     }
     val textWidth = textLayoutResult.size.width
     val scrollDistance = (textWidth - containerWidthPx.value).coerceAtLeast(0)
+    com.lianglei.nasmusic.util.CrashLogger.log("Marquee: text='$text' textWidth=$textWidth containerW=${containerWidthPx.value} scroll=$scrollDistance")
     LaunchedEffect(text, scrollDistance, containerWidthPx.value) {
         if (containerWidthPx.value <= 0 || scrollDistance <= 0) { offset = 0f; return@LaunchedEffect }
         offset = 0f
@@ -246,8 +247,10 @@ private fun MarqueeText(
             fontWeight = fontWeight,
             maxLines = 1,
             softWrap = false,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
-            modifier = Modifier.offset(x = offset.dp)
+            overflow = androidx.compose.ui.text.style.TextOverflow.Visible,
+            modifier = Modifier
+                .offset(x = offset.dp)
+                .width(with(LocalDensity.current) { textWidth.toDp() })
         )
     }
 }
