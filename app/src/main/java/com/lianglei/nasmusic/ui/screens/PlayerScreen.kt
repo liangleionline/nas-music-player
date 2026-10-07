@@ -67,18 +67,28 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                 if (lrcFile.exists()) {
                     parseLrc(lrcFile.readText())
                 } else {
-                    val proj = arrayOf("lyrics")
-                    ctx.contentResolver.query(
-                        android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                        proj, "_id=?", arrayOf(song.id.toString()), null
-                    )?.use { c ->
-                        if (c.moveToFirst()) {
-                            val embedded = c.getString(0) ?: ""
+                    // Try embedded lyrics via MediaMetadataRetriever
+                    if (file.exists()) {
+                        val mmr = android.media.MediaMetadataRetriever()
+                        try {
+                            mmr.setDataSource(file.absolutePath)
+                            val embedded = mmr.extractMetadata(100) ?: "" // METADATA_KEY_LYRICS
+                                ?: ""
+                            com.lianglei.nasmusic.util.CrashLogger.log("Embedded lyrics for ${song.title}: ${if (embedded.isNotEmpty()) "found ${embedded.length} chars" else "empty"}")
                             if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
-                        } else emptyList()
-                    } ?: emptyList()
+                        } catch (e: Exception) {
+                            com.lianglei.nasmusic.util.CrashLogger.e("MMR lyrics failed", e)
+                            emptyList()
+                        } finally { mmr.release() }
+                    } else {
+                        // NAS song - no local file, no embedded lyrics access
+                        emptyList()
+                    }
                 }
-            } catch (e: Exception) { emptyList() }
+            } catch (e: Exception) {
+                com.lianglei.nasmusic.util.CrashLogger.e("LRC load failed", e)
+                emptyList()
+            }
         }
     }
 
@@ -217,7 +227,8 @@ private fun MarqueeText(
         color = color,
         fontSize = fontSize,
         fontWeight = fontWeight,
-        maxLines = maxLines,
+        maxLines = 1,
+        softWrap = false,
         overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
         modifier = Modifier
             .fillMaxWidth()
