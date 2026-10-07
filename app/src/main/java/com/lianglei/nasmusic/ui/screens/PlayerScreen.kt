@@ -250,7 +250,6 @@ private fun readId3Uslt(file: File): String {
                 if (frameId == "USLT") {
                     val encoding = data[pos+10].toInt() and 0xFF
                     var p = pos + 14 // skip encoding(1) + language(3)
-                    // skip content descriptor (null-terminated, but in UTF-16 it's 2 null bytes)
                     val nullLen = if (encoding == 1 || encoding == 2) 2 else 1
                     while (p + nullLen <= pos + 10 + frameSize) {
                         val isNull = if (nullLen == 2) data[p].toInt() == 0 && data[p+1].toInt() == 0 else data[p].toInt() == 0
@@ -258,23 +257,19 @@ private fun readId3Uslt(file: File): String {
                         p += nullLen
                     }
                     val lyricsBytes = data.copyOfRange(p, pos + 10 + frameSize)
-                    val result = when (encoding) {
-                        0 -> String(lyricsBytes, Charsets.ISO_8859_1)
-                        1 -> {
-                            // UTF-16 with BOM - detect BOM
-                            if (lyricsBytes.size >= 2 && lyricsBytes[0] == 0xFF.toByte() && lyricsBytes[1] == 0xFE.toByte()) {
-                                String(lyricsBytes, 2, lyricsBytes.size - 2, Charsets.UTF_16LE)
-                            } else if (lyricsBytes.size >= 2 && lyricsBytes[0] == 0xFE.toByte() && lyricsBytes[1] == 0xFF.toByte()) {
-                                String(lyricsBytes, 2, lyricsBytes.size - 2, Charsets.UTF_16BE)
-                            } else {
-                                String(lyricsBytes, Charsets.UTF_16)
-                            }
-                        }
-                        2 -> String(lyricsBytes, Charsets.UTF_16BE)
-                        3 -> String(lyricsBytes, Charsets.UTF_8)
+                    val hexPreview = lyricsBytes.take(12).joinToString(" ") { "%02X".format(it) }
+                    com.lianglei.nasmusic.util.CrashLogger.log("USLT encoding=$encoding, first12hex=$hexPreview")
+                    val result: String = when {
+                        lyricsBytes.size >= 2 && lyricsBytes[0] == 0xFF.toByte() && lyricsBytes[1] == 0xFE.toByte() ->
+                            String(lyricsBytes, 2, lyricsBytes.size - 2, Charsets.UTF_16LE)
+                        lyricsBytes.size >= 2 && lyricsBytes[0] == 0xFE.toByte() && lyricsBytes[1] == 0xFF.toByte() ->
+                            String(lyricsBytes, 2, lyricsBytes.size - 2, Charsets.UTF_16BE)
+                        encoding == 1 -> String(lyricsBytes, Charsets.UTF_16)
+                        encoding == 2 -> String(lyricsBytes, Charsets.UTF_16BE)
+                        encoding == 3 -> String(lyricsBytes, Charsets.UTF_8)
                         else -> String(lyricsBytes, Charsets.UTF_8)
                     }
-                    com.lianglei.nasmusic.util.CrashLogger.log("USLT encoding=$encoding, bytes=${lyricsBytes.size}, result=${result.take(200)}")
+                    com.lianglei.nasmusic.util.CrashLogger.log("USLT decoded: ${result.take(200)}")
                     return result.trim()
                 }
                 pos += 10 + frameSize
