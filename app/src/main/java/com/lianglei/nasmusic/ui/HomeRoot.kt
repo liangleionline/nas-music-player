@@ -179,7 +179,13 @@ fun HomeRoot() {
                                 Icon(Icons.Filled.ViewList, null)
                             else -> {}
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = Color.Black,
+                        navigationIconContentColor = Color.Black,
+                        actionIconContentColor = Color.Black
+                    )
                 )
                 }
             },
