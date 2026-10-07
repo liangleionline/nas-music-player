@@ -35,18 +35,37 @@ private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$al
 
 @Composable
 fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
-    // Log cover diagnostics once per render
-    val sampleCoverId = songs.firstOrNull { it.coverId.isNotEmpty() }?.coverId
-    com.lianglei.nasmusic.util.CrashLogger.log("SongListScreen: ${songs.size} songs, sampleCoverId=$sampleCoverId")
+    var searchQuery by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    val filtered = remember(songs, searchQuery) {
+        if (searchQuery.isBlank()) songs
+        else songs.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.album.contains(searchQuery, ignoreCase = true) ||
+            it.artist.contains(searchQuery, ignoreCase = true)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Shuffle, null, tint = Color.Gray)
             Spacer(Modifier.width(12.dp))
-            Text("${songs.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("${filtered.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
             Icon(Icons.Filled.Sort, null, tint = Color.Gray)
             Spacer(Modifier.width(20.dp))
-            Icon(Icons.Filled.FilterList, null, tint = Color.Gray)
+            IconButton(onClick = { searching = !searching; searchQuery = "" }) {
+                Icon(Icons.Filled.Search, null, tint = Color.Gray)
+            }
+        }
+        if (searching) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("搜索歌曲、专辑、艺术家", fontSize = 13.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            )
+            Spacer(Modifier.height(8.dp))
         }
         if (loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -55,9 +74,9 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, onPlay: (Int) -> Unit) {
             return@Column
         }
         LazyColumn(Modifier.fillMaxSize()) {
-            items(songs, key = { it.id }) { s ->
+            items(filtered, key = { it.id }) { s ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { onPlay(songs.indexOf(s)) }
+                    Modifier.fillMaxWidth().clickable { onPlay(filtered.indexOf(s)) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
