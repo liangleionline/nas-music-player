@@ -58,6 +58,7 @@ fun HomeRoot() {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    var searchTrigger by remember { mutableStateOf(false) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val currentSource by SourceManager.current.collectAsStateWithLifecycle()
@@ -126,7 +127,7 @@ fun HomeRoot() {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(220.dp)) {
+            ModalDrawerSheet(modifier = Modifier.width(180.dp)) {
                 Spacer(Modifier.height(40.dp))
                 Row(Modifier.padding(horizontal=20.dp)) {
                     listOf(Icons.Filled.Login, Icons.Filled.LightMode, Icons.Filled.Equalizer).forEach {
@@ -168,11 +169,12 @@ fun HomeRoot() {
                     },
                     actions = {
                         when {
-                            currentRoute == "songs" || currentRoute?.startsWith("folder/") == true ->
-                                Icon(Icons.Filled.Search, null)
+                            currentRoute == "songs" ->
+                                IconButton(onClick = { searchTrigger = !searchTrigger }) {
+                                    Icon(Icons.Filled.Search, null)
+                                }
                             currentRoute == "albums" || currentRoute == "artists" || currentRoute?.startsWith("artist/") == true ->
                                 Icon(Icons.Filled.ViewList, null)
-                            currentRoute?.startsWith("album/") == true -> Icon(Icons.Filled.Search, null)
                             else -> {}
                         }
                     }
@@ -190,7 +192,7 @@ fun HomeRoot() {
         ) { pad ->
             Box(Modifier.padding(pad)) {
                 NavHost(nav, startDestination = "songs") {
-                    composable("songs") { SongListScreen(songs, loading) { idx -> PlayerManager.playQueue(songs, idx) } }
+                    composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
                     composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
                     composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
