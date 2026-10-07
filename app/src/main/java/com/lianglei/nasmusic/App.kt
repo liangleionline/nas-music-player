@@ -19,7 +19,7 @@ class App : Application(), ImageLoaderFactory {
         FnLogger.rotateIfLarge()
         com.lianglei.nasmusic.data.SourceManager.init(this)
         com.lianglei.nasmusic.player.PlayerManager.init(this)
-        CrashLogger.log("App onCreate, versionName=0.9.0")
+        CrashLogger.log("App onCreate, versionName=0.9.1")
     }
 
     override fun newImageLoader(): ImageLoader {

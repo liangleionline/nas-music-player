@@ -96,6 +96,20 @@ object PlayerManager {
     fun prev() = controller?.seekToPrevious().let {}
     fun seekTo(ms: Long) { controller?.seekTo(ms); _positionMs.value = ms; saveState() }
 
+    fun removeFromQueue(index: Int) {
+        controller?.removeMediaItem(index)
+        val newList = _queue.value.toMutableList()
+        if (index in newList.indices) newList.removeAt(index)
+        _queue.value = newList
+    }
+
+    fun clearQueue() {
+        controller?.stop()
+        controller?.clearMediaItems()
+        _queue.value = emptyList()
+        _currentIndex.value = -1
+    }
+
     private var prefs: android.content.SharedPreferences? = null
     fun init(ctx: android.content.Context) {
         prefs = ctx.getSharedPreferences("player_state", android.content.Context.MODE_PRIVATE)
