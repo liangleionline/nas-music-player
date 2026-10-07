@@ -162,7 +162,9 @@ fun HomeRoot() {
         Scaffold(
             containerColor = Color(0xFFF2F3F5),
             topBar = {
-                if (currentRoute != "player" && currentRoute != "queue") {
+                if (currentRoute == "player" || currentRoute == "queue") {
+                    Spacer(Modifier.fillMaxWidth().height(64.dp))
+                } else {
                 val isDetail = currentRoute?.startsWith("artist/") == true ||
                         currentRoute?.startsWith("album/") == true ||
                         currentRoute?.startsWith("folder/") == true ||
