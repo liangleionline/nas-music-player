@@ -46,13 +46,25 @@ class MusicRepository(private val ctx: Context) {
                     val duration = c.getLong(5)
                     val data = c.getString(6) ?: ""
                     val mime = c.getString(7) ?: ""
-                    // Filter: only include songs under allowed folders, exclude blocked folders
-                    val inAllowed = allowedFolders.any { folderPath ->
-                        data.contains(folderPath.substringAfterLast(':'), ignoreCase = true) ||
-                        data.startsWith(folderPath.removePrefix("content://com.android.externalstorage.documents/tree/primary%3A"))
+                    // Convert SAF URIs to path fragments for matching
+                    fun safePath(uri: String): String {
+                        // Extract path from content://...tree/primary%3AFoo%2FBar → Foo/Bar
+                        return try {
+                            uri.substringAfter("tree/")
+                                .substringBefore('?')
+                                .replace("%3A", "/")
+                                .replace("%2F", "/")
+                                .replace("%20", " ")
+                                .replace("primary/", "")
+                        } catch (e: Exception) { uri }
                     }
-                    val inBlocked = blockedFolders.any { folderPath ->
-                        data.contains(folderPath.substringAfterLast(':'), ignoreCase = true)
+                    val allowedPaths = allowedFolders.map { safePath(it) }
+                    val blockedPaths = blockedFolders.map { safePath(it) }
+                    val inAllowed = allowedPaths.any { path ->
+                        path.isNotEmpty() && (data.contains(path, ignoreCase = true) || data.endsWith(path, ignoreCase = true))
+                    }
+                    val inBlocked = blockedPaths.any { path ->
+                        path.isNotEmpty() && data.contains(path, ignoreCase = true)
                     }
                     if (!inAllowed || inBlocked) continue
                     val folder = File(data).parentFile?.name ?: ""
