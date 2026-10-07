@@ -1,6 +1,8 @@
 package com.lianglei.nasmusic.ui
 
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -71,12 +73,11 @@ fun HomeRoot() {
 
     LaunchedEffect(currentSource) {
         when (currentSource) {
-            com.lianglei.nasmusic.data.MusicSource.LOCAL -> SourceManager.refreshLocal(context)
-            com.lianglei.nasmusic.data.MusicSource.FEINIU -> SourceManager.refreshFeiniu()
+            MusicSource.LOCAL -> SourceManager.refreshLocal(context)
+            MusicSource.FEINIU -> SourceManager.refreshFeiniu()
         }
     }
 
-    // Restore last playback state when songs are first loaded
     LaunchedEffect(songs.size) {
         if (songs.isNotEmpty() && PlayerManager.queue.value.isEmpty()) {
             PlayerManager.restoreState(songs)
@@ -86,10 +87,15 @@ fun HomeRoot() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
 
-    // Root-level back handling: first press shows toast, second exits
+    var showPlayer by remember { mutableStateOf(false) }
+    var showQueue by remember { mutableStateOf(false) }
+
     var lastBackPress by remember { mutableStateOf(0L) }
     val rootRoutes = setOf("songs", "albums", "artists", "folders", "playlists")
-    androidx.activity.compose.BackHandler(enabled = currentRoute in rootRoutes) {
+    androidx.activity.compose.BackHandler(enabled = showPlayer || showQueue) {
+        if (showQueue) { showQueue = false } else { showPlayer = false }
+    }
+    androidx.activity.compose.BackHandler(enabled = !showPlayer && !showQueue && currentRoute in rootRoutes) {
         val now = System.currentTimeMillis()
         if (now - lastBackPress < 2000) {
             (context as? android.app.Activity)?.finish()
@@ -99,12 +105,11 @@ fun HomeRoot() {
         }
     }
 
-    // Resolve actual title for detail routes (route pattern has {placeholders}, need args)
-    val isPlayerRoute = currentRoute == "player" || currentRoute == "queue"
-    androidx.compose.runtime.LaunchedEffect(isPlayerRoute) {
+    LaunchedEffect(showPlayer) {
         val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
-        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !isPlayerRoute
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !showPlayer
     }
+
     val title = when {
         currentRoute == "songs" -> "歌曲"
         currentRoute == "albums" -> "专辑"
@@ -112,7 +117,6 @@ fun HomeRoot() {
         currentRoute == "folders" -> "文件夹"
         currentRoute == "playlists" -> "歌单"
         currentRoute == "scan" -> "媒体来源"
-        currentRoute == "player" || currentRoute == "queue" -> ""
         currentRoute?.startsWith("folder/") == true -> backStack?.arguments?.getString("name") ?: ""
         currentRoute?.startsWith("artist/") == true -> backStack?.arguments?.getString("name") ?: ""
         currentRoute?.startsWith("album/") == true -> {
@@ -162,9 +166,6 @@ fun HomeRoot() {
         Scaffold(
             containerColor = Color(0xFFF2F3F5),
             topBar = {
-                if (currentRoute == "player" || currentRoute == "queue") {
-                    Spacer(Modifier.fillMaxWidth().height(64.dp))
-                } else {
                 val isDetail = currentRoute?.startsWith("artist/") == true ||
                         currentRoute?.startsWith("album/") == true ||
                         currentRoute?.startsWith("folder/") == true ||
@@ -197,24 +198,20 @@ fun HomeRoot() {
                         actionIconContentColor = Color.Black
                     )
                 )
-                }
             },
             bottomBar = {
-                if (currentRoute != "player" && currentRoute != "queue") {
-                MiniPlayer(
-                    song = current,
-                    isPlaying = isPlaying,
-                    buffering = buffering,
-                    onClick = { nav.navigate("player") },
-                    onQueue = { nav.navigate("queue") }
-                )
+                if (!showPlayer && !showQueue) {
+                    MiniPlayer(
+                        song = current,
+                        isPlaying = isPlaying,
+                        buffering = buffering,
+                        onClick = { showPlayer = true },
+                        onQueue = { showQueue = true }
+                    )
                 }
             }
         ) { pad ->
-            val isFullscreen = currentRoute == "player" || currentRoute == "queue"
-            Box(Modifier.fillMaxSize().then(
-                if (isFullscreen) Modifier else Modifier.padding(pad)
-            )) {
+            Box(Modifier.fillMaxSize().padding(pad)) {
                 NavHost(nav, startDestination = "songs") {
                     composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
@@ -227,8 +224,6 @@ fun HomeRoot() {
                     composable("stats") { PlaceholderScreen("统计") }
                     composable("settings") { PlaceholderScreen("设置") }
                     composable("about") { AboutScreen() }
-                    composable("player") { PlayerScreen(onOpenQueue = { nav.navigate("queue") }) }
-                    composable("queue") { QueueScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
                         ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
@@ -243,9 +238,9 @@ fun HomeRoot() {
                     }
                     composable("playlist/{guid}") { backStackEntry ->
                         val guid = backStackEntry.arguments?.getString("guid") ?: ""
-                        var playlistSongs by remember { mutableStateOf<List<com.lianglei.nasmusic.data.Song>>(emptyList()) }
+                        var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
                         LaunchedEffect(guid, currentSource) {
-                            playlistSongs = if (currentSource == com.lianglei.nasmusic.data.MusicSource.FEINIU) {
+                            playlistSongs = if (currentSource == MusicSource.FEINIU) {
                                 SourceManager.fetchPlaylistTracks(guid)
                             } else {
                                 songs
@@ -255,24 +250,25 @@ fun HomeRoot() {
                         PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx) }
                     }
                 }
+
+                // Overlay player & queue on top, keeping underlying screen composed
+                AnimatedVisibility(
+                    visible = showPlayer,
+                    enter = slideInVertically { it },
+                    exit = slideOutVertically { it }
+                ) {
+                    PlayerScreen(onOpenQueue = { showQueue = true })
+                }
+                AnimatedVisibility(
+                    visible = showQueue,
+                    enter = slideInVertically { it },
+                    exit = slideOutVertically { it }
+                ) {
+                    QueueScreen(onClose = { showQueue = false })
+                }
             }
         }
     }
-}
-
-private fun titleFor(route: String?) = when {
-    route == "songs" -> "歌曲"
-    route == "albums" -> "专辑"
-    route == "artists" -> "艺术家"
-    route == "folders" -> "文件夹"
-    route == "playlists" -> "歌单"
-    route == "scan" -> "媒体来源"
-    route == "player" || route == "queue" -> ""
-    route?.startsWith("artist/") == true -> ""
-    route?.startsWith("album/") == true -> ""
-    route?.startsWith("folder/") == true -> route.substringAfter("folder/")
-    route?.startsWith("playlist/") == true -> route.substringAfter("playlist/")
-    else -> "NAS Music"
 }
 
 @Composable

@@ -24,7 +24,7 @@ import coil.compose.AsyncImage
 import com.lianglei.nasmusic.player.PlayerManager
 
 @Composable
-fun QueueScreen() {
+fun QueueScreen(onClose: () -> Unit = {}) {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val idx by PlayerManager.currentIndex.collectAsStateWithLifecycle()
     val current = queue.getOrNull(idx)
