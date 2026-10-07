@@ -3,6 +3,7 @@ package com.lianglei.nasmusic.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -90,7 +91,7 @@ fun PlayerScreen() {
     }
 
     Box(Modifier.fillMaxSize().background(bg)) {
-        Column(Modifier.fillMaxSize().padding(24.dp)) {
+        Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
             // Top bar: title + artist + cast
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
