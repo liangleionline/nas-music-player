@@ -11,8 +11,8 @@ android {
         applicationId = "com.lianglei.nasmusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 51
-        versionName = "0.9.9"
+        versionCode = 52
+        versionName = "1.0.0"
     }
 
     buildTypes {

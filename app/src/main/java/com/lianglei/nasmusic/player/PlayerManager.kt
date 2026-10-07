@@ -40,8 +40,10 @@ object PlayerManager {
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 val idx = controller.currentMediaItemIndex
                 com.lianglei.nasmusic.util.CrashLogger.log("onMediaItemTransition: idx=$idx, reason=$reason, title=${_queue.value.getOrNull(idx)?.title}")
-                _currentIndex.value = idx
-                _durationMs.value = controller.duration.coerceAtLeast(0)
+                if (controller.mediaItemCount > 0) {
+                    _currentIndex.value = idx
+                    _durationMs.value = controller.duration.coerceAtLeast(0)
+                }
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 _isPlaying.value = playing
@@ -155,7 +157,8 @@ object PlayerManager {
         _positionMs.value = c.currentPosition
         _durationMs.value = c.duration.coerceAtLeast(0)
         // Sync current index in case onMediaItemTransition was missed
-        if (c.currentMediaItemIndex != _currentIndex.value) {
+        // Only sync if controller actually has items (avoids resetting to 0 on rebind when service was killed)
+        if (c.mediaItemCount > 0 && c.currentMediaItemIndex != _currentIndex.value) {
             com.lianglei.nasmusic.util.CrashLogger.log("tick: index sync ${_currentIndex.value} -> ${c.currentMediaItemIndex}")
             _currentIndex.value = c.currentMediaItemIndex
         }
