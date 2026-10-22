@@ -39,6 +39,18 @@ class MainActivity : ComponentActivity() {
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
         // Light status bar icons (dark text on light background)
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
+        // 排除左侧 32dp 的系统返回手势区，让抽屉边缘右滑不被系统手势截走（API 29+）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.decorView.post {
+                try {
+                    val density = resources.displayMetrics.density
+                    val edge = (32 * density).toInt()
+                    window.decorView.setSystemGestureExclusionRects(
+                        listOf(android.graphics.Rect(0, 0, edge, window.decorView.height))
+                    )
+                } catch (t: Throwable) { CrashLogger.e("gesture exclusion failed", t) }
+            }
+        }
         requestPermissionsIfNeeded()
         setContent { NasMusicTheme { HomeRoot() } }
     }
