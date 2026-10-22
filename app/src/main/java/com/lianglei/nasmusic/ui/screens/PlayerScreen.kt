@@ -24,18 +24,23 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import com.lianglei.nasmusic.player.PlayerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -111,7 +116,21 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
         else "content://media/external/audio/albumart/${it.albumId}"
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // 从封面提取主色作为底色
+    val baseColor by produceState<Color?>(initialValue = null, coverModel) {
+        value = try {
+            val result = ImageLoader(ctx).execute(
+                ImageRequest.Builder(ctx).data(coverModel).size(64).build()
+            )
+            val bmp = (result.drawable as? BitmapDrawable)?.bitmap
+            bmp?.let { dominantColorOf(it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    val coverBase = baseColor?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
+
+    Box(Modifier.fillMaxSize().background(coverBase)) {
         // Frosted glass background: blurred album cover + dark scrim
         AsyncImage(
             model = coverModel,
@@ -123,9 +142,9 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
                     listOf(
-                        Color.Black.copy(alpha = 0.55f),
-                        Color.Black.copy(alpha = 0.25f),
-                        Color.Black.copy(alpha = 0.62f)
+                        Color.Black.copy(alpha = 0.32f),
+                        Color.Black.copy(alpha = 0.10f),
+                        Color.Black.copy(alpha = 0.38f)
                     )
                 )
             )
@@ -376,4 +395,31 @@ private fun fmtTime(ms: Long): String {
     if (ms <= 0) return "00:00"
     val s = ms / 1000
     return String.format(Locale.US, "%02d:%02d", s / 60, s % 60)
+}
+
+/** 取封面平均主色 */
+private fun dominantColorOf(bmp: Bitmap): Color {
+    var r = 0L; var g = 0L; var b = 0L; var n = 0L
+    var x = 0
+    while (x < bmp.width) {
+        var y = 0
+        while (y < bmp.height) {
+            val p = bmp.getPixel(x, y)
+            r += (p shr 16) and 0xFF
+            g += (p shr 8) and 0xFF
+            b += p and 0xFF
+            n++
+            y += 2
+        }
+        x += 2
+    }
+    if (n == 0L) return Color(0xFF2A2A2E)
+    return Color(r / n / 255f, g / n / 255f, b / n / 255f)
+}
+
+/** 压暗到指定最大亮度（0~1），保证白字可读 */
+private fun darkenToLuminance(c: Color, maxLum: Float): Color {
+    val lum = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
+    val f = if (lum > maxLum) maxLum / lum else 1f
+    return Color(c.red * f, c.green * f, c.blue * f)
 }
