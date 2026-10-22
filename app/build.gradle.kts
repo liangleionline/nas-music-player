@@ -11,8 +11,8 @@ android {
         applicationId = "com.lianglei.nasmusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 95
-        versionName = "1.4.14"
+        versionCode = 96
+        versionName = "1.4.15"
     }
 
     buildTypes {
@@ -47,6 +47,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.7")
+
+    // 官方 View 系统抽屉：系统级跟手拖动、单层平移无重影、支持全屏边缘手势
+    implementation("androidx.drawerlayout:drawerlayout:1.2.0")
 
     // Media3 = ExoPlayer + MediaSession + notification (the role MediaKit plays)
     implementation("androidx.media3:media3-exoplayer:1.3.1")
