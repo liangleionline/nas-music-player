@@ -52,6 +52,7 @@ import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
@@ -97,42 +98,90 @@ fun HomeRoot() {
     // 直接平移真实内容会让整屏显示列表每帧重录 → 掉帧（列表滚动流畅但抽屉卡顿的根源）。
     // 抓屏用 PixelCopy（硬件加速，兼容 Coil 硬件位图）；软件 Canvas.draw 画硬件位图会崩溃。
     val view = LocalView.current
-    var dragSnapshot by remember { mutableStateOf<Bitmap?>(null) }
-    var transitioning by remember { mutableStateOf(false) }
+    // 关闭态整帧快照（v1.4.14 重构）：
+    // 抽屉关闭、内容静止时用 PixelCopy 抓一帧「关闭态整屏」位图，拖动/回弹全程只平移这张图
+    // （GPU 合成零重绘）。关闭态整帧 + translationX = drawerAnim*宽度 的平移模型对“打开”和“关闭”
+    // 两个方向都成立：打开时左侧露出真实抽屉，关闭时内容右缘被快照完整覆盖——不会白屏。
+    // 关键修复（白屏根因）：快照期间真实抽屉必须保持可见（快照里没有抽屉，之前把抽屉也隐藏，
+    // 拖动时左侧露出的就是白色背景 = 白屏）。
+    // 快照经「非空校验 + 重试」确认后才隐藏真实内容；任何抓屏失败都回退实时平移，永不白屏。
+    // 软件 Canvas.draw 画硬件位图会崩溃，抓屏必须用 PixelCopy（硬件）。
+    var closedFrame by remember { mutableStateOf<Bitmap?>(null) }
+    var snapshotActive by remember { mutableStateOf(false) }
     var captureSeq by remember { mutableStateOf(0) }
+    var captureRetry by remember { mutableStateOf(0) }
+    var dragging by remember { mutableStateOf(false) }
 
-    fun captureSnapshot() {
-        if (dragSnapshot != null) return
+    /** 空白帧检测：部分机型（三星 OneUI）PixelCopy 可能“成功”但返回全透明/全黑空白帧。
+     *  采样 5 个点，全部同色或全透明视为失败——避免把空白帧当真快照导致白屏。 */
+    fun isBlankFrame(bmp: Bitmap): Boolean {
+        val w = bmp.width
+        val h = bmp.height
+        if (w <= 0 || h <= 0) return true
+        val xs = intArrayOf(w / 2, w / 5, 4 * w / 5, w / 2, w / 2)
+        val ys = intArrayOf(h / 2, h / 2, h / 2, h / 5, 4 * h / 5)
+        val c0 = bmp.getPixel(xs[0], ys[0])
+        if (c0 ushr 24 == 0) return true
+        for (i in 1 until xs.size) {
+            if (bmp.getPixel(xs[i], ys[i]) != c0) return false
+        }
+        return true
+    }
+
+    /** 抓「关闭态」整屏快照：内容静止时抓取，拖动开始前就已就绪，可直接复用。
+     *  失败/空白最多重试 2 次；仍失败则 closedFrame 保持 null → 实时平移模式（功能可用）。 */
+    fun captureClosedFrame() {
         val act = view.context as? Activity ?: return
         val window = act.window ?: return
         val decor = window.decorView
         val w = decor.width
         val h = decor.height
         if (w <= 0 || h <= 0) return
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val seq = captureSeq + 1
         captureSeq = seq
         try {
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             PixelCopy.request(window, bmp, { result ->
-                if (result == PixelCopy.SUCCESS && transitioning && seq == captureSeq) {
-                    dragSnapshot = bmp
+                if (result == PixelCopy.SUCCESS && seq == captureSeq) {
+                    if (isBlankFrame(bmp)) {
+                        bmp.recycle()
+                        if (captureRetry < 2) {
+                            captureRetry++
+                            Handler(Looper.getMainLooper()).postDelayed({ captureClosedFrame() }, 30)
+                        }
+                    } else {
+                        captureRetry = 0
+                        closedFrame = bmp
+                    }
                 } else {
                     bmp.recycle()
+                    if (result != PixelCopy.SUCCESS && captureRetry < 2) {
+                        captureRetry++
+                        Handler(Looper.getMainLooper()).postDelayed({ captureClosedFrame() }, 30)
+                    }
                 }
             }, Handler(Looper.getMainLooper()))
         } catch (t: Throwable) {
-            bmp.recycle()
-            // PixelCopy 不可用时不进快照模式：保留实时平移（仅此情况可能略卡，但功能可用）
+            // PixelCopy 不可用：保持实时平移，功能可用
         }
     }
+
+    fun scheduleRecapture() {
+        captureRetry = 0
+        scope.launch {
+            delay(420)
+            if (!snapshotActive && !dragging && drawerAnim.value < 0.1f) captureClosedFrame()
+        }
+    }
+
     fun releaseSnapshot() {
-        transitioning = false
-        dragSnapshot = null
+        snapshotActive = false
+        // 落定在关闭态时，趁内容静止刷新关闭帧（等 NavHost 转场/封面加载稳定）
+        if (drawerAnim.value < 0.1f) scheduleRecapture()
     }
 
     fun toggleDrawer(open: Boolean) {
-        transitioning = true
-        captureSnapshot()
+        snapshotActive = closedFrame != null
         scope.launch {
             drawerAnim.animateTo(
                 if (open) 1f else 0f,
@@ -141,7 +190,7 @@ fun HomeRoot() {
             releaseSnapshot()
         }
     }
-    var dragging by remember { mutableStateOf(false) }
+
     // 回弹：按「相对起手的拖动位移」判定，而不是看最终位置——
     // 从全开往回拉只需超过抽屉宽度 15% 即关闭，避免"拉不回来"
     fun settleDrawer(startValue: Float, totalX: Float) {
@@ -189,6 +238,17 @@ fun HomeRoot() {
     var showQueue by remember { mutableStateOf(false) }
 
     var lastBackPress by remember { mutableStateOf(0L) }
+
+    // 关闭帧管理：首屏稳定后抓一次；路由/列表变化后刷新（仅在抽屉关闭且未拖动时）
+    LaunchedEffect(Unit) {
+        delay(500)
+        if (!snapshotActive && !dragging && drawerAnim.value < 0.1f) captureClosedFrame()
+    }
+    LaunchedEffect(currentRoute, songs.size) {
+        delay(450)
+        if (!snapshotActive && !dragging && drawerAnim.value < 0.1f) captureClosedFrame()
+    }
+
     val rootRoutes = setOf("songs", "albums", "artists", "folders", "playlists")
     androidx.activity.compose.BackHandler(enabled = isDrawerOpen) {
         toggleDrawer(false)
@@ -240,11 +300,9 @@ fun HomeRoot() {
     Box(
         Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
     ) {
-        // ===== 左侧抽屉（固定，被推露出来）=====
-        // 快照期间（dragSnapshot != null）真实抽屉隐藏，画面由快照图层负责
+        // ===== 左侧抽屉（固定，被推露出来；快照期间也保持可见——快照里没有抽屉）=====
         Surface(
             modifier = Modifier.width(DRAWER_WIDTH).fillMaxHeight().align(Alignment.CenterStart).zIndex(0f)
-                .graphicsLayer { alpha = if (dragSnapshot != null) 0f else 1f }
                 // 抽屉展开时：在抽屉面板上拖动即可关闭（关闭时面板被内容层盖住，不会误触）
                 .pointerInput(Unit) {
                     var startValue = 0f
@@ -253,8 +311,8 @@ fun HomeRoot() {
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
-                            transitioning = true
-                            captureSnapshot()
+                            // 有已验证的关闭帧才启用快照；否则实时平移（内容不隐藏，绝不白屏）
+                            if (closedFrame != null) snapshotActive = true
                             startValue = drawerAnim.value
                             startX = start.x
                             totalX = 0f
@@ -341,14 +399,14 @@ fun HomeRoot() {
         // ===== 右侧主内容：抽屉展开时整体右移（推动式）=====
         // 手势覆盖整个内容区：全屏宽度任意位置右滑开抽屉、左滑关闭（播放器/队列页除外）
         // 绝对跟手映射：起手时快照，拖动位置直接换算，逐帧贴合手指
-        // 快照期间（dragSnapshot != null）真实内容隐藏，由最上层快照图层负责位移
+        // 快照期间（snapshotActive && closedFrame != null）真实内容隐藏，由最上层快照图层负责位移
         Box(
             Modifier
                 .fillMaxSize()
                 .zIndex(1f)
                 .graphicsLayer {
                     translationX = drawerAnim.value * drawerWidthPx
-                    alpha = if (dragSnapshot != null) 0f else 1f
+                    alpha = if (snapshotActive && closedFrame != null) 0f else 1f
                 }
                 .pointerInput(showPlayer, showQueue) {
                     if (showPlayer || showQueue) return@pointerInput
@@ -358,8 +416,8 @@ fun HomeRoot() {
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
-                            transitioning = true
-                            captureSnapshot()
+                            // 有已验证的关闭帧才启用快照；否则实时平移（内容不隐藏，绝不白屏）
+                            if (closedFrame != null) snapshotActive = true
                             startValue = drawerAnim.value
                             startX = start.x
                             totalX = 0f
@@ -495,8 +553,9 @@ fun HomeRoot() {
                 }
                 }
 
-            // ===== 快照图层（拖动/回弹期间替代真实内容，只平移一张位图）=====
-            dragSnapshot?.let { bmp ->
+            // ===== 快照图层（快照激活期间替代真实内容，只平移一张位图）=====
+            // 关闭态整帧 + 真实抽屉常显：打开时左侧露出真实抽屉、关闭时内容被完整覆盖，均无白屏
+            if (snapshotActive) closedFrame?.let { bmp ->
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = null,
