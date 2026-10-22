@@ -164,7 +164,7 @@ fun HomeRoot() {
     fun settleDrawer() {
         scope.launch {
             drawerAnim.animateTo(
-                if (drawerAnim.value > 0.35f) 1f else 0f,
+                if (drawerAnim.value > 0.25f) 1f else 0f,
                 animationSpec = tween(250)
             )
         }
@@ -270,19 +270,15 @@ fun HomeRoot() {
                     elevation = if (isDrawerOpen) 16.dp else 0.dp,
                     shape = RoundedCornerShape(0.dp)
                 )
-                .pointerInput(Unit) {
-                    val startThreshold = size.width * 0.35f
+                .pointerInput(showPlayer, showQueue) {
+                    // 播放器/队列页全屏时不启用抽屉手势；其余全屏宽度任意位置右滑均可开抽屉
+                    if (showPlayer || showQueue) return@pointerInput
                     detectHorizontalDragGestures(
-                        onDragStart = { start ->
-                            // 抽屉开着：任何左滑都用于关闭；关着：仅左 35% 内起手的右滑用于打开
-                            dragging = drawerAnim.value > 0.5f || start.x < startThreshold
-                        },
+                        onDragStart = { dragging = true },
                         onHorizontalDrag = { change, dragAmount ->
-                            if (dragging) {
-                                change.consume()
-                                scope.launch {
-                                    drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
-                                }
+                            change.consume()
+                            scope.launch {
+                                drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
                             }
                         },
                         onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
