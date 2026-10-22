@@ -96,6 +96,50 @@ fun parseLrc(text: String): List<LrcLine> {
     return lines.sortedBy { it.time }
 }
 
+/** 假名（平假名/片假名/半角片假名）判断 */
+fun isKana(c: Char): Boolean =
+    (c in '\u3040'..'\u30FF') || (c in '\uFF66'..'\uFF9F')
+
+/**
+ * 拆分"同一行混排 日文原文+翻译"的歌词行：
+ * 按空格/斜杠/顿号等常见分隔符切段，含假名的段 = 日文原文，不含假名且含字母的段 = 翻译。
+ * 返回 Pair(日文原文, 翻译)；已是单语种行（纯日文/纯中文/纯英文）返回 Pair(原文本, null) 保持原样。
+ */
+fun splitLrcLine(text: String): Pair<String, String?> {
+    // 1) 空格/符号分隔拆分（覆盖绝大多数"日文 中文"混排格式）
+    val parts = text.split(Regex("[ 　/／|｜·・,，、]+")).filter { it.isNotBlank() }
+    if (parts.size >= 2) {
+        val jp = parts.filter { it.any { c -> isKana(c) } }
+        val trans = parts.filter { it.none { c -> isKana(c) } && it.any { c -> c.isLetter() } }
+        if (jp.isNotEmpty() && trans.isNotEmpty()) {
+            return jp.joinToString("") to trans.joinToString(" ")
+        }
+    }
+    // 2) 无空格连续混排兜底：最后一个假名之后连续 ≥3 个汉字视为中文翻译
+    //    （≥3 保护：日文行末尾的汉字词如"景色""未来"只有 2 字，不会误拆）
+    var lastKana = -1
+    text.forEachIndexed { i, c -> if (isKana(c)) lastKana = i }
+    if (lastKana >= 0) {
+        var cnStart = -1
+        var cnCount = 0
+        for (i in lastKana + 1 until text.length) {
+            val c = text[i]
+            if (c in '\u4E00'..'\u9FFF' || c in '\u3400'..'\u4DBF') {
+                if (cnStart < 0) cnStart = i
+                cnCount++
+            } else if (cnStart >= 0) {
+                break
+            }
+        }
+        if (cnCount >= 3) {
+            val jp = text.substring(0, cnStart).trim()
+            val cn = text.substring(cnStart).trim()
+            if (jp.isNotBlank() && cn.isNotBlank()) return jp to cn
+        }
+    }
+    return text to null
+}
+
 @Composable
 fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
@@ -114,12 +158,18 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             try {
                 val file = File(song.data)
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
-                if (lrcFile.exists()) {
+                val parsed = if (lrcFile.exists()) {
                     parseLrc(lrcFile.readText())
                 } else if (file.exists()) {
                     val embedded = readId3Uslt(file)
                     if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
                 } else emptyList()
+                // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）
+                parsed.flatMap { line ->
+                    val (jp, trans) = splitLrcLine(line.text)
+                    if (trans != null) listOf(LrcLine(line.time, jp), LrcLine(line.time, trans))
+                    else listOf(line)
+                }
             } catch (e: Exception) {
                 emptyList()
             }
@@ -135,10 +185,22 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
         active
     }
     val activeLrc = lrcLines.getOrNull(activeLrcIndex)
-    val nextLrcStart = lrcLines.getOrNull(activeLrcIndex + 1)?.time ?: (activeLrc?.time ?: 0L) + 4000L
+    // 下一句起点：跳过同时间戳的翻译行（拆分后同一 time 有日文+翻译两行）
+    val nextLrcStart = lrcLines.firstOrNull { it.time > (activeLrc?.time ?: 0L) }?.time
+        ?: ((activeLrc?.time ?: 0L) + 4000L)
     val lineProgress = if (activeLrc != null && nextLrcStart > activeLrc.time) {
         ((pos - activeLrc.time).toFloat() / (nextLrcStart - activeLrc.time).toFloat()).coerceIn(0f, 1f)
     } else 0f
+
+    // 按时间戳分组（同 time 的 日文行+翻译行 为一组），供歌词面板分行渲染
+    val lyricGroups = remember(lrcLines) {
+        lrcLines.groupBy { it.time }.entries.sortedBy { it.key }.map { it.value }
+    }
+    var activeGroupIdx = -1
+    lyricGroups.forEachIndexed { i, g -> if (g.first().time <= pos) activeGroupIdx = i }
+    val activeGroup = lyricGroups.getOrNull(activeGroupIdx) ?: emptyList()
+    // 当前组的高亮行：优先含假名的日文行（卡拉OK高亮）；纯中文/纯英文歌词组取第一行
+    val activeJp = activeGroup.firstOrNull { l -> l.text.any { c -> isKana(c) } } ?: activeGroup.firstOrNull()
 
     val coverModel = song?.let {
         if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
@@ -320,29 +382,37 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            // 当前行前 3 行
-                            for (i in (activeLrcIndex - 3) until activeLrcIndex) {
-                                val t = lrcLines.getOrNull(i)?.text
-                                if (!t.isNullOrEmpty()) {
-                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Spacer(Modifier.height(27.dp))
-                                }
-                            }
-                            KaraokeText(
-                                text = activeLrc?.text ?: "",
-                                progress = lineProgress,
-                                activeColor = Color.White,
-                                dimColor = Color.White.copy(alpha = 0.6f),
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(Modifier.height(27.dp))
-                            // 当前行后 3 行
-                            for (i in (activeLrcIndex + 1)..(activeLrcIndex + 3)) {
-                                val t = lrcLines.getOrNull(i)?.text
-                                if (!t.isNullOrEmpty()) {
-                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Spacer(Modifier.height(27.dp))
+                            // 分组渲染：当前句(组)前 3 组 + 当前组 + 后 3 组；
+                            // 组内每行分行显示（日文原文 + 翻译各行独占一行，同 Salt 奥华子样式）
+                            val from = (activeGroupIdx - 3).coerceAtLeast(0)
+                            val to = (activeGroupIdx + 3).coerceAtMost(lyricGroups.size - 1)
+                            for (gi in from..to) {
+                                val g = lyricGroups[gi]
+                                for (li in g.indices) {
+                                    val line = g[li]
+                                    val isJp = line.text.any { c -> isKana(c) }
+                                    val isLastInGroup = li == g.lastIndex
+                                    if (gi == activeGroupIdx && line === activeJp) {
+                                        // 当前句的日文原文：卡拉OK高亮
+                                        KaraokeText(
+                                            text = line.text,
+                                            progress = lineProgress,
+                                            activeColor = Color.White,
+                                            dimColor = Color.White.copy(alpha = 0.6f),
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    } else {
+                                        Text(
+                                            line.text,
+                                            color = Color.White.copy(alpha = if (gi == activeGroupIdx) 0.55f else 0.38f),
+                                            fontSize = if (isJp) 20.sp else 14.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    // 间距：日文行后小间距（翻译紧跟），组末行正常间距（组与组分开）
+                                    Spacer(Modifier.height(if (!isLastInGroup && isJp) 6.dp else 27.dp))
                                 }
                             }
                         }
