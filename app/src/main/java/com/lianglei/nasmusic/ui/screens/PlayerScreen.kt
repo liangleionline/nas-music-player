@@ -222,46 +222,56 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                         )
                     }
             ) {
-                // 封面面板：slide=0 原位；左滑时向左平移出屏
-                Box(
-                    Modifier.fillMaxWidth().offset { IntOffset(slide.value.roundToInt(), 0) }
-                        .clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.08f)).padding(12.dp)
-                ) {
-                    AsyncImage(
-                        model = song?.let {
-                            if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
-                            else "content://media/external/audio/albumart/${it.albumId}"
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))
-                    )
-                }
-                // 歌词面板：初始在右侧屏外（slide+panelWidth），滑到位后占据原位
+                // 封面面板：slide=0 原位；左滑时向左平移出屏（无边框，直接显示封面图）
+                AsyncImage(
+                    model = song?.let {
+                        if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
+                        else "content://media/external/audio/albumart/${it.albumId}"
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                        .offset { IntOffset(slide.value.roundToInt(), 0) }
+                        .clip(RoundedCornerShape(12.dp))
+                )
+                // 歌词面板：初始在右侧屏外（slide+panelWidth），滑到位后占据原位；透明背景，直接叠在渐变上
                 Box(
                     Modifier.fillMaxWidth().aspectRatio(1f)
-                        .offset { IntOffset(slide.value.roundToInt() + panelWidth, 0) }
-                        .clip(RoundedCornerShape(20.dp)).background(Color(0xCC1E1E22))
-                        .padding(12.dp),
+                        .offset { IntOffset(slide.value.roundToInt() + panelWidth, 0) },
                     contentAlignment = Alignment.Center
                 ) {
                     if (lrcLines.isEmpty()) {
                         Text("暂无歌词", color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
                     } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            val prev = lrcLines.getOrNull(activeLrcIndex - 1)
-                            val next = lrcLines.getOrNull(activeLrcIndex + 1)
-                            Text(prev?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Spacer(Modifier.height(12.dp))
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            // 当前行前 3 行
+                            for (i in (activeLrcIndex - 3) until activeLrcIndex) {
+                                val t = lrcLines.getOrNull(i)?.text
+                                if (!t.isNullOrEmpty()) {
+                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.height(30.dp))
+                                }
+                            }
                             KaraokeText(
                                 text = activeLrc?.text ?: "",
                                 progress = lineProgress,
                                 activeColor = Color.White,
-                                dimColor = Color.White.copy(alpha = 0.55f),
+                                dimColor = Color.White.copy(alpha = 0.6f),
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Medium
                             )
-                            Spacer(Modifier.height(12.dp))
-                            Text(next?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(30.dp))
+                            // 当前行后 3 行
+                            for (i in (activeLrcIndex + 1)..(activeLrcIndex + 3)) {
+                                val t = lrcLines.getOrNull(i)?.text
+                                if (!t.isNullOrEmpty()) {
+                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.height(30.dp))
+                                }
+                            }
                         }
                     }
                 }
