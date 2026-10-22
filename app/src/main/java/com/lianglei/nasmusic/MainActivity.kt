@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         ticker?.cancel()
         if (::controllerFuture.isInitialized) MediaController.releaseFuture(controllerFuture)
+        PlayerManager.unbind()
         super.onStop()
     }
 }

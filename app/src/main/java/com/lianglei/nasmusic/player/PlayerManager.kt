@@ -35,29 +35,40 @@ object PlayerManager {
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
 
     fun bind(controller: MediaController) {
+        // 换绑前移除旧监听，避免重复绑定累积
+        this.controller?.removeListener(playerListener)
         this.controller = controller
-        controller.addListener(object : Player.Listener {
-            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                val idx = controller.currentMediaItemIndex
-                com.lianglei.nasmusic.util.CrashLogger.log("onMediaItemTransition: idx=$idx, reason=$reason, title=${_queue.value.getOrNull(idx)?.title}")
-                if (controller.mediaItemCount > 0) {
-                    _currentIndex.value = idx
-                    _durationMs.value = controller.duration.coerceAtLeast(0)
-                }
+        controller.addListener(playerListener)
+    }
+
+    private val playerListener = object : Player.Listener {
+        override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+            val idx = controller?.currentMediaItemIndex ?: return
+            com.lianglei.nasmusic.util.CrashLogger.log("onMediaItemTransition: idx=$idx, reason=$reason, title=${_queue.value.getOrNull(idx)?.title}")
+            if (controller?.mediaItemCount ?: 0 > 0) {
+                _currentIndex.value = idx
+                _durationMs.value = controller?.duration?.coerceAtLeast(0) ?: 0
             }
-            override fun onIsPlayingChanged(playing: Boolean) {
-                _isPlaying.value = playing
-            }
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                _buffering.value = playbackState == Player.STATE_BUFFERING
-            }
-            override fun onPositionDiscontinuity(
-                oldPos: Player.PositionInfo, newPos: Player.PositionInfo, reason: Int
-            ) {
-                _positionMs.value = controller.currentPosition
-                _durationMs.value = controller.duration.coerceAtLeast(0)
-            }
-        })
+        }
+        override fun onIsPlayingChanged(playing: Boolean) {
+            _isPlaying.value = playing
+        }
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            _buffering.value = playbackState == Player.STATE_BUFFERING
+        }
+        override fun onPositionDiscontinuity(
+            oldPos: Player.PositionInfo, newPos: Player.PositionInfo, reason: Int
+        ) {
+            val c = controller ?: return
+            _positionMs.value = c.currentPosition
+            _durationMs.value = c.duration.coerceAtLeast(0)
+        }
+    }
+
+    /** Activity.onStop 时调用：释放引用，避免对已释放 controller 操作导致按钮失灵/进度归零 */
+    fun unbind() {
+        controller?.removeListener(playerListener)
+        controller = null
     }
 
     fun playQueue(songs: List<Song>, startIndex: Int) {
