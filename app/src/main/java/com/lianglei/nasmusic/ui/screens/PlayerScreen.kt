@@ -188,18 +188,19 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     modifier = Modifier.size(26.dp)
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
 
             // 封面/歌词 左右滑动切换（两块玻璃跟手平移：封面左滑出屏、歌词右滑入，反向亦然）
-            // 面板高度 = 屏幕 64%，歌词块垂直居中后中心落在屏幕 ~43%（与 Salt 一致）
-            // slide 范围 [0, -2×panelWidth]：封面滑出量 = 面板宽 + 出屏余量(一个面板宽)，绝对完全出屏不留边；
-            // 歌词面板 offset = slide + 2×panelWidth：初始在右侧两屏外，到位时正好 = 0 占据原位
-            val panelHeight = (LocalConfiguration.current.screenHeightDp * 0.64f).dp
+            // 面板占剩余全部高度(weight 1f)，歌词块垂直居中后中心自动落在屏幕 ~43%（与 Salt 一致），
+            // 且任何屏高都不溢出、不挤压底部控件
+            // slide 范围 [0, -panelWidth]：封面滑出一个面板宽（≈屏宽）正好完全出屏、不多移；
+            // 歌词面板 offset = slide + panelWidth：初始在右侧一屏外，到位时正好 = 0 占据原位；
+            // 切换阈值 = 半面板宽：从任何一端回滑半屏即切换，行程对称
             var panelWidth by remember { mutableStateOf(0) }
-            val slide = remember { Animatable(0f) } // 0 = 显示封面；-2×panelWidth = 显示歌词
+            val slide = remember { Animatable(0f) } // 0 = 显示封面；-panelWidth = 显示歌词
             val scope = rememberCoroutineScope()
             Box(
-                Modifier.fillMaxWidth().height(panelHeight)
+                Modifier.fillMaxWidth().weight(1f)
                     .onSizeChanged { panelWidth = it.width }
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
@@ -208,20 +209,20 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                                 change.consume()
                                 if (panelWidth > 0) {
                                     scope.launch {
-                                        // 跟手平移；下限 -2×panelWidth 保证封面绝对出屏
-                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat() * 2f, 0f))
+                                        // 跟手平移；下限 -panelWidth（一个面板宽），封面恰好完全出屏
+                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat(), 0f))
                                     }
                                 }
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() * 2f else 0f
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             },
                             onDragCancel = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() * 2f else 0f
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             }
@@ -240,10 +241,10 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                         .offset { IntOffset(slide.value.roundToInt(), 0) }
                         .clip(RoundedCornerShape(12.dp))
                 )
-                // 歌词面板：初始在右侧两屏外（slide+2×panelWidth），滑到位后占据原位；透明背景，直接叠在渐变上
+                // 歌词面板：初始在右侧一屏外（slide+panelWidth），滑到位后占据原位；透明背景，直接叠在渐变上
                 Box(
                     Modifier.fillMaxWidth().fillMaxHeight()
-                        .offset { IntOffset(slide.value.roundToInt() + panelWidth * 2, 0) },
+                        .offset { IntOffset(slide.value.roundToInt() + panelWidth, 0) },
                     contentAlignment = Alignment.Center
                 ) {
                     if (lrcLines.isEmpty()) {
@@ -283,9 +284,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
-
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(8.dp))
 
             // Progress bar
             Slider(
@@ -303,24 +302,24 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                 Spacer(Modifier.weight(1f))
                 Text(fmtTime(dur), color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // Play controls
+            // Play controls（对齐 Salt：上一曲/下一曲 48dp，播放 72dp）
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { PlayerManager.prev() }) {
-                    Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(42.dp))
+                    Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
                 }
                 IconButton(onClick = { PlayerManager.togglePlayPause() }) {
                     Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
-                        tint = Color.White, modifier = Modifier.size(64.dp))
+                        tint = Color.White, modifier = Modifier.size(72.dp))
                 }
                 IconButton(onClick = { PlayerManager.next() }) {
-                    Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(42.dp))
+                    Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp))
                 }
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // Bottom action row - 5 items evenly weighted so center aligns with play button
+            // Bottom action row - 5 items evenly weighted so center aligns with play button（对齐 Salt：图标 32dp）
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 listOf(
                     Icons.Filled.Shuffle to {},
@@ -330,11 +329,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     Icons.Filled.MoreVert to {}
                 ).forEach { (icon, action) ->
                     IconButton(onClick = action, modifier = Modifier.weight(1f)) {
-                        Icon(icon, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(24.dp))
+                        Icon(icon, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
