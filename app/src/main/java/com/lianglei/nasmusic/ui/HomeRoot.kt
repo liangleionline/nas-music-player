@@ -8,8 +8,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,8 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +35,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
@@ -159,22 +156,51 @@ fun HomeRoot() {
                     override fun onDrawerClosed(drawerView: View) { drawerOpenState.value = false }
                 })
 
-                // 右侧主内容（Compose）
-                addView(
-                    ComposeView(ctx).apply {
-                        setBackgroundColor(0xFFF2F3F5.toInt())
-                        setContent {
-                            HomeContent(
-                                nav = nav,
-                                showPlayerState = showPlayerState,
-                                showQueueState = showQueueState,
-                                searchTriggerState = searchTriggerState,
-                                drawerOpenState = drawerOpenState,
-                                onOpenDrawer = { openDrawer(GravityCompat.START) },
-                                onCloseDrawer = { closeDrawer(GravityCompat.START) }
-                            )
+                // 右侧主内容（Compose）+ View 层全屏手势（只观察、零消费，物理上不挡下层）
+                val contentView = ComposeView(ctx).apply {
+                    setBackgroundColor(0xFFF2F3F5.toInt())
+                    setContent {
+                        HomeContent(
+                            nav = nav,
+                            showPlayerState = showPlayerState,
+                            showQueueState = showQueueState,
+                            searchTriggerState = searchTriggerState,
+                            drawerOpenState = drawerOpenState,
+                            onOpenDrawer = { openDrawer(GravityCompat.START) },
+                            onCloseDrawer = { closeDrawer(GravityCompat.START) }
+                        )
+                    }
+                }
+                val slop = android.util.TypedValue.applyDimension(
+                    android.util.TypedValue.COMPLEX_UNIT_DIP, 24f, ctx.resources.displayMetrics
+                )
+                var touchStartX = 0f
+                var touchStartY = 0f
+                contentView.setOnTouchListener { _, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            touchStartX = event.x
+                            touchStartY = event.y
                         }
-                    },
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            val dx = event.x - touchStartX
+                            val dy = event.y - touchStartY
+                            if (kotlin.math.abs(dx) > slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                                if (this@apply.getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED) {
+                                    if (this@apply.isDrawerOpen(GravityCompat.START)) {
+                                        if (dx < 0) this@apply.closeDrawer(GravityCompat.START)
+                                    } else if (touchStartX > slop && dx > 0) {
+                                        this@apply.openDrawer(GravityCompat.START)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // 返回 false：绝不消费，事件完整透传给 Compose（汉堡键/列表滚动/点击播放不受任何影响）
+                    false
+                }
+                addView(
+                    contentView,
                     ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 )
 
@@ -251,9 +277,6 @@ private fun HomeContent(
         else -> "NAS Music"
     }
 
-    val edgePx = with(LocalDensity.current) { 60.dp.toPx() }
-
-    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = Color(0xFFF2F3F5),
         topBar = {
@@ -367,41 +390,6 @@ private fun HomeContent(
                 QueueScreen(onClose = { showQueueState.value = false })
             }
         }
-    }
-
-        // 全屏手势层（纯观察、零消费）：绝不拦截点击/滚动，只累计水平位移。
-        // 屏幕左缘 20dp 由 DrawerLayout 原生跟手；其余区域右滑超阈值开抽屉、左滑关抽屉。
-        Box(
-            Modifier.fillMaxSize().pointerInput(showPlayer, showQueue, drawerOpen) {
-                if (showPlayer || showQueue) return@pointerInput
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    var startX = down.position.x
-                    var startY = down.position.y
-                    var totalX = 0f
-                    var horizontal = false
-                    var dx = 0f
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        // 手指抬起、或事件已被下层（列表滚动等）消费：结束本次观察
-                        if (change.changedToUpIgnoreConsumed() || change.isConsumed) break
-                        dx = change.position.x - startX
-                        if (!horizontal) {
-                            val dy = change.position.y - startY
-                            // 水平起势判定：x 位移超过阈值且明显大于 y（避免抢纵向滚动）
-                            if (kotlin.math.abs(dx) > 24f && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
-                                horizontal = true
-                            }
-                        }
-                    }
-                    if (horizontal) {
-                        if (!drawerOpen && startX > edgePx && dx > edgePx) onOpenDrawer()
-                        else if (drawerOpen && dx < -edgePx) onCloseDrawer()
-                    }
-                }
-            }
-        )
     }
 }
 
