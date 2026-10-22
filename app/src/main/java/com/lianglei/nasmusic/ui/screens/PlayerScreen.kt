@@ -220,15 +220,16 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             },
                             onDragEnd = {
                                 scope.launch {
+                                    // 阈值降到四分之一行程：轻滑即切（原半程需大幅滑动才成功）
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val target = if (slide.value < limit / 2f) limit else 0f
+                                    val target = if (slide.value < limit / 4f) limit else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             },
                             onDragCancel = {
                                 scope.launch {
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val target = if (slide.value < limit / 2f) limit else 0f
+                                    val target = if (slide.value < limit / 4f) limit else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             }
