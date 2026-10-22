@@ -249,12 +249,13 @@ private fun HomeContent(
         else -> "NAS Music"
     }
 
-    Scaffold(
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
         containerColor = Color(0xFFF2F3F5),
         topBar = {
-            // 播放页/队列页打开时隐藏顶栏（汉堡键/标题/搜索），实现全屏沉浸
-            if (!showPlayer && !showQueue) {
-                CenterAlignedTopAppBar(
+            // 顶栏始终显示：播放页/队列页是 Scaffold 之上的全屏浮层（见文件末尾），天然覆盖顶栏，
+            // 不再用条件隐藏——否则点歌瞬间顶栏先消失、列表上跳
+            CenterAlignedTopAppBar(
                 title = { Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = {
@@ -288,19 +289,16 @@ private fun HomeContent(
                     actionIconContentColor = Color.Black
                 )
             )
-            }
         },
         bottomBar = {
-            // 播放页/队列页打开时隐藏迷你播放栏
-            if (!showPlayer && !showQueue) {
-                MiniPlayer(
-                    song = current,
-                    isPlaying = isPlaying,
-                    buffering = buffering,
-                    onClick = { showPlayerState.value = true },
-                    onQueue = { showQueueState.value = true }
-                )
-            }
+            // 迷你播放栏始终显示：播放页/队列页全屏浮层会覆盖它
+            MiniPlayer(
+                song = current,
+                isPlaying = isPlaying,
+                buffering = buffering,
+                onClick = { showPlayerState.value = true },
+                onQueue = { showQueueState.value = true }
+            )
         }
     ) { pad ->
         Box(Modifier.fillMaxSize()) {
@@ -351,23 +349,25 @@ private fun HomeContent(
                     }
                 }
             }
-
-            // Fullscreen overlay - covers entire window including status bar
-            AnimatedVisibility(
-                visible = showPlayer,
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it }
-            ) {
-                PlayerScreen(onOpenQueue = { showQueueState.value = true })
-            }
-            AnimatedVisibility(
-                visible = showQueue,
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it }
-            ) {
-                QueueScreen(onClose = { showQueueState.value = false })
-            }
         }
+    }
+
+    // Fullscreen overlay - Scaffold 之上的全屏浮层，覆盖整个窗口（含顶栏/迷你栏/状态栏）。
+    // 放在 Scaffold 外，浮层绘制在顶层，因此顶栏无需隐藏、点歌时列表不再上跳
+    AnimatedVisibility(
+        visible = showPlayer,
+        enter = slideInVertically { it },
+        exit = slideOutVertically { it }
+    ) {
+        PlayerScreen(onOpenQueue = { showQueueState.value = true })
+    }
+    AnimatedVisibility(
+        visible = showQueue,
+        enter = slideInVertically { it },
+        exit = slideOutVertically { it }
+    ) {
+        QueueScreen(onClose = { showQueueState.value = false })
+    }
     }
 }
 
