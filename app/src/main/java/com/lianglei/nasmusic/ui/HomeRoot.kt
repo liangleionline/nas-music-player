@@ -10,7 +10,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -65,7 +69,6 @@ private val systemEntries = listOf(
 )
 
 private val DRAWER_WIDTH = 224.dp
-private val EDGE_STRIP = 40.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -161,15 +164,6 @@ fun HomeRoot() {
     val current = queue.getOrNull(currentIndex)
 
     val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
-    var dragging by remember { mutableStateOf(false) }
-    fun settleDrawer() {
-        scope.launch {
-            drawerAnim.animateTo(
-                if (drawerAnim.value > 0.35f) 1f else 0f,
-                animationSpec = tween(250)
-            )
-        }
-    }
 
     Box(
         Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
@@ -375,22 +369,60 @@ fun HomeRoot() {
                 }
             }
 
-            // 左边缘手势条：列表页也能右滑开抽屉/左滑关抽屉（纯手势，不挡点击）
+            // 全屏手势层：左缘右滑开抽屉（消费 down 抢占，列表页/系统返回手势都让位）；
+            // 顶栏区域完全放行（汉堡键好按）；抽屉展开时左滑关闭（不消费 down，抽屉项可点）
             if (!showPlayer && !showQueue) {
                 Box(
-                    Modifier.fillMaxHeight().width(EDGE_STRIP).align(Alignment.CenterStart)
+                    Modifier.fillMaxSize().zIndex(4f)
                         .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { dragging = true },
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    scope.launch {
-                                        drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                            val edgePx = 28.dp.toPx()
+                            val topBarPx = 88.dp.toPx()
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val open = drawerAnim.value > 0.5f
+                                if (down.position.y < topBarPx) return@awaitEachGesture
+                                if (!open) {
+                                    if (down.position.x >= edgePx) return@awaitEachGesture
+                                    down.consume()
+                                    var started = false
+                                    val drag = awaitTouchSlopOrCancellation(down.id) { change, _ ->
+                                        change.consume()
+                                        started = true
                                     }
-                                },
-                                onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
-                                onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
-                            )
+                                    if (drag != null && started) {
+                                        scope.launch {
+                                            drawerAnim.snapTo((drawerAnim.value + drag.positionChange().x / drawerWidthPx).coerceIn(0f, 1f))
+                                        }
+                                        drag(down.id) { change ->
+                                            change.consume()
+                                            val dx = change.positionChange().x
+                                            scope.launch {
+                                                drawerAnim.snapTo((drawerAnim.value + dx / drawerWidthPx).coerceIn(0f, 1f))
+                                            }
+                                        }
+                                        scope.launch {
+                                            drawerAnim.animateTo(if (drawerAnim.value > 0.35f) 1f else 0f, tween(250))
+                                        }
+                                    }
+                                } else {
+                                    val drag = awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                                    if (drag != null) {
+                                        scope.launch {
+                                            drawerAnim.snapTo((drawerAnim.value + drag.positionChange().x / drawerWidthPx).coerceIn(0f, 1f))
+                                        }
+                                        drag(down.id) { change ->
+                                            change.consume()
+                                            val dx = change.positionChange().x
+                                            scope.launch {
+                                                drawerAnim.snapTo((drawerAnim.value + dx / drawerWidthPx).coerceIn(0f, 1f))
+                                            }
+                                        }
+                                        scope.launch {
+                                            drawerAnim.animateTo(if (drawerAnim.value > 0.35f) 1f else 0f, tween(250))
+                                        }
+                                    }
+                                }
+                            }
                         }
                 )
             }
