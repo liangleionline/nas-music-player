@@ -46,6 +46,7 @@ import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
@@ -369,59 +370,52 @@ fun HomeRoot() {
                 }
             }
 
-            // 全屏手势层：左缘右滑开抽屉（消费 down 抢占，列表页/系统返回手势都让位）；
-            // 顶栏区域完全放行（汉堡键好按）；抽屉展开时左滑关闭（不消费 down，抽屉项可点）
+            // 全屏手势层：左缘右滑开抽屉（消费 down 抢占，列表页/系统返回手势让位）；
+            // 顶栏区域完全放行（汉堡键好按）；抽屉展开时左滑关闭
+            // 注意：放行的触摸必须用空 drag() 跟完整手势再结束，禁止提前 return（会主线程忙循环 ANR）
             if (!showPlayer && !showQueue) {
                 Box(
                     Modifier.fillMaxSize().zIndex(4f)
                         .pointerInput(Unit) {
                             val edgePx = 28.dp.toPx()
                             val topBarPx = 88.dp.toPx()
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                val open = drawerAnim.value > 0.5f
-                                if (down.position.y < topBarPx) return@awaitEachGesture
-                                if (!open) {
-                                    if (down.position.x >= edgePx) return@awaitEachGesture
-                                    down.consume()
-                                    var started = false
-                                    val drag = awaitTouchSlopOrCancellation(down.id) { change, _ ->
-                                        change.consume()
-                                        started = true
-                                    }
-                                    if (drag != null && started) {
-                                        scope.launch {
-                                            drawerAnim.snapTo((drawerAnim.value + drag.positionChange().x / drawerWidthPx).coerceIn(0f, 1f))
-                                        }
-                                        drag(down.id) { change ->
+                            try {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val open = drawerAnim.value > 0.5f
+                                    val inTopBar = down.position.y < topBarPx
+                                    val claim = if (open) !inTopBar else (!inTopBar && down.position.x < edgePx)
+                                    if (!claim) {
+                                        // 放行：空 drag() 跟完本次手势，不消费任何事件
+                                        drag(down.id) { }
+                                    } else {
+                                        down.consume()
+                                        var started = false
+                                        val slopDrag = awaitTouchSlopOrCancellation(down.id) { change, _ ->
                                             change.consume()
-                                            val dx = change.positionChange().x
+                                            started = true
+                                        }
+                                        if (slopDrag != null && started) {
                                             scope.launch {
-                                                drawerAnim.snapTo((drawerAnim.value + dx / drawerWidthPx).coerceIn(0f, 1f))
+                                                drawerAnim.snapTo((drawerAnim.value + slopDrag.positionChange().x / drawerWidthPx).coerceIn(0f, 1f))
                                             }
-                                        }
-                                        scope.launch {
-                                            drawerAnim.animateTo(if (drawerAnim.value > 0.35f) 1f else 0f, tween(250))
-                                        }
-                                    }
-                                } else {
-                                    val drag = awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                                    if (drag != null) {
-                                        scope.launch {
-                                            drawerAnim.snapTo((drawerAnim.value + drag.positionChange().x / drawerWidthPx).coerceIn(0f, 1f))
-                                        }
-                                        drag(down.id) { change ->
-                                            change.consume()
-                                            val dx = change.positionChange().x
+                                            drag(down.id) { change ->
+                                                change.consume()
+                                                val dx = change.positionChange().x
+                                                scope.launch {
+                                                    drawerAnim.snapTo((drawerAnim.value + dx / drawerWidthPx).coerceIn(0f, 1f))
+                                                }
+                                            }
                                             scope.launch {
-                                                drawerAnim.snapTo((drawerAnim.value + dx / drawerWidthPx).coerceIn(0f, 1f))
+                                                drawerAnim.animateTo(if (drawerAnim.value > 0.35f) 1f else 0f, tween(250))
                                             }
-                                        }
-                                        scope.launch {
-                                            drawerAnim.animateTo(if (drawerAnim.value > 0.35f) 1f else 0f, tween(250))
                                         }
                                     }
                                 }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                // 手势层异常不致命：保底不崩溃
                             }
                         }
                 )
