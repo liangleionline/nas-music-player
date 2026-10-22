@@ -40,8 +40,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import android.app.Activity
 import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.data.MusicSource
 import com.lianglei.nasmusic.data.Song
@@ -92,21 +95,43 @@ fun HomeRoot() {
     // （单张位图逐帧位移 = GPU 合成，不触发任何重绘），松手落定后再切回真实界面。
     // 原因：androidx Compose 直到 1.8 都没有"内容缓存为纹理再位移"的公开 API，
     // 直接平移真实内容会让整屏显示列表每帧重录 → 掉帧（列表滚动流畅但抽屉卡顿的根源）。
+    // 抓屏用 PixelCopy（硬件加速，兼容 Coil 硬件位图）；软件 Canvas.draw 画硬件位图会崩溃。
     val view = LocalView.current
     var dragSnapshot by remember { mutableStateOf<Bitmap?>(null) }
+    var transitioning by remember { mutableStateOf(false) }
+    var captureSeq by remember { mutableStateOf(0) }
 
     fun captureSnapshot() {
         if (dragSnapshot != null) return
-        val w = view.width
-        val h = view.height
+        val act = view.context as? Activity ?: return
+        val window = act.window ?: return
+        val decor = window.decorView
+        val w = decor.width
+        val h = decor.height
         if (w <= 0 || h <= 0) return
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        view.draw(Canvas(bmp))
-        dragSnapshot = bmp
+        val seq = captureSeq + 1
+        captureSeq = seq
+        try {
+            PixelCopy.request(window, bmp, { result ->
+                if (result == PixelCopy.SUCCESS && transitioning && seq == captureSeq) {
+                    dragSnapshot = bmp
+                } else {
+                    bmp.recycle()
+                }
+            }, Handler(Looper.getMainLooper()))
+        } catch (t: Throwable) {
+            bmp.recycle()
+            // PixelCopy 不可用时不进快照模式：保留实时平移（仅此情况可能略卡，但功能可用）
+        }
     }
-    fun releaseSnapshot() { dragSnapshot = null }
+    fun releaseSnapshot() {
+        transitioning = false
+        dragSnapshot = null
+    }
 
     fun toggleDrawer(open: Boolean) {
+        transitioning = true
         captureSnapshot()
         scope.launch {
             drawerAnim.animateTo(
@@ -228,6 +253,7 @@ fun HomeRoot() {
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
+                            transitioning = true
                             captureSnapshot()
                             startValue = drawerAnim.value
                             startX = start.x
@@ -332,6 +358,7 @@ fun HomeRoot() {
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
+                            transitioning = true
                             captureSnapshot()
                             startValue = drawerAnim.value
                             startX = start.x
