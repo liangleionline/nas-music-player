@@ -650,15 +650,23 @@ fun SmokeBackground(palette: List<Color>, running: Boolean) {
     Canvas(Modifier.fillMaxSize()) {
         val t = phase.value
         val base = if (palette.isEmpty()) listOf(Color(0xFF3A3A3E), Color(0xFF8B5A2B)) else palette
-        // 6 团：主色循环 + 1 团白色（灰蒙蒙烟雾）
+        val cw = size.width
+        val ch = size.height
+        val cx0 = cw * 0.5f
+        val cy0 = ch * 0.5f
+        // 6 团：主色循环 + 1 团白色（灰蒙蒙烟雾）；
+        // 圆心约束在屏幕外围环形轨道（距屏中心 0.38w~0.56w 缓慢呼吸），
+        // 靠近中央时 sin 到达极值点自动反向 → 烟团中心永不进入屏幕中央区
         repeat(6) { i ->
             val c = if (i == 5) Color.White.copy(alpha = 0.30f) else base[i % base.size]
-            val f1 = 1.2f + 0.18f * i      // 极低频漂移（相位角速度 ~0.07~0.19 rad/s）
-            val f2 = 1.0f + 0.22f * i
-            val cx = size.width * (0.5f + 0.42f * sin(t * f1 + i * 1.7f))
-            val cy = size.height * (0.5f + 0.42f * cos(t * f2 + i * 2.3f))
+            // 各团角速度不同、奇偶团方向相反（避免同向绕圈机械化）；一圈约 7~15 分钟
+            val dir = if (i % 2 == 0) 1f else -1f
+            val theta = t * (0.25f + 0.06f * i) * dir + i * 1.0472f
+            val rr = cw * (0.47f + 0.09f * sin(t * 0.9f + i * 1.9f))
+            val cx = cx0 + rr * cos(theta)
+            val cy = cy0 + rr * 0.95f * sin(theta)
             // 大烟团：半径 0.30~0.46 倍屏高（直径最大 ~0.92 屏高），弥散覆盖大半屏
-            val r = size.height * (0.38f + 0.08f * sin(t * 0.4f + i * 1.3f))
+            val r = ch * (0.38f + 0.08f * sin(t * 0.4f + i * 1.3f))
             val peak = if (i == 5) 0.22f else 0.20f
             drawCircle(
                 brush = Brush.radialGradient(
@@ -673,6 +681,21 @@ fun SmokeBackground(palette: List<Color>, running: Boolean) {
                 blendMode = BlendMode.Plus
             )
         }
+        // 中央径向压暗：把多团浓带交叉漏进屏幕中部的烟尾压掉，
+        // 屏幕中央干净（歌词可读），烟雾视觉上只在外围缭绕
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(
+                    Color.Black.copy(alpha = 0.34f),
+                    Color.Black.copy(alpha = 0.12f),
+                    Color.Black.copy(alpha = 0f)
+                ),
+                center = Offset(cx0, cy0),
+                radius = cw * 0.62f
+            ),
+            radius = cw * 0.62f,
+            center = Offset(cx0, cy0)
+        )
     }
 }
 
