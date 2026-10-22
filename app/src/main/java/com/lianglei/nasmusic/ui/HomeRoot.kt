@@ -252,7 +252,9 @@ private fun HomeContent(
     Scaffold(
         containerColor = Color(0xFFF2F3F5),
         topBar = {
-            CenterAlignedTopAppBar(
+            // 播放页/队列页打开时隐藏顶栏（汉堡键/标题/搜索），实现全屏沉浸
+            if (!showPlayer && !showQueue) {
+                CenterAlignedTopAppBar(
                 title = { Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = {
@@ -286,15 +288,19 @@ private fun HomeContent(
                     actionIconContentColor = Color.Black
                 )
             )
+            }
         },
         bottomBar = {
-            MiniPlayer(
-                song = current,
-                isPlaying = isPlaying,
-                buffering = buffering,
-                onClick = { showPlayerState.value = true },
-                onQueue = { showQueueState.value = true }
-            )
+            // 播放页/队列页打开时隐藏迷你播放栏
+            if (!showPlayer && !showQueue) {
+                MiniPlayer(
+                    song = current,
+                    isPlaying = isPlaying,
+                    buffering = buffering,
+                    onClick = { showPlayerState.value = true },
+                    onQueue = { showQueueState.value = true }
+                )
+            }
         }
     ) { pad ->
         Box(Modifier.fillMaxSize()) {
