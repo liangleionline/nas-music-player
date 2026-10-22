@@ -258,6 +258,7 @@ fun HomeRoot() {
         }
 
         // ===== 右侧主内容：抽屉展开时整体右移（推动式）=====
+        // 手势检测挂在整个内容区：起点在屏幕左 35% 内即可右滑开抽屉（不再苛求边缘 48dp）
         Box(
             Modifier
                 .fillMaxSize()
@@ -269,6 +270,25 @@ fun HomeRoot() {
                     elevation = if (isDrawerOpen) 16.dp else 0.dp,
                     shape = RoundedCornerShape(0.dp)
                 )
+                .pointerInput(Unit) {
+                    val startThreshold = size.width * 0.35f
+                    detectHorizontalDragGestures(
+                        onDragStart = { start ->
+                            // 抽屉开着：任何左滑都用于关闭；关着：仅左 35% 内起手的右滑用于打开
+                            dragging = drawerAnim.value > 0.5f || start.x < startThreshold
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (dragging) {
+                                change.consume()
+                                scope.launch {
+                                    drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                                }
+                            }
+                        },
+                        onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
+                        onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
+                    )
+                }
         ) {
             Scaffold(
                 containerColor = Color(0xFFF2F3F5),
@@ -387,28 +407,6 @@ fun HomeRoot() {
                     }
                 }
             }
-        }
-
-        // 左缘手势条（根层最顶层，全高 48dp，覆盖顶栏但不抢点击——只在真正水平拖动时才消费）：
-        // detectHorizontalDragGestures 无忙循环，绝不卡死主线程；
-        // 结合 MainActivity 的系统手势排除区，边缘右滑不会被系统返回手势截走
-        if (!showPlayer && !showQueue) {
-            Box(
-                Modifier.width(48.dp).fillMaxHeight().align(Alignment.CenterStart).zIndex(5f)
-                    .pointerInput(Unit) {
-                        detectHorizontalDragGestures(
-                            onDragStart = { dragging = true },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                scope.launch {
-                                    drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
-                                }
-                            },
-                            onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
-                            onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
-                        )
-                    }
-            )
         }
     }
 }
