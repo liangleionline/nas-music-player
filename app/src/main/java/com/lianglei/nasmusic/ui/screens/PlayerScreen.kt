@@ -235,13 +235,21 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             val edgePx = with(LocalDensity.current) { 24.dp.toPx() }
             var panelWidth by remember { mutableStateOf(0) }
             val slide = remember { Animatable(0f) } // 0 = 显示封面；-(panelWidth+edgePx) = 显示歌词
+            // 拖动起点状态：0 = 起点封面端，limit = 起点歌词端。
+            // 切换判定必须基于起点+滑动方向：起点在歌词端时右滑超过 1/16 面板宽即回封面，
+            // 起点在封面端时左滑超过 1/16 即切歌词——否则(基于当前位置)从歌词端右滑会一直
+            // 命中"切歌词"分支而弹回歌词（v1.4.33 的 bug，用户滑半屏切不回封面的原因）。
+            var dragStart by remember { mutableStateOf(0f) }
             val scope = rememberCoroutineScope()
             Box(
                 Modifier.fillMaxWidth().weight(1f)
                     .onSizeChanged { panelWidth = it.width }
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
-                            onDragStart = { scope.launch { slide.stop() } },
+                            onDragStart = {
+                                scope.launch { slide.stop() }
+                                dragStart = slide.value
+                            },
                             onHorizontalDrag = { change, dragAmount ->
                                 change.consume()
                                 if (panelWidth > 0) {
@@ -253,17 +261,16 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    // 真正对称的 1/16 行程（v1.4.33 修正）：
-                                    // 前几版判断方向写反，导致从封面端轻滑实际要滑过半程才切歌词。
-                                    // 正确逻辑：从封面左滑超过 1/16 面板宽 → 切歌词；
-                                    // 从歌词右滑超过 1/16 → 回封面；两端 1/16 内保持原状。
+                                    // 基于拖动起点的对称 1/16 行程：
                                     val limit = -panelWidth.toFloat() - edgePx
                                     val t16 = limit / 16f          // 距封面端 1/16
                                     val t15 = limit * 15f / 16f    // 距歌词端 1/16
-                                    val target = when {
-                                        slide.value < t16 -> limit   // 滑过封面端 1/16 → 切歌词
-                                        slide.value > t15 -> 0f      // 滑过歌词端 1/16 → 回封面
-                                        else -> if (slide.value < limit / 2f) limit else 0f
+                                    val target = if (dragStart < limit / 2f) {
+                                        // 起点在封面端：左滑超过 1/16 面板宽 → 切歌词；否则回封面
+                                        if (slide.value < t16) limit else 0f
+                                    } else {
+                                        // 起点在歌词端：右滑超过 1/16 面板宽 → 回封面；否则保持歌词
+                                        if (slide.value > t15) 0f else limit
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
@@ -273,10 +280,10 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                                     val limit = -panelWidth.toFloat() - edgePx
                                     val t16 = limit / 16f
                                     val t15 = limit * 15f / 16f
-                                    val target = when {
-                                        slide.value < t16 -> limit
-                                        slide.value > t15 -> 0f
-                                        else -> if (slide.value < limit / 2f) limit else 0f
+                                    val target = if (dragStart < limit / 2f) {
+                                        if (slide.value < t16) limit else 0f
+                                    } else {
+                                        if (slide.value > t15) 0f else limit
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
