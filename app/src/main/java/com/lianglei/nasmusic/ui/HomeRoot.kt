@@ -84,6 +84,15 @@ fun HomeRoot() {
             )
         }
     }
+    var dragging by remember { mutableStateOf(false) }
+    fun settleDrawer() {
+        scope.launch {
+            drawerAnim.animateTo(
+                if (drawerAnim.value > 0.25f) 1f else 0f,
+                animationSpec = tween(200)
+            )
+        }
+    }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val currentSource by SourceManager.current.collectAsStateWithLifecycle()
@@ -160,15 +169,6 @@ fun HomeRoot() {
     val current = queue.getOrNull(currentIndex)
 
     val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
-    var dragging by remember { mutableStateOf(false) }
-    fun settleDrawer() {
-        scope.launch {
-            drawerAnim.animateTo(
-                if (drawerAnim.value > 0.25f) 1f else 0f,
-                animationSpec = tween(250)
-            )
-        }
-    }
 
     Box(
         Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
@@ -176,14 +176,20 @@ fun HomeRoot() {
         // ===== 左侧抽屉（固定，被推露出来）=====
         Surface(
             modifier = Modifier.width(DRAWER_WIDTH).fillMaxHeight().align(Alignment.CenterStart).zIndex(0f)
+                // 抽屉展开时：在抽屉面板上拖动即可关闭（关闭时面板被内容层盖住，不会误触）
                 .pointerInput(Unit) {
-                    // 抽屉展开时：在抽屉面上左滑关闭（关闭状态下被内容层盖住，不会误触）
+                    var startValue = 0f
+                    var startX = 0f
                     detectHorizontalDragGestures(
-                        onDragStart = { dragging = true },
-                        onHorizontalDrag = { change, dragAmount ->
+                        onDragStart = { start ->
+                            dragging = true
+                            startValue = drawerAnim.value
+                            startX = start.x
+                        },
+                        onHorizontalDrag = { change, _ ->
                             change.consume()
                             scope.launch {
-                                drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                                drawerAnim.snapTo((startValue + (change.position.x - startX) / drawerWidthPx).coerceIn(0f, 1f))
                             }
                         },
                         onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
@@ -258,7 +264,8 @@ fun HomeRoot() {
         }
 
         // ===== 右侧主内容：抽屉展开时整体右移（推动式）=====
-        // 手势检测挂在整个内容区：起点在屏幕左 35% 内即可右滑开抽屉（不再苛求边缘 48dp）
+        // 手势覆盖整个内容区：全屏宽度任意位置右滑开抽屉、左滑关闭（播放器/队列页除外）
+        // 绝对跟手映射：起手时快照，拖动位置直接换算，逐帧贴合手指
         Box(
             Modifier
                 .fillMaxSize()
@@ -266,19 +273,20 @@ fun HomeRoot() {
                 .graphicsLayer {
                     translationX = drawerAnim.value * drawerWidthPx
                 }
-                .shadow(
-                    elevation = if (isDrawerOpen) 16.dp else 0.dp,
-                    shape = RoundedCornerShape(0.dp)
-                )
                 .pointerInput(showPlayer, showQueue) {
-                    // 播放器/队列页全屏时不启用抽屉手势；其余全屏宽度任意位置右滑均可开抽屉
                     if (showPlayer || showQueue) return@pointerInput
+                    var startValue = 0f
+                    var startX = 0f
                     detectHorizontalDragGestures(
-                        onDragStart = { dragging = true },
-                        onHorizontalDrag = { change, dragAmount ->
+                        onDragStart = { start ->
+                            dragging = true
+                            startValue = drawerAnim.value
+                            startX = start.x
+                        },
+                        onHorizontalDrag = { change, _ ->
                             change.consume()
                             scope.launch {
-                                drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                                drawerAnim.snapTo((startValue + (change.position.x - startX) / drawerWidthPx).coerceIn(0f, 1f))
                             }
                         },
                         onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
