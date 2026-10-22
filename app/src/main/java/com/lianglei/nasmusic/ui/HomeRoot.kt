@@ -175,7 +175,21 @@ fun HomeRoot() {
     ) {
         // ===== 左侧抽屉（固定，被推露出来）=====
         Surface(
-            modifier = Modifier.width(DRAWER_WIDTH).fillMaxHeight().align(Alignment.CenterStart).zIndex(0f),
+            modifier = Modifier.width(DRAWER_WIDTH).fillMaxHeight().align(Alignment.CenterStart).zIndex(0f)
+                .pointerInput(Unit) {
+                    // 抽屉展开时：在抽屉面上左滑关闭（关闭状态下被内容层盖住，不会误触）
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            scope.launch {
+                                drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                            }
+                        },
+                        onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
+                        onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
+                    )
+                },
             color = Color(0xFFFCFCFD),
             shadowElevation = 6.dp
         ) {
@@ -373,29 +387,28 @@ fun HomeRoot() {
                     }
                 }
             }
+        }
 
-            // 左缘手势条（顶栏下方开始，不挡汉堡键）：
-            // detectHorizontalDragGestures 无忙循环，绝不可能卡死主线程；
-            // 结合 MainActivity 的系统手势排除区，边缘右滑不会被系统返回手势截走
-            if (!showPlayer && !showQueue) {
-                Box(
-                    Modifier.width(28.dp).fillMaxHeight().align(Alignment.TopStart)
-                        .offset(y = 88.dp)
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { dragging = true },
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    scope.launch {
-                                        drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
-                                    }
-                                },
-                                onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
-                                onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
-                            )
-                        }
-                )
-            }
+        // 左缘手势条（根层最顶层，全高 48dp，覆盖顶栏但不抢点击——只在真正水平拖动时才消费）：
+        // detectHorizontalDragGestures 无忙循环，绝不卡死主线程；
+        // 结合 MainActivity 的系统手势排除区，边缘右滑不会被系统返回手势截走
+        if (!showPlayer && !showQueue) {
+            Box(
+                Modifier.width(48.dp).fillMaxHeight().align(Alignment.CenterStart).zIndex(5f)
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragging = true },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                scope.launch {
+                                    drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                                }
+                            },
+                            onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
+                            onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
+                        )
+                    }
+            )
         }
     }
 }
