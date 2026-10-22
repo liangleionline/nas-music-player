@@ -4,7 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,14 +57,15 @@ private val mainEntries = listOf(
 
 /** 抽屉系统项（含 NAS 一级入口） */
 private val systemEntries = listOf(
-    DrawerEntry("音乐库 · 飞牛NAS", Icons.Filled.Cloud, Color(0xFF1F6FEB), "library"),
+    DrawerEntry("音乐库", Icons.Filled.Cloud, Color(0xFF1F6FEB), "library"),
     DrawerEntry("扫描音乐", Icons.Filled.FolderSpecial, Color(0xFF5C6BC0), "scan"),
     DrawerEntry("统计", Icons.Filled.QueryStats, Color(0xFFE74C3C), "stats"),
     DrawerEntry("设置", Icons.Filled.Settings, Color(0xFF4CAF50), "settings"),
     DrawerEntry("关于", Icons.Filled.Info, Color(0xFF1E88E5), "about"),
 )
 
-private val DRAWER_WIDTH = 264.dp
+private val DRAWER_WIDTH = 224.dp
+private val EDGE_STRIP = 40.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -158,8 +161,15 @@ fun HomeRoot() {
     val current = queue.getOrNull(currentIndex)
 
     val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
-    val edgePx = with(LocalDensity.current) { 72.dp.toPx() }
     var dragging by remember { mutableStateOf(false) }
+    fun settleDrawer() {
+        scope.launch {
+            drawerAnim.animateTo(
+                if (drawerAnim.value > 0.35f) 1f else 0f,
+                animationSpec = tween(250)
+            )
+        }
+    }
 
     Box(
         Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
@@ -246,49 +256,6 @@ fun HomeRoot() {
                     elevation = if (isDrawerOpen) 16.dp else 0.dp,
                     shape = RoundedCornerShape(0.dp)
                 )
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { start ->
-                            dragging = if (drawerAnim.value > 0.9f) {
-                                true
-                            } else if (drawerAnim.value < 0.1f && start.x < edgePx) {
-                                true
-                            } else {
-                                false
-                            }
-                        },
-                        onHorizontalDrag = { change, dragAmount ->
-                            if (dragging) {
-                                change.consume()
-                                scope.launch {
-                                    drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
-                                }
-                            }
-                        },
-                        onDragEnd = {
-                            if (dragging) {
-                                dragging = false
-                                scope.launch {
-                                    drawerAnim.animateTo(
-                                        if (drawerAnim.value > 0.35f) 1f else 0f,
-                                        animationSpec = tween(250)
-                                    )
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            if (dragging) {
-                                dragging = false
-                                scope.launch {
-                                    drawerAnim.animateTo(
-                                        if (drawerAnim.value > 0.35f) 1f else 0f,
-                                        animationSpec = tween(250)
-                                    )
-                                }
-                            }
-                        }
-                    )
-                }
         ) {
             Scaffold(
                 containerColor = Color(0xFFF2F3F5),
@@ -343,7 +310,14 @@ fun HomeRoot() {
             ) { pad ->
                 Box(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize().padding(pad)) {
-                        NavHost(nav, startDestination = "songs") {
+                        NavHost(
+                            nav,
+                            startDestination = "songs",
+                            enterTransition = { slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) },
+                            exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 4 }, animationSpec = tween(300)) },
+                            popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 4 }, animationSpec = tween(300)) },
+                            popExitTransition = { slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) }
+                        ) {
                             composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
                             composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
                             composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
@@ -399,6 +373,26 @@ fun HomeRoot() {
                         QueueScreen(onClose = { showQueue = false })
                     }
                 }
+            }
+
+            // 左边缘手势条：列表页也能右滑开抽屉/左滑关抽屉（纯手势，不挡点击）
+            if (!showPlayer && !showQueue) {
+                Box(
+                    Modifier.fillMaxHeight().width(EDGE_STRIP).align(Alignment.CenterStart)
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { dragging = true },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    scope.launch {
+                                        drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                                    }
+                                },
+                                onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
+                                onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
+                            )
+                        }
+                )
             }
         }
     }
