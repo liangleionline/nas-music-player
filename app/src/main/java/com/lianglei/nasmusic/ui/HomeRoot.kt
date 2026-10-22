@@ -77,7 +77,9 @@ fun HomeRoot() {
     // 推动式抽屉：0=关闭 1=完全展开，内容随动画右移
     val drawerAnim = remember { Animatable(0f) }
     val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
-    val isDrawerOpen = drawerAnim.value > 0.5f
+    // 关键：用 derivedStateOf 只在阈值翻转时重组。
+    // 直接读 drawerAnim.value（快照状态）会让 HomeRoot 在拖动中每帧重组 → 卡顿
+    val isDrawerOpen by remember { derivedStateOf { drawerAnim.value > 0.5f } }
     fun toggleDrawer(open: Boolean) {
         scope.launch {
             drawerAnim.animateTo(
