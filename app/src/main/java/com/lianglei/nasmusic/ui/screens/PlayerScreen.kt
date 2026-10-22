@@ -627,18 +627,24 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
 }
 
 /**
- * 迷幻烟雾背景：多个大径向渐变烟团，各自以不同频率缓慢正弦漂移 + 呼吸，
+ * 迷幻烟雾背景：多个大径向渐变烟团，各自以不同频率极缓慢正弦漂移 + 呼吸，
  * blendMode=Plus 叠加（亮色烟雾感），颜色取自封面主色 + 固定白色烟团（灰蒙蒙效果）。
- * running=false 时暂停帧循环（播放页隐藏时零消耗）。
+ * 渐变采用"环形三停"（中心 alpha=0、0.30r 处最浓、向外淡出）→ 中心不再出现亮点；
+ * phase 由真实帧时间差值驱动（帧率无关），running=false 时暂停（播放页隐藏零消耗），
+ * 收起再弹出时从当前相位续走，不跳变。
  */
 @Composable
 fun SmokeBackground(palette: List<Color>, running: Boolean) {
     val phase = remember { Animatable(0f) }
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
+        var last = withFrameNanos { it }
         while (true) {
-            withFrameNanos { }
-            phase.snapTo((phase.value + 0.0018f) % 1000f)
+            val now = withFrameNanos { it }
+            val dt = (now - last).toFloat() / 1e9f   // 秒（帧差，float 精确）
+            last = now
+            // 每秒推进 0.06 → 主频团约 40~90s 一个来回，呼吸约 4 分钟（烟雾缭绕级缓慢）
+            phase.snapTo((phase.value + dt * 0.06f) % 1000f)
         }
     }
     Canvas(Modifier.fillMaxSize()) {
@@ -646,15 +652,19 @@ fun SmokeBackground(palette: List<Color>, running: Boolean) {
         val base = if (palette.isEmpty()) listOf(Color(0xFF3A3A3E), Color(0xFF8B5A2B)) else palette
         // 6 团：主色循环 + 1 团白色（灰蒙蒙烟雾）
         repeat(6) { i ->
-            val c = if (i == 5) Color.White.copy(alpha = 0.55f) else base[i % base.size]
-            val f1 = 3.0f + 0.5f * i      // 漂移频率（约 20s 一个周期，缓慢）
-            val f2 = 2.5f + 0.6f * i
-            val cx = size.width * (0.5f + 0.40f * sin(t * f1 + i * 1.7f))
-            val cy = size.height * (0.5f + 0.40f * cos(t * f2 + i * 2.3f))
-            val r = size.width * (0.50f + 0.12f * sin(t * 1.2f + i))
+            val c = if (i == 5) Color.White.copy(alpha = 0.30f) else base[i % base.size]
+            val f1 = 1.2f + 0.18f * i      // 极低频漂移（相位角速度 ~0.07~0.19 rad/s）
+            val f2 = 1.0f + 0.22f * i
+            val cx = size.width * (0.5f + 0.42f * sin(t * f1 + i * 1.7f))
+            val cy = size.height * (0.5f + 0.42f * cos(t * f2 + i * 2.3f))
+            // 大烟团：半径 0.30~0.46 倍屏高（直径最大 ~0.92 屏高），弥散覆盖大半屏
+            val r = size.height * (0.38f + 0.08f * sin(t * 0.4f + i * 1.3f))
+            val peak = if (i == 5) 0.22f else 0.20f
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(c.copy(alpha = 0.30f), c.copy(alpha = 0.0f)),
+                    0.0f to c.copy(alpha = 0.0f),
+                    0.30f to c.copy(alpha = peak),
+                    1.0f to c.copy(alpha = 0.0f),
                     center = Offset(cx, cy),
                     radius = r
                 ),
