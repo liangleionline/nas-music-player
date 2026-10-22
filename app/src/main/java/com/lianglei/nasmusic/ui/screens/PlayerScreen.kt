@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -190,11 +191,13 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             Spacer(Modifier.height(16.dp))
 
             // 封面/歌词 左右滑动切换（两块玻璃跟手平移：封面左滑出屏、歌词右滑入，反向亦然）
+            // 面板高度 = 屏幕 64%，歌词块垂直居中后中心落在屏幕 ~43%（与 Salt 一致）
+            val panelHeight = (LocalConfiguration.current.screenHeightDp * 0.64f).dp
             var panelWidth by remember { mutableStateOf(0) }
             val slide = remember { Animatable(0f) } // 0 = 显示封面；-panelWidth = 显示歌词
             val scope = rememberCoroutineScope()
             Box(
-                Modifier.fillMaxWidth()
+                Modifier.fillMaxWidth().height(panelHeight)
                     .onSizeChanged { panelWidth = it.width }
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
@@ -203,24 +206,26 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                                 change.consume()
                                 if (panelWidth > 0) {
                                     scope.launch {
-                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat(), 0f))
+                                        // 下限多留 24dp 出屏余量，保证封面完全滑出不留边
+                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat() - 24f, 0f))
                                     }
                                 }
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() - 24f else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             },
                             onDragCancel = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() - 24f else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             }
                         )
-                    }
+                    },
+                contentAlignment = Alignment.Center
             ) {
                 // 封面面板：slide=0 原位；左滑时向左平移出屏（无边框，直接显示封面图）
                 AsyncImage(
@@ -235,7 +240,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                 )
                 // 歌词面板：初始在右侧屏外（slide+panelWidth），滑到位后占据原位；透明背景，直接叠在渐变上
                 Box(
-                    Modifier.fillMaxWidth().aspectRatio(1f)
+                    Modifier.fillMaxWidth().fillMaxHeight()
                         .offset { IntOffset(slide.value.roundToInt() + panelWidth, 0) },
                     contentAlignment = Alignment.Center
                 ) {
@@ -251,8 +256,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             for (i in (activeLrcIndex - 3) until activeLrcIndex) {
                                 val t = lrcLines.getOrNull(i)?.text
                                 if (!t.isNullOrEmpty()) {
-                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Spacer(Modifier.height(30.dp))
+                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.height(27.dp))
                                 }
                             }
                             KaraokeText(
@@ -260,16 +265,16 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                                 progress = lineProgress,
                                 activeColor = Color.White,
                                 dimColor = Color.White.copy(alpha = 0.6f),
-                                fontSize = 18.sp,
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Medium
                             )
-                            Spacer(Modifier.height(30.dp))
+                            Spacer(Modifier.height(27.dp))
                             // 当前行后 3 行
                             for (i in (activeLrcIndex + 1)..(activeLrcIndex + 3)) {
                                 val t = lrcLines.getOrNull(i)?.text
                                 if (!t.isNullOrEmpty()) {
-                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Spacer(Modifier.height(30.dp))
+                                    Text(t, color = Color.White.copy(alpha = 0.38f), fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.height(27.dp))
                                 }
                             }
                         }
