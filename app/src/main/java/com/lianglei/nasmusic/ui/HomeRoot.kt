@@ -10,10 +10,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,7 +25,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,7 +42,6 @@ import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
@@ -165,6 +160,15 @@ fun HomeRoot() {
     val current = queue.getOrNull(currentIndex)
 
     val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
+    var dragging by remember { mutableStateOf(false) }
+    fun settleDrawer() {
+        scope.launch {
+            drawerAnim.animateTo(
+                if (drawerAnim.value > 0.35f) 1f else 0f,
+                animationSpec = tween(250)
+            )
+        }
+    }
 
     Box(
         Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
@@ -370,53 +374,25 @@ fun HomeRoot() {
                 }
             }
 
-            // 全屏手势层：左缘右滑开抽屉（消费 down 抢占，列表页/系统返回手势让位）；
-            // 顶栏区域完全放行（汉堡键好按）；抽屉展开时左滑关闭
-            // 注意：放行的触摸必须用空 drag() 跟完整手势再结束，禁止提前 return（会主线程忙循环 ANR）
+            // 左缘手势条（顶栏下方开始，不挡汉堡键）：
+            // detectHorizontalDragGestures 无忙循环，绝不可能卡死主线程；
+            // 结合 MainActivity 的系统手势排除区，边缘右滑不会被系统返回手势截走
             if (!showPlayer && !showQueue) {
                 Box(
-                    Modifier.fillMaxSize().zIndex(4f)
+                    Modifier.width(28.dp).fillMaxHeight().align(Alignment.TopStart)
+                        .offset(y = 88.dp)
                         .pointerInput(Unit) {
-                            val edgePx = 28.dp.toPx()
-                            val topBarPx = 88.dp.toPx()
-                            try {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(requireUnconsumed = false)
-                                    val open = drawerAnim.value > 0.5f
-                                    val inTopBar = down.position.y < topBarPx
-                                    val claim = if (open) !inTopBar else (!inTopBar && down.position.x < edgePx)
-                                    if (!claim) {
-                                        // 放行：空 drag() 跟完本次手势，不消费任何事件
-                                        drag(down.id) { }
-                                    } else {
-                                        down.consume()
-                                        var started = false
-                                        val slopDrag = awaitTouchSlopOrCancellation(down.id) { change, _ ->
-                                            change.consume()
-                                            started = true
-                                        }
-                                        if (slopDrag != null && started) {
-                                            scope.launch {
-                                                drawerAnim.snapTo((drawerAnim.value + slopDrag.positionChange().x / drawerWidthPx).coerceIn(0f, 1f))
-                                            }
-                                            drag(down.id) { change ->
-                                                change.consume()
-                                                val dx = change.positionChange().x
-                                                scope.launch {
-                                                    drawerAnim.snapTo((drawerAnim.value + dx / drawerWidthPx).coerceIn(0f, 1f))
-                                                }
-                                            }
-                                            scope.launch {
-                                                drawerAnim.animateTo(if (drawerAnim.value > 0.35f) 1f else 0f, tween(250))
-                                            }
-                                        }
+                            detectHorizontalDragGestures(
+                                onDragStart = { dragging = true },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    scope.launch {
+                                        drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
                                     }
-                                }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                // 手势层异常不致命：保底不崩溃
-                            }
+                                },
+                                onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
+                                onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
+                            )
                         }
                 )
             }
