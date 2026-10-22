@@ -27,6 +27,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -193,11 +194,14 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             // 封面/歌词 左右滑动切换（两块玻璃跟手平移：封面左滑出屏、歌词右滑入，反向亦然）
             // 面板占剩余全部高度(weight 1f)，歌词块垂直居中后中心自动落在屏幕 ~43%（与 Salt 一致），
             // 且任何屏高都不溢出、不挤压底部控件
-            // slide 范围 [0, -panelWidth]：封面滑出一个面板宽（≈屏宽）正好完全出屏、不多移；
-            // 歌词面板 offset = slide + panelWidth：初始在右侧一屏外，到位时正好 = 0 占据原位；
-            // 切换阈值 = 半面板宽：从任何一端回滑半屏即切换，行程对称
+            // 关键几何：面板原点在屏幕左侧 24dp（Column padding）处，封面 fillMaxWidth 铺满面板宽 W。
+            // 若只滑出 W，封面右边缘会停在屏幕 x=24dp，露出与左侧边距同宽的封面条（用户指出的"留边"）。
+            // 修复：滑出量 = W + edgePx（edgePx = 24dp 边距），封面右边缘到达屏幕 x=0，完全干净出屏；
+            // 歌词面板 offset = slide + W + edgePx：初始在右侧一屏外，到位时正好 = 0 占据原位；
+            // 切换阈值 = (W+edgePx)/2：从任何一端回滑半程即切换，行程对称
+            val edgePx = with(LocalDensity.current) { 24.dp.toPx() }
             var panelWidth by remember { mutableStateOf(0) }
-            val slide = remember { Animatable(0f) } // 0 = 显示封面；-panelWidth = 显示歌词
+            val slide = remember { Animatable(0f) } // 0 = 显示封面；-(panelWidth+edgePx) = 显示歌词
             val scope = rememberCoroutineScope()
             Box(
                 Modifier.fillMaxWidth().weight(1f)
@@ -209,20 +213,22 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                                 change.consume()
                                 if (panelWidth > 0) {
                                     scope.launch {
-                                        // 跟手平移；下限 -panelWidth（一个面板宽），封面恰好完全出屏
-                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat(), 0f))
+                                        // 跟手平移；下限 -(面板宽+左侧边距)，封面右边缘正好到屏幕 x=0
+                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat() - edgePx, 0f))
                                     }
                                 }
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
+                                    val limit = -panelWidth.toFloat() - edgePx
+                                    val target = if (slide.value < limit / 2f) limit else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             },
                             onDragCancel = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
+                                    val limit = -panelWidth.toFloat() - edgePx
+                                    val target = if (slide.value < limit / 2f) limit else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             }
@@ -241,10 +247,10 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                         .offset { IntOffset(slide.value.roundToInt(), 0) }
                         .clip(RoundedCornerShape(12.dp))
                 )
-                // 歌词面板：初始在右侧一屏外（slide+panelWidth），滑到位后占据原位；透明背景，直接叠在渐变上
+                // 歌词面板：初始在右侧一屏外（slide+panelWidth+edgePx），滑到位后正好占据原位；透明背景，直接叠在渐变上
                 Box(
                     Modifier.fillMaxWidth().fillMaxHeight()
-                        .offset { IntOffset(slide.value.roundToInt() + panelWidth, 0) },
+                        .offset { IntOffset(slide.value.roundToInt() + panelWidth + edgePx.roundToInt(), 0) },
                     contentAlignment = Alignment.Center
                 ) {
                     if (lrcLines.isEmpty()) {
