@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -22,10 +23,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +40,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.data.MusicSource
 import com.lianglei.nasmusic.data.Song
@@ -80,12 +86,34 @@ fun HomeRoot() {
     // 关键：用 derivedStateOf 只在阈值翻转时重组。
     // 直接读 drawerAnim.value（快照状态）会让 HomeRoot 在拖动中每帧重组 → 卡顿
     val isDrawerOpen by remember { derivedStateOf { drawerAnim.value > 0.5f } }
+
+    // ===== 快照式推动（根治拖动掉帧）=====
+    // 拖动开始时把当前屏幕整页截图成一张 Bitmap；整个拖动/回弹过程只平移这张图
+    // （单张位图逐帧位移 = GPU 合成，不触发任何重绘），松手落定后再切回真实界面。
+    // 原因：androidx Compose 直到 1.8 都没有"内容缓存为纹理再位移"的公开 API，
+    // 直接平移真实内容会让整屏显示列表每帧重录 → 掉帧（列表滚动流畅但抽屉卡顿的根源）。
+    val view = LocalView.current
+    var dragSnapshot by remember { mutableStateOf<Bitmap?>(null) }
+
+    fun captureSnapshot() {
+        if (dragSnapshot != null) return
+        val w = view.width
+        val h = view.height
+        if (w <= 0 || h <= 0) return
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bmp))
+        dragSnapshot = bmp
+    }
+    fun releaseSnapshot() { dragSnapshot = null }
+
     fun toggleDrawer(open: Boolean) {
+        captureSnapshot()
         scope.launch {
             drawerAnim.animateTo(
                 if (open) 1f else 0f,
                 animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
             )
+            releaseSnapshot()
         }
     }
     var dragging by remember { mutableStateOf(false) }
@@ -100,11 +128,13 @@ fun HomeRoot() {
                 if (totalX > threshold) 1f else 0f
             }
             drawerAnim.animateTo(target, tween(200))
+            releaseSnapshot()
         }
     }
     fun cancelSettle() {
         scope.launch {
             drawerAnim.animateTo(if (drawerAnim.value > 0.5f) 1f else 0f, tween(200))
+            releaseSnapshot()
         }
     }
 
@@ -186,8 +216,10 @@ fun HomeRoot() {
         Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
     ) {
         // ===== 左侧抽屉（固定，被推露出来）=====
+        // 快照期间（dragSnapshot != null）真实抽屉隐藏，画面由快照图层负责
         Surface(
             modifier = Modifier.width(DRAWER_WIDTH).fillMaxHeight().align(Alignment.CenterStart).zIndex(0f)
+                .graphicsLayer { alpha = if (dragSnapshot != null) 0f else 1f }
                 // 抽屉展开时：在抽屉面板上拖动即可关闭（关闭时面板被内容层盖住，不会误触）
                 .pointerInput(Unit) {
                     var startValue = 0f
@@ -196,6 +228,7 @@ fun HomeRoot() {
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
+                            captureSnapshot()
                             startValue = drawerAnim.value
                             startX = start.x
                             totalX = 0f
@@ -282,13 +315,14 @@ fun HomeRoot() {
         // ===== 右侧主内容：抽屉展开时整体右移（推动式）=====
         // 手势覆盖整个内容区：全屏宽度任意位置右滑开抽屉、左滑关闭（播放器/队列页除外）
         // 绝对跟手映射：起手时快照，拖动位置直接换算，逐帧贴合手指
-        // RenderLayer：把整个内容页缓存为单一图层，拖动时只做 GPU 位移，不再逐帧重放绘制指令（去卡顿）
+        // 快照期间（dragSnapshot != null）真实内容隐藏，由最上层快照图层负责位移
         Box(
             Modifier
                 .fillMaxSize()
                 .zIndex(1f)
                 .graphicsLayer {
                     translationX = drawerAnim.value * drawerWidthPx
+                    alpha = if (dragSnapshot != null) 0f else 1f
                 }
                 .pointerInput(showPlayer, showQueue) {
                     if (showPlayer || showQueue) return@pointerInput
@@ -298,6 +332,7 @@ fun HomeRoot() {
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
+                            captureSnapshot()
                             startValue = drawerAnim.value
                             startX = start.x
                             totalX = 0f
@@ -431,6 +466,21 @@ fun HomeRoot() {
                         QueueScreen(onClose = { showQueue = false })
                     }
                 }
+                }
+
+            // ===== 快照图层（拖动/回弹期间替代真实内容，只平移一张位图）=====
+            dragSnapshot?.let { bmp ->
+                Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(2f)
+                        .graphicsLayer {
+                            translationX = drawerAnim.value * drawerWidthPx
+                        }
+                )
             }
         }
     }
