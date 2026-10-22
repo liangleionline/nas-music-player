@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,8 +49,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import kotlin.math.sin
 
 data class LrcLine(val time: Long, val text: String)
 
@@ -141,7 +145,7 @@ fun splitLrcLine(text: String): Pair<String, String?> {
 }
 
 @Composable
-fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
+fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true) {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val idx by PlayerManager.currentIndex.collectAsStateWithLifecycle()
     val playing by PlayerManager.isPlaying.collectAsStateWithLifecycle()
@@ -207,44 +211,32 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
         else "content://media/external/audio/albumart/${it.albumId}"
     }
 
-    // 从封面提取主色作为底色（共享 ImageLoader 实例，避免每首歌重建）
+    // 从封面提取多个主色（KMeans，缩小位图 IO 线程执行），作为底色 + 烟雾动画调色板
     val bgLoader = remember { ImageLoader(ctx) }
-    val baseColor by produceState<Color?>(initialValue = null, coverModel) {
-        value = try {
-            val result = bgLoader.execute(
-                ImageRequest.Builder(ctx).data(coverModel).size(64).build()
-            )
-            val bmp = (result.drawable as? BitmapDrawable)?.bitmap
-            bmp?.let { dominantColorOf(it) }
-        } catch (e: Exception) {
-            null
+    val palette by produceState<List<Color>>(initialValue = emptyList(), coverModel) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val result = bgLoader.execute(
+                    ImageRequest.Builder(ctx).data(coverModel).size(96).build()
+                )
+                val bmp = (result.drawable as? BitmapDrawable)?.bitmap
+                if (bmp != null) dominantColors(bmp, 4) else emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
         }
     }
-    val coverBase = baseColor?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
-
-    // Frosted glass background request：remember(coverModel) 复用同一请求对象，
-    // 避免每帧重组重建 ImageRequest 的额外开销
-    val bgRequest = remember(coverModel) {
-        ImageRequest.Builder(ctx)
-            .data(coverModel)
-            .transformations(DownscaleBlurTransformation(5))
-            .size(720)
-            .build()
-    }
+    val coverBase = palette.firstOrNull()?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
 
     // 根容器拦截已上移到 HomeRoot 浮层（条件拦截：显示时拦截、隐藏时不拦截），
     // 内部 Slider/IconButton 等子节点不受影响，正常响应。
     Box(
         Modifier.fillMaxSize().background(coverBase)
     ) {
-        // Frosted glass background: pre-rendered blurred cover bitmap (DownscaleBlurTransformation) + dark scrim.
-        // 不用 Modifier.blur：实时 RenderEffect 与层矩阵动画（弹出滑入/封面歌词切换位移）叠加时，
-        // 在部分设备（三星 OneUI）产生残影/重影。预渲染模糊位图后，动画只移动静态图片层 → 零 RenderEffect、零残影。
-        AsyncImage(
-            model = bgRequest,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize().scale(1.15f)
-        )
+        // 迷幻烟雾背景：颜色取自封面主色（KMeans 提取的红/黑/白/黄等），
+        // 6 个径向渐变烟团缓慢漂移 + 呼吸，Plus 叠加出灰蒙蒙烟雾感；
+        // running=false（播放页隐藏）时帧循环暂停，零消耗。
+        SmokeBackground(palette = palette, running = backgroundRunning)
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
@@ -583,6 +575,95 @@ private fun dominantColorOf(bmp: Bitmap): Color {
     }
     if (n == 0L) return Color(0xFF2A2A2E)
     return Color(r / n / 255f, g / n / 255f, b / n / 255f)
+}
+
+/** KMeans 提取 k 个主色（输入为缩小后的封面位图），按像素占比降序返回 */
+fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
+    val pts = ArrayList<IntArray>()
+    var x = 0
+    while (x < bmp.width) {
+        var y = 0
+        while (y < bmp.height) {
+            val p = bmp.getPixel(x, y)
+            pts.add(intArrayOf((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF))
+            y++
+        }
+        x++
+    }
+    if (pts.isEmpty()) return listOf(Color(0xFF2A2A2E))
+    val centers = ArrayList<IntArray>()
+    for (i in 0 until k) centers.add(pts[(pts.size * i) / k].copyOf())
+    val counts = IntArray(k)
+    repeat(12) {
+        val sums = Array(k) { LongArray(3) }
+        counts.fill(0)
+        for (p in pts) {
+            var best = 0
+            var bestD = Int.MAX_VALUE
+            for (ci in centers.indices) {
+                val c = centers[ci]
+                val d = (p[0] - c[0]) * (p[0] - c[0]) + (p[1] - c[1]) * (p[1] - c[1]) + (p[2] - c[2]) * (p[2] - c[2])
+                if (d < bestD) { bestD = d; best = ci }
+            }
+            val s = sums[best]
+            s[0] = s[0] + p[0].toLong()
+            s[1] = s[1] + p[1].toLong()
+            s[2] = s[2] + p[2].toLong()
+            counts[best]++
+        }
+        for (ci in centers.indices) {
+            if (counts[ci] > 0) {
+                val cen = centers[ci]
+                cen[0] = (sums[ci][0] / counts[ci]).toInt()
+                cen[1] = (sums[ci][1] / counts[ci]).toInt()
+                cen[2] = (sums[ci][2] / counts[ci]).toInt()
+            }
+        }
+    }
+    return centers.indices.sortedByDescending { counts[it] }.map { ci ->
+        val c = centers[ci]
+        Color(c[0] / 255f, c[1] / 255f, c[2] / 255f)
+    }
+}
+
+/**
+ * 迷幻烟雾背景：多个大径向渐变烟团，各自以不同频率缓慢正弦漂移 + 呼吸，
+ * blendMode=Plus 叠加（亮色烟雾感），颜色取自封面主色 + 固定白色烟团（灰蒙蒙效果）。
+ * running=false 时暂停帧循环（播放页隐藏时零消耗）。
+ */
+@Composable
+fun SmokeBackground(palette: List<Color>, running: Boolean) {
+    val phase = remember { Animatable(0f) }
+    LaunchedEffect(running) {
+        if (!running) return@LaunchedEffect
+        while (true) {
+            withFrameNanos { }
+            phase.snapTo((phase.value + 0.0018f) % 1000f)
+        }
+    }
+    Canvas(Modifier.fillMaxSize()) {
+        val t = phase.value
+        val base = if (palette.isEmpty()) listOf(Color(0xFF3A3A3E), Color(0xFF8B5A2B)) else palette
+        // 6 团：主色循环 + 1 团白色（灰蒙蒙烟雾）
+        repeat(6) { i ->
+            val c = if (i == 5) Color.White.copy(alpha = 0.55f) else base[i % base.size]
+            val f1 = 3.0f + 0.5f * i      // 漂移频率（约 20s 一个周期，缓慢）
+            val f2 = 2.5f + 0.6f * i
+            val cx = size.width * (0.5f + 0.40f * sin(t * f1 + i * 1.7f))
+            val cy = size.height * (0.5f + 0.40f * cos(t * f2 + i * 2.3f))
+            val r = size.width * (0.50f + 0.12f * sin(t * 1.2f + i))
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(c.copy(alpha = 0.30f), c.copy(alpha = 0.0f)),
+                    center = Offset(cx, cy),
+                    radius = r
+                ),
+                radius = r,
+                center = Offset(cx, cy),
+                blendMode = BlendMode.Plus
+            )
+        }
+    }
 }
 
 /** 压暗到指定最大亮度（0~1），保证白字可读 */
