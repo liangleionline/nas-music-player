@@ -1,12 +1,10 @@
 package com.lianglei.nasmusic.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -352,21 +351,38 @@ private fun HomeContent(
         }
     }
 
-    // Fullscreen overlay - Scaffold 之上的全屏浮层，覆盖整个窗口（含顶栏/迷你栏/状态栏）。
-    // 放在 Scaffold 外，浮层绘制在顶层，因此顶栏无需隐藏、点歌时列表不再上跳
-    AnimatedVisibility(
-        visible = showPlayer,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it }
-    ) {
-        PlayerScreen(onOpenQueue = { showQueueState.value = true })
+    // 播放页全屏浮层：进入/退出动画用 graphicsLayer 矩阵变换（GPU 合成、内容零重绘），
+    // 避免 slideInVertically 每帧重绘模糊背景导致的掉帧
+    val playerSlide = remember { Animatable(1f) }
+    LaunchedEffect(showPlayer) {
+        if (showPlayer) playerSlide.animateTo(0f, tween(280))
+        else playerSlide.animateTo(1f, tween(280))
     }
-    AnimatedVisibility(
-        visible = showQueue,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it }
-    ) {
-        QueueScreen(onClose = { showQueueState.value = false })
+    if (showPlayer || playerSlide.value < 1f) {
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                translationY = playerSlide.value * size.height
+                alpha = 1f - playerSlide.value
+            }
+        ) {
+            PlayerScreen(onOpenQueue = { showQueueState.value = true })
+        }
+    }
+    // 队列页全屏浮层：同上
+    val queueSlide = remember { Animatable(1f) }
+    LaunchedEffect(showQueue) {
+        if (showQueue) queueSlide.animateTo(0f, tween(280))
+        else queueSlide.animateTo(1f, tween(280))
+    }
+    if (showQueue || queueSlide.value < 1f) {
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                translationY = queueSlide.value * size.height
+                alpha = 1f - queueSlide.value
+            }
+        ) {
+            QueueScreen(onClose = { showQueueState.value = false })
+        }
     }
     }
 }
