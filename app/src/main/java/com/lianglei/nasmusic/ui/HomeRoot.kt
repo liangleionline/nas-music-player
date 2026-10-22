@@ -8,7 +8,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -367,25 +369,37 @@ private fun HomeContent(
         }
     }
 
-        // 全屏手势层：不挡点击，仅消费水平拖动。屏幕左缘 20dp 由 DrawerLayout 原生跟手；
-        // 其余全屏区域：右滑超阈值开抽屉、左滑关抽屉（系统动画，流畅无重影）
+        // 全屏手势层（纯观察、零消费）：绝不拦截点击/滚动，只累计水平位移。
+        // 屏幕左缘 20dp 由 DrawerLayout 原生跟手；其余区域右滑超阈值开抽屉、左滑关抽屉。
         Box(
             Modifier.fillMaxSize().pointerInput(showPlayer, showQueue, drawerOpen) {
                 if (showPlayer || showQueue) return@pointerInput
-                var startX = 0f
-                var total = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { start -> startX = start.x; total = 0f },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        total += dragAmount
-                    },
-                    onDragEnd = {
-                        if (!drawerOpen && startX > edgePx && total > edgePx) onOpenDrawer()
-                        else if (drawerOpen && total < -edgePx) onCloseDrawer()
-                    },
-                    onDragCancel = {}
-                )
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var startX = down.position.x
+                    var startY = down.position.y
+                    var totalX = 0f
+                    var horizontal = false
+                    var dx = 0f
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        // 手指抬起、或事件已被下层（列表滚动等）消费：结束本次观察
+                        if (change.changedToUpIgnoreConsumed() || change.isConsumed) break
+                        dx = change.position.x - startX
+                        if (!horizontal) {
+                            val dy = change.position.y - startY
+                            // 水平起势判定：x 位移超过阈值且明显大于 y（避免抢纵向滚动）
+                            if (kotlin.math.abs(dx) > 24f && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                                horizontal = true
+                            }
+                        }
+                    }
+                    if (horizontal) {
+                        if (!drawerOpen && startX > edgePx && dx > edgePx) onOpenDrawer()
+                        else if (drawerOpen && dx < -edgePx) onCloseDrawer()
+                    }
+                }
             }
         )
     }
@@ -399,6 +413,8 @@ private fun DrawerPanel(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val currentSource by SourceManager.current.collectAsStateWithLifecycle()
+    val backStack by nav.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
 
     Surface(color = Color(0xFFFCFCFD), shadowElevation = 6.dp) {
         Column(Modifier.fillMaxSize()) {
@@ -431,7 +447,7 @@ private fun DrawerPanel(
                                     SourceManager.switchTo(MusicSource.LOCAL)
                                 } else {
                                     onCloseDrawer()
-                                    nav.navigate("library") { launchSingleTop = true }
+                                    if ("library" != currentRoute) nav.navigate("library") { launchSingleTop = true }
                                 }
                             }
                         }.padding(vertical = 4.dp),
@@ -450,16 +466,21 @@ private fun DrawerPanel(
             Text("媒体库", fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
             DrawerGroup(mainEntries) { route ->
                 onCloseDrawer()
-                nav.navigate(route) {
-                    launchSingleTop = true
-                    popUpTo(0) { inclusive = true }
+                // 已在目标页则不再导航（避免 NavHost 转场动画覆盖产生重影）
+                if (route != currentRoute) {
+                    nav.navigate(route) {
+                        launchSingleTop = true
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
             Text("系统", fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
             DrawerGroup(systemEntries) { route ->
                 onCloseDrawer()
-                nav.navigate(route) { launchSingleTop = true }
+                if (route != currentRoute) {
+                    nav.navigate(route) { launchSingleTop = true }
+                }
             }
             Spacer(Modifier.weight(1f))
         }
