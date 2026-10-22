@@ -18,20 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -160,21 +154,32 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             )
         )
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp)) {
-            // Top bar: marquee title + artist + cast
+            // 顶部信息栏：标题（静态单行省略，避免跑马灯裁剪错乱）+ 歌手 + 投屏图标
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    MarqueeText(
-                        text = song?.title ?: "—",
+                    Text(
+                        song?.title ?: "—",
                         color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Normal,
-                        maxLines = 1
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(Modifier.height(2.dp))
-                    Text(song?.artist ?: "", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        song?.artist ?: "",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Spacer(Modifier.width(12.dp))
-                Icon(Icons.Filled.Cast, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(26.dp))
+                Icon(
+                    Icons.Filled.Cast, null,
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(26.dp)
+                )
             }
             Spacer(Modifier.height(24.dp))
 
@@ -298,52 +303,6 @@ private fun KaraokeText(
         fontWeight = fontWeight,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
-    )
-}
-
-@Composable
-private fun MarqueeText(
-    text: String,
-    color: Color,
-    fontSize: androidx.compose.ui.unit.TextUnit,
-    fontWeight: FontWeight,
-    maxLines: Int = 1
-) {
-    var offset by remember { mutableStateOf(0f) }
-    val textMeasurer = rememberTextMeasurer()
-    var containerWidth by remember { mutableStateOf(0) }
-    val style = androidx.compose.ui.text.TextStyle(fontSize = fontSize, fontWeight = fontWeight, color = color)
-    val measured = remember(text, fontSize, fontWeight) {
-        textMeasurer.measure(text = AnnotatedString(text), style = style, constraints = androidx.compose.ui.unit.Constraints(maxWidth = Int.MAX_VALUE))
-    }
-    val textW = measured.size.width
-    val scroll = (textW - containerWidth).coerceAtLeast(0)
-    LaunchedEffect(text, scroll, containerWidth) {
-        offset = 0f
-        if (containerWidth <= 0 || scroll <= 0) return@LaunchedEffect
-        kotlinx.coroutines.delay(3000)
-        val anim = android.animation.ValueAnimator.ofFloat(0f, -scroll.toFloat()).apply {
-            duration = 5000
-            interpolator = android.view.animation.LinearInterpolator()
-        }
-        anim.addUpdateListener { offset = it.animatedValue as Float }
-        anim.start()
-        kotlinx.coroutines.delay(5500)
-        offset = 0f
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .onSizeChanged { containerWidth = it.width }
-            .drawBehind {
-                clipRect {
-                    drawText(
-                        textLayoutResult = measured,
-                        topLeft = androidx.compose.ui.geometry.Offset(offset, 0f)
-                    )
-                }
-            }
-            .heightIn(min = 32.dp)
     )
 }
 
