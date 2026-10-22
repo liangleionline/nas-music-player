@@ -17,12 +17,11 @@ import androidx.compose.runtime.*
 import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -33,13 +32,13 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.transform.Transformation
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import com.lianglei.nasmusic.player.PlayerManager
@@ -52,6 +51,33 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 data class LrcLine(val time: Long, val text: String)
+
+/**
+ * 下采样模糊变换：多次 1/2 缩放（BoxBlur 近似高斯模糊）后放大回原尺寸。
+ * Coil 2.6.0 的 coil-base 不含 BlurTransformation，且 Modifier.blur 的实时 RenderEffect
+ * 在层矩阵动画时会在部分设备产生残影。此实现输出静态模糊位图——动画只移动位图层，零 RenderEffect。
+ */
+class DownscaleBlurTransformation(private val levels: Int = 5) : Transformation {
+    override val cacheKey: String = "downscaleBlur-$levels"
+
+    override suspend fun transform(input: Bitmap, size: coil.size.Size): Bitmap {
+        if (input.width <= 32 || input.height <= 32) return input
+        var w = input.width
+        var h = input.height
+        var current = input
+        repeat(levels) {
+            if (w <= 32 || h <= 32) return current
+            w = (w + 1) / 2
+            h = (h + 1) / 2
+            val next = Bitmap.createScaledBitmap(current, w, h, true)
+            if (current !== input) current.recycle()
+            current = next
+        }
+        val out = Bitmap.createScaledBitmap(current, input.width, input.height, true)
+        if (current !== input && current !== out) current.recycle()
+        return out
+    }
+}
 
 fun parseLrc(text: String): List<LrcLine> {
     val lines = mutableListOf<LrcLine>()
@@ -138,12 +164,17 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     Box(
         Modifier.fillMaxSize().background(coverBase)
     ) {
-        // Frosted glass background: blurred album cover + dark scrim
+        // Frosted glass background: pre-rendered blurred cover bitmap (DownscaleBlurTransformation) + dark scrim.
+        // 不用 Modifier.blur：实时 RenderEffect 与层矩阵动画（弹出滑入/封面歌词切换位移）叠加时，
+        // 在部分设备（三星 OneUI）产生残影/重影。预渲染模糊位图后，动画只移动静态图片层 → 零 RenderEffect、零残影。
         AsyncImage(
-            model = coverModel,
+            model = ImageRequest.Builder(ctx)
+                .data(coverModel)
+                .transformations(DownscaleBlurTransformation(5))
+                .size(720)
+                .build(),
             contentDescription = null,
             modifier = Modifier.fillMaxSize().scale(1.15f)
-                .blur(radius = 36.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
         )
         Box(
             Modifier.fillMaxSize().background(
@@ -215,14 +246,14 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    // 双向对称阈值：往任一方向滑过 1/4 行程即切换（就近原则），
-                                    // 封面→歌词 与 歌词→封面 手感一致
+                                    // 双向对称阈值：往任一方向滑过 1/6 行程即切换（就近原则），
+                                    // 封面→歌词 与 歌词→封面 手感一致（v1.4.31 从 1/4 再收紧到 1/6）
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val quarter = limit / 4f        // -240px 附近
-                                    val threeQuarter = limit * 3f / 4f // -720px 附近
+                                    val sixth = limit / 6f           // 距端 1/6
+                                    val fiveSixth = limit * 5f / 6f   // 距端 5/6
                                     val target = when {
-                                        slide.value < threeQuarter -> limit  // 距歌词端<1/4，切歌词
-                                        slide.value > quarter -> 0f          // 距封面端<1/4，回封面
+                                        slide.value < fiveSixth -> limit  // 距歌词端<1/6，切歌词
+                                        slide.value > sixth -> 0f         // 距封面端<1/6，回封面
                                         else -> if (slide.value < limit / 2f) limit else 0f // 中间就近
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
@@ -231,11 +262,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             onDragCancel = {
                                 scope.launch {
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val quarter = limit / 4f
-                                    val threeQuarter = limit * 3f / 4f
+                                    val sixth = limit / 6f
+                                    val fiveSixth = limit * 5f / 6f
                                     val target = when {
-                                        slide.value < threeQuarter -> limit
-                                        slide.value > quarter -> 0f
+                                        slide.value < fiveSixth -> limit
+                                        slide.value > sixth -> 0f
                                         else -> if (slide.value < limit / 2f) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
@@ -246,6 +277,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                 contentAlignment = Alignment.Center
             ) {
                 // 封面面板：slide=0 原位；左滑时向左平移出屏（无边框，直接显示封面图）
+                // 位移用 graphicsLayer（GPU 合成），不用 offset{}（每帧重新布局更耗、易抖动）
                 AsyncImage(
                     model = song?.let {
                         if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
@@ -253,13 +285,13 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     },
                     contentDescription = null,
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f)
-                        .offset { IntOffset(slide.value.roundToInt(), 0) }
+                        .graphicsLayer { translationX = slide.value }
                         .clip(RoundedCornerShape(12.dp))
                 )
                 // 歌词面板：初始在右侧一屏外（slide+panelWidth+edgePx），滑到位后正好占据原位；透明背景，直接叠在渐变上
                 Box(
                     Modifier.fillMaxWidth().fillMaxHeight()
-                        .offset { IntOffset(slide.value.roundToInt() + panelWidth + edgePx.roundToInt(), 0) },
+                        .graphicsLayer { translationX = slide.value + panelWidth + edgePx.roundToInt() },
                     contentAlignment = Alignment.Center
                 ) {
                     if (lrcLines.isEmpty()) {
