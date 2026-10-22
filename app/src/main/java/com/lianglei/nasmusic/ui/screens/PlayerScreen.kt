@@ -253,15 +253,17 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    // 双向对称阈值：往任一方向滑过 1/8 行程即切换（就近原则），
-                                    // 封面→歌词 与 歌词→封面 手感一致（v1.4.32 从 1/6 再收紧到 1/8）
+                                    // 真正对称的 1/16 行程（v1.4.33 修正）：
+                                    // 前几版判断方向写反，导致从封面端轻滑实际要滑过半程才切歌词。
+                                    // 正确逻辑：从封面左滑超过 1/16 面板宽 → 切歌词；
+                                    // 从歌词右滑超过 1/16 → 回封面；两端 1/16 内保持原状。
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val eighth = limit / 8f            // 距端 1/8
-                                    val sevenEighth = limit * 7f / 8f  // 距端 7/8
+                                    val t16 = limit / 16f          // 距封面端 1/16
+                                    val t15 = limit * 15f / 16f    // 距歌词端 1/16
                                     val target = when {
-                                        slide.value < sevenEighth -> limit  // 距歌词端<1/8，切歌词
-                                        slide.value > eighth -> 0f          // 距封面端<1/8，回封面
-                                        else -> if (slide.value < limit / 2f) limit else 0f // 中间就近
+                                        slide.value < t16 -> limit   // 滑过封面端 1/16 → 切歌词
+                                        slide.value > t15 -> 0f      // 滑过歌词端 1/16 → 回封面
+                                        else -> if (slide.value < limit / 2f) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
@@ -269,11 +271,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             onDragCancel = {
                                 scope.launch {
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val eighth = limit / 8f
-                                    val sevenEighth = limit * 7f / 8f
+                                    val t16 = limit / 16f
+                                    val t15 = limit * 15f / 16f
                                     val target = when {
-                                        slide.value < sevenEighth -> limit
-                                        slide.value > eighth -> 0f
+                                        slide.value < t16 -> limit
+                                        slide.value > t15 -> 0f
                                         else -> if (slide.value < limit / 2f) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))

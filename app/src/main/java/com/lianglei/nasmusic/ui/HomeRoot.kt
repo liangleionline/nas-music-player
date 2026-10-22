@@ -40,14 +40,20 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.lianglei.nasmusic.data.FnApi
 import com.lianglei.nasmusic.data.MusicSource
 import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
 
@@ -357,11 +363,28 @@ private fun HomeContent(
     // 矩阵/alpha（GPU 合成、内容零重绘、零重组合 → 不掉帧）。隐藏时（slide=1）条件关闭
     // 拦截，不挡下层触摸；动画期间/显示时拦截点击穿透。
     val playerSlide = remember { Animatable(1f) }
+    val overlayCtx = LocalContext.current
     LaunchedEffect(showPlayer) {
         if (showPlayer) {
-            // 点歌瞬间浮层内容（封面/歌词/歌曲信息）重组+首绘与动画首帧竞争会掉帧。
-            // 延迟 100ms 启动滑入：首帧稳定后动画全程走 GPU 层变换，首次弹出也不卡。
-            delay(100)
+            // 预热封面模糊背景：点歌瞬间先等封面就绪（最长 300ms）再启动滑入动画，
+            // 动画期间无图片解码/模糊/首绘竞争 → 首次弹出也不卡
+            val song = PlayerManager.queue.value.getOrNull(PlayerManager.currentIndex.value)
+            val model = song?.let {
+                if (it.coverId.isNotEmpty()) FnApi.coverUrl(it.coverId)
+                else "content://media/external/audio/albumart/${it.albumId}"
+            }
+            if (model != null) {
+                withTimeoutOrNull(300) {
+                    withContext(Dispatchers.IO) {
+                        ImageLoader(overlayCtx).execute(
+                            ImageRequest.Builder(overlayCtx).data(model)
+                                .transformations(DownscaleBlurTransformation(5))
+                                .size(720).build()
+                        )
+                    }
+                }
+            }
+            delay(50)  // 首绘稳定后再滑
             playerSlide.animateTo(0f, tween(280))
         } else {
             playerSlide.animateTo(1f, tween(280))
