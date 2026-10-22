@@ -217,10 +217,10 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val result = bgLoader.execute(
-                    ImageRequest.Builder(ctx).data(coverModel).size(96).build()
+                    ImageRequest.Builder(ctx).data(coverModel).size(160).build()
                 )
                 val bmp = (result.drawable as? BitmapDrawable)?.bitmap
-                if (bmp != null) dominantColors(bmp, 4) else emptyList()
+                if (bmp != null) dominantColors(bmp, 4).map { saturateColor(it, 1.5f) } else emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
@@ -236,7 +236,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         // 迷幻烟雾背景：颜色取自封面主色（KMeans 提取的红/黑/白/黄等），
         // 6 个径向渐变烟团缓慢漂移 + 呼吸，Plus 叠加出灰蒙蒙烟雾感；
         // running=false（播放页隐藏）时帧循环暂停，零消耗。
-        SmokeBackground(palette = palette, running = backgroundRunning)
+        SmokeBackground(palette = palette, running = backgroundRunning, centerFill = coverBase)
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
@@ -594,7 +594,7 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
     val centers = ArrayList<IntArray>()
     for (i in 0 until k) centers.add(pts[(pts.size * i) / k].copyOf())
     val counts = IntArray(k)
-    repeat(12) {
+    repeat(24) {
         val sums = Array(k) { LongArray(3) }
         counts.fill(0)
         for (p in pts) {
@@ -634,7 +634,7 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
  * 收起再弹出时从当前相位续走，不跳变。
  */
 @Composable
-fun SmokeBackground(palette: List<Color>, running: Boolean) {
+fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = Color(0xFF2A2A2E)) {
     val phase = remember { Animatable(0f) }
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
@@ -658,7 +658,7 @@ fun SmokeBackground(palette: List<Color>, running: Boolean) {
         // 圆心约束在屏幕外围环形轨道（距屏中心 0.38w~0.56w 缓慢呼吸），
         // 靠近中央时 sin 到达极值点自动反向 → 烟团中心永不进入屏幕中央区
         repeat(6) { i ->
-            val c = if (i == 5) Color.White.copy(alpha = 0.30f) else base[i % base.size]
+            val c = if (i == 5) Color.White.copy(alpha = 0.32f) else base[i % base.size]
             // 各团角速度不同、奇偶团方向相反（避免同向绕圈机械化）；一圈约 7~15 分钟
             val dir = if (i % 2 == 0) 1f else -1f
             val theta = t * (0.25f + 0.06f * i) * dir + i * 1.0472f
@@ -667,7 +667,7 @@ fun SmokeBackground(palette: List<Color>, running: Boolean) {
             val cy = cy0 + rr * 0.95f * sin(theta)
             // 大烟团：半径 0.30~0.46 倍屏高（直径最大 ~0.92 屏高），弥散覆盖大半屏
             val r = ch * (0.38f + 0.08f * sin(t * 0.4f + i * 1.3f))
-            val peak = if (i == 5) 0.22f else 0.20f
+            val peak = if (i == 5) 0.28f else 0.26f
             drawCircle(
                 brush = Brush.radialGradient(
                     0.0f to c.copy(alpha = 0.0f),
@@ -681,19 +681,19 @@ fun SmokeBackground(palette: List<Color>, running: Boolean) {
                 blendMode = BlendMode.Plus
             )
         }
-        // 中央径向压暗：把多团浓带交叉漏进屏幕中部的烟尾压掉，
-        // 屏幕中央干净（歌词可读），烟雾视觉上只在外围缭绕
+        // 中央实心羽化圆（封面主色 coverBase）：直接盖住多团尾巴在中央的叠加残留，
+        // 光斑根除；中央底色 = 封面主色（与封面颜色直接呼应），边缘羽化无硬边
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(
-                    Color.Black.copy(alpha = 0.34f),
-                    Color.Black.copy(alpha = 0.12f),
-                    Color.Black.copy(alpha = 0f)
+                    centerFill,
+                    centerFill.copy(alpha = 0.88f),
+                    centerFill.copy(alpha = 0f)
                 ),
                 center = Offset(cx0, cy0),
-                radius = cw * 0.62f
+                radius = cw * 0.50f
             ),
-            radius = cw * 0.62f,
+            radius = cw * 0.50f,
             center = Offset(cx0, cy0)
         )
     }
@@ -704,4 +704,24 @@ private fun darkenToLuminance(c: Color, maxLum: Float): Color {
     val lum = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
     val f = if (lum > maxLum) maxLum / lum else 1f
     return Color(c.red * f, c.green * f, c.blue * f)
+}
+
+/** HSV 饱和度增强：让烟雾颜色更鲜明、可分辨（红就是红、黄就是黄），避免多团叠加后被冲灰 */
+private fun saturateColor(c: Color, factor: Float): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(
+        android.graphics.Color.rgb(
+            (c.red * 255f).toInt().coerceIn(0, 255),
+            (c.green * 255f).toInt().coerceIn(0, 255),
+            (c.blue * 255f).toInt().coerceIn(0, 255)
+        ),
+        hsv
+    )
+    hsv[1] = (hsv[1] * factor).coerceAtMost(1f)
+    val rgb = android.graphics.Color.HSVToColor(hsv)
+    return Color(
+        ((rgb shr 16) and 0xFF) / 255f,
+        ((rgb shr 8) and 0xFF) / 255f,
+        (rgb and 0xFF) / 255f
+    )
 }
