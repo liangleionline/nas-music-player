@@ -2,6 +2,7 @@ package com.lianglei.nasmusic.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -31,7 +32,14 @@ fun QueueScreen(onClose: () -> Unit = {}) {
 
     val bg = Brush.verticalGradient(listOf(Color(0xFF8B6914), Color(0xFF6B4E1A), Color(0xFF4A3728)))
 
-    Column(Modifier.fillMaxSize().background(bg).systemBarsPadding()) {
+    // 根容器拦截点击（空操作）：阻止事件穿透到下层 NavHost 列表（同播放页处理）
+    Column(
+        Modifier.fillMaxSize().background(bg).systemBarsPadding()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { }
+    ) {
         // Top hint
         Text(
             "此处向下轻扫以返回播放界面",

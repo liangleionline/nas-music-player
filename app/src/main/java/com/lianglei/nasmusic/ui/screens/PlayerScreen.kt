@@ -3,6 +3,7 @@ package com.lianglei.nasmusic.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -130,7 +131,16 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     }
     val coverBase = baseColor?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
 
-    Box(Modifier.fillMaxSize().background(coverBase)) {
+    // 根容器拦截点击（空操作）：阻止事件穿透到下层 NavHost 列表，
+    // 否则点击封面/歌词等空白区域会命中下层歌曲行，误触发播放/切歌。
+    // 内部 Slider/IconButton 等子节点不受影响，正常响应。
+    Box(
+        Modifier.fillMaxSize().background(coverBase)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { }
+    ) {
         // Frosted glass background: blurred album cover + dark scrim
         AsyncImage(
             model = coverModel,
