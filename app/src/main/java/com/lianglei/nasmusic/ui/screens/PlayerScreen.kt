@@ -192,9 +192,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
 
             // 封面/歌词 左右滑动切换（两块玻璃跟手平移：封面左滑出屏、歌词右滑入，反向亦然）
             // 面板高度 = 屏幕 64%，歌词块垂直居中后中心落在屏幕 ~43%（与 Salt 一致）
+            // slide 范围 [0, -2×panelWidth]：封面滑出量 = 面板宽 + 出屏余量(一个面板宽)，绝对完全出屏不留边；
+            // 歌词面板 offset = slide + 2×panelWidth：初始在右侧两屏外，到位时正好 = 0 占据原位
             val panelHeight = (LocalConfiguration.current.screenHeightDp * 0.64f).dp
             var panelWidth by remember { mutableStateOf(0) }
-            val slide = remember { Animatable(0f) } // 0 = 显示封面；-panelWidth = 显示歌词
+            val slide = remember { Animatable(0f) } // 0 = 显示封面；-2×panelWidth = 显示歌词
             val scope = rememberCoroutineScope()
             Box(
                 Modifier.fillMaxWidth().height(panelHeight)
@@ -206,20 +208,20 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                                 change.consume()
                                 if (panelWidth > 0) {
                                     scope.launch {
-                                        // 下限多留 24dp 出屏余量，保证封面完全滑出不留边
-                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat() - 24f, 0f))
+                                        // 跟手平移；下限 -2×panelWidth 保证封面绝对出屏
+                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat() * 2f, 0f))
                                     }
                                 }
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() - 24f else 0f
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() * 2f else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             },
                             onDragCancel = {
                                 scope.launch {
-                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() - 24f else 0f
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() * 2f else 0f
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             }
@@ -238,10 +240,10 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                         .offset { IntOffset(slide.value.roundToInt(), 0) }
                         .clip(RoundedCornerShape(12.dp))
                 )
-                // 歌词面板：初始在右侧屏外（slide+panelWidth），滑到位后占据原位；透明背景，直接叠在渐变上
+                // 歌词面板：初始在右侧两屏外（slide+2×panelWidth），滑到位后占据原位；透明背景，直接叠在渐变上
                 Box(
                     Modifier.fillMaxWidth().fillMaxHeight()
-                        .offset { IntOffset(slide.value.roundToInt() + panelWidth, 0) },
+                        .offset { IntOffset(slide.value.roundToInt() + panelWidth * 2, 0) },
                     contentAlignment = Alignment.Center
                 ) {
                     if (lrcLines.isEmpty()) {
