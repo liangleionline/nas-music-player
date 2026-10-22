@@ -34,6 +34,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import android.content.Context
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -146,7 +147,7 @@ fun HomeRoot() {
 
     AndroidView(
         factory = { ctx ->
-            DrawerLayout(ctx).apply {
+            SwipeDrawerLayout(ctx).apply {
                 // 推动式抽屉：无遮罩，内容被抽屉推开
                 setScrimColor(android.graphics.Color.TRANSPARENT)
                 addDrawerListener(object : DrawerLayout.DrawerListener {
@@ -156,51 +157,22 @@ fun HomeRoot() {
                     override fun onDrawerClosed(drawerView: View) { drawerOpenState.value = false }
                 })
 
-                // 右侧主内容（Compose）+ View 层全屏手势（只观察、零消费，物理上不挡下层）
-                val contentView = ComposeView(ctx).apply {
-                    setBackgroundColor(0xFFF2F3F5.toInt())
-                    setContent {
-                        HomeContent(
-                            nav = nav,
-                            showPlayerState = showPlayerState,
-                            showQueueState = showQueueState,
-                            searchTriggerState = searchTriggerState,
-                            drawerOpenState = drawerOpenState,
-                            onOpenDrawer = { openDrawer(GravityCompat.START) },
-                            onCloseDrawer = { closeDrawer(GravityCompat.START) }
-                        )
-                    }
-                }
-                val slop = android.util.TypedValue.applyDimension(
-                    android.util.TypedValue.COMPLEX_UNIT_DIP, 24f, ctx.resources.displayMetrics
-                )
-                var touchStartX = 0f
-                var touchStartY = 0f
-                contentView.setOnTouchListener { _, event ->
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            touchStartX = event.x
-                            touchStartY = event.y
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            val dx = event.x - touchStartX
-                            val dy = event.y - touchStartY
-                            if (kotlin.math.abs(dx) > slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
-                                if (this@apply.getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED) {
-                                    if (this@apply.isDrawerOpen(GravityCompat.START)) {
-                                        if (dx < 0) this@apply.closeDrawer(GravityCompat.START)
-                                    } else if (touchStartX > slop && dx > 0) {
-                                        this@apply.openDrawer(GravityCompat.START)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // 返回 false：绝不消费，事件完整透传给 Compose（汉堡键/列表滚动/点击播放不受任何影响）
-                    false
-                }
+                // 右侧主内容（Compose）
                 addView(
-                    contentView,
+                    ComposeView(ctx).apply {
+                        setBackgroundColor(0xFFF2F3F5.toInt())
+                        setContent {
+                            HomeContent(
+                                nav = nav,
+                                showPlayerState = showPlayerState,
+                                showQueueState = showQueueState,
+                                searchTriggerState = searchTriggerState,
+                                drawerOpenState = drawerOpenState,
+                                onOpenDrawer = { openDrawer(GravityCompat.START) },
+                                onCloseDrawer = { closeDrawer(GravityCompat.START) }
+                            )
+                        }
+                    },
                     ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 )
 
@@ -519,5 +491,44 @@ private fun MiniPlayer(song: Song?, isPlaying: Boolean, buffering: Boolean, onCl
             }
             IconButton(onClick = onQueue) { Icon(Icons.Filled.QueueMusic, null) }
         }
+    }
+}
+
+/**
+ * 全屏手势 DrawerLayout：
+ * 在 dispatchTouchEvent 的最起点做"纯观察"（先于 super、绝不消费、绝不拦截），
+ * 因此能看到所有触摸（包括被 ComposeView 消化的事件），同时完全不影响事件分发——
+ * 汉堡键、列表滚动、点击播放等下层交互不受任何干扰。
+ * 左缘 20dp 内由 DrawerLayout 原生边缘手势跟手；其余全屏区域右滑开抽屉、左滑关抽屉（系统动画）。
+ */
+class SwipeDrawerLayout @JvmOverloads constructor(
+    context: Context
+) : DrawerLayout(context) {
+    private var touchStartX = 0f
+    private var touchStartY = 0f
+    private val slop: Float get() = 24f * resources.displayMetrics.density
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchStartX = ev.x
+                touchStartY = ev.y
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val dx = ev.x - touchStartX
+                val dy = ev.y - touchStartY
+                if (kotlin.math.abs(dx) > slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                    if (getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED) {
+                        if (isDrawerOpen(GravityCompat.START)) {
+                            if (dx < 0) closeDrawer(GravityCompat.START)
+                        } else if (touchStartX > slop && dx > 0) {
+                            openDrawer(GravityCompat.START)
+                        }
+                    }
+                }
+            }
+        }
+        // 观察完交给 super：拦截、分发、Compose 处理全部照旧，一次都不碰
+        return super.dispatchTouchEvent(ev)
     }
 }
