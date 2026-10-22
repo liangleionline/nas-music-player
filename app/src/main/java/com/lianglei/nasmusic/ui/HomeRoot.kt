@@ -46,6 +46,7 @@ import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
@@ -357,8 +358,14 @@ private fun HomeContent(
     // 拦截，不挡下层触摸；动画期间/显示时拦截点击穿透。
     val playerSlide = remember { Animatable(1f) }
     LaunchedEffect(showPlayer) {
-        if (showPlayer) playerSlide.animateTo(0f, tween(280))
-        else playerSlide.animateTo(1f, tween(280))
+        if (showPlayer) {
+            // 点歌瞬间浮层内容（封面/歌词/歌曲信息）重组+首绘与动画首帧竞争会掉帧。
+            // 延迟 100ms 启动滑入：首帧稳定后动画全程走 GPU 层变换，首次弹出也不卡。
+            delay(100)
+            playerSlide.animateTo(0f, tween(280))
+        } else {
+            playerSlide.animateTo(1f, tween(280))
+        }
     }
     Box(
         Modifier.fillMaxSize().graphicsLayer {
