@@ -235,10 +235,15 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             val edgePx = with(LocalDensity.current) { 24.dp.toPx() }
             var panelWidth by remember { mutableStateOf(0) }
             val slide = remember { Animatable(0f) } // 0 = 显示封面；-(panelWidth+edgePx) = 显示歌词
-            // 拖动起点状态：0 = 起点封面端，limit = 起点歌词端。
-            // 切换判定必须基于起点+滑动方向：起点在歌词端时右滑超过 1/16 面板宽即回封面，
-            // 起点在封面端时左滑超过 1/16 即切歌词——否则(基于当前位置)从歌词端右滑会一直
-            // 命中"切歌词"分支而弹回歌词（v1.4.33 的 bug，用户滑半屏切不回封面的原因）。
+            // v1.4.35 手势判定彻底重写（此前多版不稳定根因）：
+            // 旧逻辑基于"当前位置/起点位置"判断切换，存在两类问题：
+            // ① 位置判断不对称（v1.4.29/31/32 从封面端实际需半程才切）；
+            // ② scope.launch(默认 Main) 协程队列让 onDragEnd 读取的 slide.value 可能不是最新值（v1.4.33/34）。
+            // 新逻辑：onDragStart 记录起点值，onDragEnd 用"净位移方向"判定——
+            //   净位移向左(<0) → 切歌词；净位移向右(>0) → 回封面；
+            //   净位移 < 24dp（误触保护）→ 保持起点状态。
+            // 方向驱动天然双向对称，与当前位置、中间态、协程时序全部无关。
+            // snapTo/stop/animateTo 全部用 Dispatchers.Main.immediate：调用即同步执行，跟手无延迟。
             var dragStart by remember { mutableStateOf(0f) }
             val scope = rememberCoroutineScope()
             Box(
@@ -247,43 +252,40 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
                             onDragStart = {
-                                scope.launch { slide.stop() }
+                                scope.launch(Dispatchers.Main.immediate) { slide.stop() }
                                 dragStart = slide.value
                             },
                             onHorizontalDrag = { change, dragAmount ->
                                 change.consume()
                                 if (panelWidth > 0) {
-                                    scope.launch {
+                                    scope.launch(Dispatchers.Main.immediate) {
                                         // 跟手平移；下限 -(面板宽+左侧边距)，封面右边缘正好到屏幕 x=0
                                         slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat() - edgePx, 0f))
                                     }
                                 }
                             },
                             onDragEnd = {
-                                scope.launch {
-                                    // 基于拖动起点的对称 1/16 行程：
+                                scope.launch(Dispatchers.Main.immediate) {
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val t16 = limit / 16f          // 距封面端 1/16
-                                    val t15 = limit * 15f / 16f    // 距歌词端 1/16
-                                    val target = if (dragStart < limit / 2f) {
-                                        // 起点在封面端：左滑超过 1/16 面板宽 → 切歌词；否则回封面
-                                        if (slide.value < t16) limit else 0f
+                                    val delta = slide.value - dragStart // 净位移：向左<0，向右>0
+                                    val target = if (kotlin.math.abs(delta) < edgePx) {
+                                        // 误触保护（<24dp）：保持起点状态
+                                        if (dragStart < limit / 2f) 0f else limit
                                     } else {
-                                        // 起点在歌词端：右滑超过 1/16 面板宽 → 回封面；否则保持歌词
-                                        if (slide.value > t15) 0f else limit
+                                        // 方向驱动：左滑切歌词、右滑回封面（对称）
+                                        if (delta < 0f) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             },
                             onDragCancel = {
-                                scope.launch {
+                                scope.launch(Dispatchers.Main.immediate) {
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val t16 = limit / 16f
-                                    val t15 = limit * 15f / 16f
-                                    val target = if (dragStart < limit / 2f) {
-                                        if (slide.value < t16) limit else 0f
+                                    val delta = slide.value - dragStart
+                                    val target = if (kotlin.math.abs(delta) < edgePx) {
+                                        if (dragStart < limit / 2f) 0f else limit
                                     } else {
-                                        if (slide.value > t15) 0f else limit
+                                        if (delta < 0f) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
