@@ -42,6 +42,7 @@ import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
@@ -75,6 +76,7 @@ fun HomeRoot() {
 
     // 推动式抽屉：0=关闭 1=完全展开，内容随动画右移
     val drawerAnim = remember { Animatable(0f) }
+    val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
     val isDrawerOpen = drawerAnim.value > 0.5f
     fun toggleDrawer(open: Boolean) {
         scope.launch {
@@ -85,12 +87,22 @@ fun HomeRoot() {
         }
     }
     var dragging by remember { mutableStateOf(false) }
-    fun settleDrawer() {
+    // 回弹：按「相对起手的拖动位移」判定，而不是看最终位置——
+    // 从全开往回拉只需超过抽屉宽度 15% 即关闭，避免"拉不回来"
+    fun settleDrawer(startValue: Float, totalX: Float) {
         scope.launch {
-            drawerAnim.animateTo(
-                if (drawerAnim.value > 0.25f) 1f else 0f,
-                animationSpec = tween(200)
-            )
+            val threshold = 0.15f * drawerWidthPx
+            val target = if (startValue > 0.5f) {
+                if (totalX < -threshold) 0f else 1f
+            } else {
+                if (totalX > threshold) 1f else 0f
+            }
+            drawerAnim.animateTo(target, tween(200))
+        }
+    }
+    fun cancelSettle() {
+        scope.launch {
+            drawerAnim.animateTo(if (drawerAnim.value > 0.5f) 1f else 0f, tween(200))
         }
     }
 
@@ -168,8 +180,6 @@ fun HomeRoot() {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val current = queue.getOrNull(currentIndex)
 
-    val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
-
     Box(
         Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
     ) {
@@ -180,20 +190,24 @@ fun HomeRoot() {
                 .pointerInput(Unit) {
                     var startValue = 0f
                     var startX = 0f
+                    var totalX = 0f
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
                             startValue = drawerAnim.value
                             startX = start.x
+                            totalX = 0f
                         },
-                        onHorizontalDrag = { change, _ ->
+                        onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            scope.launch {
+                            totalX += dragAmount
+                            // Main.immediate：在事件回调内同步更新，抽屉逐帧贴合手指（不排队等帧）
+                            scope.launch(Dispatchers.Main.immediate) {
                                 drawerAnim.snapTo((startValue + (change.position.x - startX) / drawerWidthPx).coerceIn(0f, 1f))
                             }
                         },
-                        onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
-                        onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
+                        onDragEnd = { if (dragging) { dragging = false; settleDrawer(startValue, totalX) } },
+                        onDragCancel = { if (dragging) { dragging = false; cancelSettle() } }
                     )
                 },
             color = Color(0xFFFCFCFD),
@@ -266,6 +280,7 @@ fun HomeRoot() {
         // ===== 右侧主内容：抽屉展开时整体右移（推动式）=====
         // 手势覆盖整个内容区：全屏宽度任意位置右滑开抽屉、左滑关闭（播放器/队列页除外）
         // 绝对跟手映射：起手时快照，拖动位置直接换算，逐帧贴合手指
+        // RenderLayer：把整个内容页缓存为单一图层，拖动时只做 GPU 位移，不再逐帧重放绘制指令（去卡顿）
         Box(
             Modifier
                 .fillMaxSize()
@@ -277,20 +292,24 @@ fun HomeRoot() {
                     if (showPlayer || showQueue) return@pointerInput
                     var startValue = 0f
                     var startX = 0f
+                    var totalX = 0f
                     detectHorizontalDragGestures(
                         onDragStart = { start ->
                             dragging = true
                             startValue = drawerAnim.value
                             startX = start.x
+                            totalX = 0f
                         },
-                        onHorizontalDrag = { change, _ ->
+                        onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            scope.launch {
+                            totalX += dragAmount
+                            // Main.immediate：在事件回调内同步更新，抽屉逐帧贴合手指（不排队等帧）
+                            scope.launch(Dispatchers.Main.immediate) {
                                 drawerAnim.snapTo((startValue + (change.position.x - startX) / drawerWidthPx).coerceIn(0f, 1f))
                             }
                         },
-                        onDragEnd = { if (dragging) { dragging = false; settleDrawer() } },
-                        onDragCancel = { if (dragging) { dragging = false; settleDrawer() } }
+                        onDragEnd = { if (dragging) { dragging = false; settleDrawer(startValue, totalX) } },
+                        onDragCancel = { if (dragging) { dragging = false; cancelSettle() } }
                     )
                 }
         ) {
