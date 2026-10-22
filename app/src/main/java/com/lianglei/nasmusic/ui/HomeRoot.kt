@@ -403,7 +403,10 @@ private fun HomeContent(
             else Modifier
         )
     ) {
-        PlayerScreen(onOpenQueue = { showQueueState.value = true })
+        PlayerScreen(
+            onOpenQueue = { showQueueState.value = true },
+            backgroundRunning = playerSlide.value < 0.98f
+        )
     }
     // 队列页全屏浮层：同上（常驻组合预热 + 条件拦截）
     val queueSlide = remember { Animatable(1f) }
