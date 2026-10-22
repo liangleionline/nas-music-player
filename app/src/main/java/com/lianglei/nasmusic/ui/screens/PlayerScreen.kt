@@ -133,15 +133,10 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     }
     val coverBase = baseColor?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
 
-    // 根容器拦截点击（空操作）：阻止事件穿透到下层 NavHost 列表，
-    // 否则点击封面/歌词等空白区域会命中下层歌曲行，误触发播放/切歌。
+    // 根容器拦截已上移到 HomeRoot 浮层（条件拦截：显示时拦截、隐藏时不拦截），
     // 内部 Slider/IconButton 等子节点不受影响，正常响应。
     Box(
         Modifier.fillMaxSize().background(coverBase)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { }
     ) {
         // Frosted glass background: blurred album cover + dark scrim
         AsyncImage(
@@ -220,16 +215,29 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    // 阈值降到四分之一行程：轻滑即切（原半程需大幅滑动才成功）
+                                    // 双向对称阈值：往任一方向滑过 1/4 行程即切换（就近原则），
+                                    // 封面→歌词 与 歌词→封面 手感一致
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val target = if (slide.value < limit / 4f) limit else 0f
+                                    val quarter = limit / 4f        // -240px 附近
+                                    val threeQuarter = limit * 3f / 4f // -720px 附近
+                                    val target = when {
+                                        slide.value < threeQuarter -> limit  // 距歌词端<1/4，切歌词
+                                        slide.value > quarter -> 0f          // 距封面端<1/4，回封面
+                                        else -> if (slide.value < limit / 2f) limit else 0f // 中间就近
+                                    }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             },
                             onDragCancel = {
                                 scope.launch {
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val target = if (slide.value < limit / 4f) limit else 0f
+                                    val quarter = limit / 4f
+                                    val threeQuarter = limit * 3f / 4f
+                                    val target = when {
+                                        slide.value < threeQuarter -> limit
+                                        slide.value > quarter -> 0f
+                                        else -> if (slide.value < limit / 2f) limit else 0f
+                                    }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
                             }

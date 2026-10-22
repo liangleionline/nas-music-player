@@ -32,13 +32,9 @@ fun QueueScreen(onClose: () -> Unit = {}) {
 
     val bg = Brush.verticalGradient(listOf(Color(0xFF8B6914), Color(0xFF6B4E1A), Color(0xFF4A3728)))
 
-    // 根容器拦截点击（空操作）：阻止事件穿透到下层 NavHost 列表（同播放页处理）
+    // 根容器拦截已上移到 HomeRoot 浮层（条件拦截：显示时拦截、隐藏时不拦截）
     Column(
         Modifier.fillMaxSize().background(bg).systemBarsPadding()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { }
     ) {
         // Top hint
         Text(

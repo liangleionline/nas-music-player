@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -351,38 +352,49 @@ private fun HomeContent(
         }
     }
 
-    // 播放页全屏浮层：进入/退出动画用 graphicsLayer 矩阵变换（GPU 合成、内容零重绘），
-    // 避免 slideInVertically 每帧重绘模糊背景导致的掉帧
+    // 播放页全屏浮层：常驻组合（预热）——首次进入无组合开销，动画只改 graphicsLayer
+    // 矩阵/alpha（GPU 合成、内容零重绘、零重组合 → 不掉帧）。隐藏时（slide=1）条件关闭
+    // 拦截，不挡下层触摸；动画期间/显示时拦截点击穿透。
     val playerSlide = remember { Animatable(1f) }
     LaunchedEffect(showPlayer) {
         if (showPlayer) playerSlide.animateTo(0f, tween(280))
         else playerSlide.animateTo(1f, tween(280))
     }
-    if (showPlayer || playerSlide.value < 1f) {
-        Box(
-            Modifier.fillMaxSize().graphicsLayer {
-                translationY = playerSlide.value * size.height
-                alpha = 1f - playerSlide.value
-            }
-        ) {
-            PlayerScreen(onOpenQueue = { showQueueState.value = true })
-        }
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            translationY = playerSlide.value * size.height
+            alpha = 1f - playerSlide.value
+        }.then(
+            if (playerSlide.value < 0.98f)
+                Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { }
+            else Modifier
+        )
+    ) {
+        PlayerScreen(onOpenQueue = { showQueueState.value = true })
     }
-    // 队列页全屏浮层：同上
+    // 队列页全屏浮层：同上（常驻组合预热 + 条件拦截）
     val queueSlide = remember { Animatable(1f) }
     LaunchedEffect(showQueue) {
         if (showQueue) queueSlide.animateTo(0f, tween(280))
         else queueSlide.animateTo(1f, tween(280))
     }
-    if (showQueue || queueSlide.value < 1f) {
-        Box(
-            Modifier.fillMaxSize().graphicsLayer {
-                translationY = queueSlide.value * size.height
-                alpha = 1f - queueSlide.value
-            }
-        ) {
-            QueueScreen(onClose = { showQueueState.value = false })
-        }
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            translationY = queueSlide.value * size.height
+            alpha = 1f - queueSlide.value
+        }.then(
+            if (queueSlide.value < 0.98f)
+                Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { }
+            else Modifier
+        )
+    ) {
+        QueueScreen(onClose = { showQueueState.value = false })
     }
     }
 }
