@@ -1,9 +1,14 @@
 package com.lianglei.nasmusic.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,11 +18,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.compose.NavHost
@@ -34,8 +44,8 @@ import kotlinx.coroutines.launch
 
 data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
 
-/** 底部主导航：与 Salt Player 的 Tab 结构对齐 */
-private val tabEntries = listOf(
+/** 主入口（Salt Player 同款：歌曲/专辑/艺术家/文件夹/歌单 在左侧抽屉） */
+private val mainEntries = listOf(
     DrawerEntry("歌曲", Icons.Filled.MusicNote, Color(0xFF3CB371), "songs"),
     DrawerEntry("专辑", Icons.Filled.Album, Color(0xFFE74C3C), "albums"),
     DrawerEntry("艺术家", Icons.Filled.Mic, Color(0xFFF1C40F), "artists"),
@@ -52,13 +62,26 @@ private val systemEntries = listOf(
     DrawerEntry("关于", Icons.Filled.Info, Color(0xFF1E88E5), "about"),
 )
 
+private val DRAWER_WIDTH = 264.dp
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeRoot() {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
     var searchTrigger by remember { mutableStateOf(false) }
+
+    // 推动式抽屉：0=关闭 1=完全展开，内容随动画右移
+    val drawerAnim = remember { Animatable(0f) }
+    val isDrawerOpen = drawerAnim.value > 0.5f
+    fun toggleDrawer(open: Boolean) {
+        scope.launch {
+            drawerAnim.animateTo(
+                if (open) 1f else 0f,
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+            )
+        }
+    }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val currentSource by SourceManager.current.collectAsStateWithLifecycle()
@@ -87,6 +110,9 @@ fun HomeRoot() {
 
     var lastBackPress by remember { mutableStateOf(0L) }
     val rootRoutes = setOf("songs", "albums", "artists", "folders", "playlists")
+    androidx.activity.compose.BackHandler(enabled = isDrawerOpen) {
+        toggleDrawer(false)
+    }
     androidx.activity.compose.BackHandler(enabled = showPlayer || showQueue) {
         if (showQueue) { showQueue = false } else { showPlayer = false }
     }
@@ -131,20 +157,20 @@ fun HomeRoot() {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val current = queue.getOrNull(currentIndex)
 
-    // 底部 Tab 选中态：主路由及所属详情路由
-    val selectedTab = when {
-        currentRoute == "songs" || currentRoute == null -> "songs"
-        currentRoute == "albums" || currentRoute?.startsWith("album/") == true -> "albums"
-        currentRoute == "artists" || currentRoute?.startsWith("artist/") == true -> "artists"
-        currentRoute == "folders" || currentRoute?.startsWith("folder/") == true -> "folders"
-        currentRoute == "playlists" || currentRoute?.startsWith("playlist/") == true -> "playlists"
-        else -> null
-    }
+    val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
+    val edgePx = with(LocalDensity.current) { 72.dp.toPx() }
+    var dragging by remember { mutableStateOf(false) }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(200.dp)) {
+    Box(
+        Modifier.fillMaxSize().background(Color(0xFFEDEDEF))
+    ) {
+        // ===== 左侧抽屉（固定，被推露出来）=====
+        Surface(
+            modifier = Modifier.width(DRAWER_WIDTH).fillMaxHeight().align(Alignment.CenterStart).zIndex(0f),
+            color = Color(0xFFFCFCFD),
+            shadowElevation = 6.dp
+        ) {
+            Column(Modifier.fillMaxSize()) {
                 Spacer(Modifier.height(28.dp))
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("NAS Music", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -173,7 +199,7 @@ fun HomeRoot() {
                                     if (currentSource == MusicSource.FEINIU) {
                                         SourceManager.switchTo(MusicSource.LOCAL)
                                     } else {
-                                        drawerState.close()
+                                        toggleDrawer(false)
                                         nav.navigate("library") { launchSingleTop = true }
                                     }
                                 }
@@ -189,53 +215,123 @@ fun HomeRoot() {
                         }
                     }
                 }
+                Spacer(Modifier.height(4.dp))
+                Text("媒体库", fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
+                DrawerGroup(mainEntries) { route ->
+                    toggleDrawer(false)
+                    nav.navigate(route) {
+                        launchSingleTop = true
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
+                Text("系统", fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
                 DrawerGroup(systemEntries) { route ->
-                    scope.launch { drawerState.close() }
+                    toggleDrawer(false)
                     nav.navigate(route) { launchSingleTop = true }
                 }
                 Spacer(Modifier.weight(1f))
             }
         }
-    ) {
-        Scaffold(
-            containerColor = Color(0xFFF2F3F5),
-            topBar = {
-                val isDetail = currentRoute?.startsWith("artist/") == true ||
-                        currentRoute?.startsWith("album/") == true ||
-                        currentRoute?.startsWith("folder/") == true ||
-                        currentRoute?.startsWith("playlist/") == true
-                CenterAlignedTopAppBar(
-                    title = { Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, fontSize = 18.sp) },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            if (isDetail) nav.popBackStack()
-                            else scope.launch { drawerState.open() }
-                        }) {
-                            Icon(if (isDetail) Icons.Filled.ArrowBack else Icons.Filled.Menu, null)
-                        }
-                    },
-                    actions = {
-                        when {
-                            currentRoute == "songs" ->
-                                IconButton(onClick = { searchTrigger = !searchTrigger }) {
-                                    Icon(Icons.Filled.Search, null)
-                                }
-                            currentRoute == "albums" || currentRoute == "artists" || currentRoute?.startsWith("artist/") == true ->
-                                Icon(Icons.Filled.ViewList, null)
-                            else -> {}
-                        }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = Color.Black,
-                        navigationIconContentColor = Color.Black,
-                        actionIconContentColor = Color.Black
-                    )
+
+        // ===== 右侧主内容：抽屉展开时整体右移（推动式）=====
+        Box(
+            Modifier
+                .fillMaxSize()
+                .zIndex(1f)
+                .graphicsLayer {
+                    translationX = drawerAnim.value * drawerWidthPx
+                }
+                .shadow(
+                    elevation = if (isDrawerOpen) 16.dp else 0.dp,
+                    shape = RoundedCornerShape(0.dp)
                 )
-            },
-            bottomBar = {
-                Column {
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { start ->
+                            dragging = if (drawerAnim.value > 0.9f) {
+                                true
+                            } else if (drawerAnim.value < 0.1f && start.x < edgePx) {
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (dragging) {
+                                change.consume()
+                                scope.launch {
+                                    drawerAnim.snapTo((drawerAnim.value + dragAmount / drawerWidthPx).coerceIn(0f, 1f))
+                                }
+                            }
+                        },
+                        onDragEnd = {
+                            if (dragging) {
+                                dragging = false
+                                scope.launch {
+                                    drawerAnim.animateTo(
+                                        if (drawerAnim.value > 0.35f) 1f else 0f,
+                                        animationSpec = tween(250)
+                                    )
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            if (dragging) {
+                                dragging = false
+                                scope.launch {
+                                    drawerAnim.animateTo(
+                                        if (drawerAnim.value > 0.35f) 1f else 0f,
+                                        animationSpec = tween(250)
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
+        ) {
+            Scaffold(
+                containerColor = Color(0xFFF2F3F5),
+                topBar = {
+                    val isDetail = currentRoute?.startsWith("artist/") == true ||
+                            currentRoute?.startsWith("album/") == true ||
+                            currentRoute?.startsWith("folder/") == true ||
+                            currentRoute?.startsWith("playlist/") == true
+                    CenterAlignedTopAppBar(
+                        title = { Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, fontSize = 18.sp) },
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                if (isDetail) nav.popBackStack()
+                                else toggleDrawer(!isDrawerOpen)
+                            }) {
+                                Icon(
+                                    if (isDetail) Icons.Filled.ArrowBack
+                                    else if (isDrawerOpen) Icons.Filled.Close
+                                    else Icons.Filled.Menu,
+                                    null
+                                )
+                            }
+                        },
+                        actions = {
+                            when {
+                                currentRoute == "songs" ->
+                                    IconButton(onClick = { searchTrigger = !searchTrigger }) {
+                                        Icon(Icons.Filled.Search, null)
+                                    }
+                                currentRoute == "albums" || currentRoute == "artists" || currentRoute?.startsWith("artist/") == true ->
+                                    Icon(Icons.Filled.ViewList, null)
+                                else -> {}
+                            }
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = Color.Black,
+                            navigationIconContentColor = Color.Black,
+                            actionIconContentColor = Color.Black
+                        )
+                    )
+                },
+                bottomBar = {
                     MiniPlayer(
                         song = current,
                         isPlaying = isPlaying,
@@ -243,100 +339,67 @@ fun HomeRoot() {
                         onClick = { showPlayer = true },
                         onQueue = { showQueue = true }
                     )
-                    if (selectedTab != null) {
-                        BottomNav(
-                            selected = selectedTab,
-                            onSelect = { route ->
-                                nav.navigate(route) {
-                                    launchSingleTop = true
-                                    popUpTo(0) { inclusive = true }
-                                }
+                }
+            ) { pad ->
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().padding(pad)) {
+                        NavHost(nav, startDestination = "songs") {
+                            composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
+                            composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
+                            composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
+                            composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
+                            composable("playlists") { PlaylistScreen(playlists = playlists, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
+                            composable("scan") { ScanSourceScreen() }
+                            composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
+                            composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
+                            composable("stats") { PlaceholderScreen("统计") }
+                            composable("settings") { PlaceholderScreen("设置") }
+                            composable("about") { AboutScreen() }
+                            composable("artist/{name}") { backStackEntry ->
+                                val name = backStackEntry.arguments?.getString("name") ?: ""
+                                ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
                             }
-                        )
+                            composable("album/{albumId}") { backStackEntry ->
+                                val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
+                                AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
+                            }
+                            composable("folder/{name}") { backStackEntry ->
+                                val name = backStackEntry.arguments?.getString("name") ?: ""
+                                FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                            }
+                            composable("playlist/{guid}") { backStackEntry ->
+                                val guid = backStackEntry.arguments?.getString("guid") ?: ""
+                                var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+                                LaunchedEffect(guid, currentSource) {
+                                    playlistSongs = if (currentSource == MusicSource.FEINIU) {
+                                        SourceManager.fetchPlaylistTracks(guid)
+                                    } else {
+                                        songs
+                                    }
+                                }
+                                val plName = playlists.find { it.guid == guid }?.name ?: "歌单"
+                                PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx) }
+                            }
+                        }
+                    }
+
+                    // Fullscreen overlay - covers entire window including status bar
+                    AnimatedVisibility(
+                        visible = showPlayer,
+                        enter = slideInVertically { it },
+                        exit = slideOutVertically { it }
+                    ) {
+                        PlayerScreen(onOpenQueue = { showQueue = true })
+                    }
+                    AnimatedVisibility(
+                        visible = showQueue,
+                        enter = slideInVertically { it },
+                        exit = slideOutVertically { it }
+                    ) {
+                        QueueScreen(onClose = { showQueue = false })
                     }
                 }
             }
-        ) { pad ->
-            Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().padding(pad)) {
-                    NavHost(nav, startDestination = "songs") {
-                        composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
-                        composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
-                        composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
-                        composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
-                        composable("playlists") { PlaylistScreen(playlists = playlists, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
-                        composable("scan") { ScanSourceScreen() }
-                        composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
-                        composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
-                        composable("stats") { PlaceholderScreen("统计") }
-                        composable("settings") { PlaceholderScreen("设置") }
-                        composable("about") { AboutScreen() }
-                        composable("artist/{name}") { backStackEntry ->
-                            val name = backStackEntry.arguments?.getString("name") ?: ""
-                            ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
-                        }
-                        composable("album/{albumId}") { backStackEntry ->
-                            val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
-                            AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
-                        }
-                        composable("folder/{name}") { backStackEntry ->
-                            val name = backStackEntry.arguments?.getString("name") ?: ""
-                            FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
-                        }
-                        composable("playlist/{guid}") { backStackEntry ->
-                            val guid = backStackEntry.arguments?.getString("guid") ?: ""
-                            var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-                            LaunchedEffect(guid, currentSource) {
-                                playlistSongs = if (currentSource == MusicSource.FEINIU) {
-                                    SourceManager.fetchPlaylistTracks(guid)
-                                } else {
-                                    songs
-                                }
-                            }
-                            val plName = playlists.find { it.guid == guid }?.name ?: "歌单"
-                            PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx) }
-                        }
-                    }
-                }
-
-                // Fullscreen overlay - covers entire window including status bar
-                AnimatedVisibility(
-                    visible = showPlayer,
-                    enter = slideInVertically { it },
-                    exit = slideOutVertically { it }
-                ) {
-                    PlayerScreen(onOpenQueue = { showQueue = true })
-                }
-                AnimatedVisibility(
-                    visible = showQueue,
-                    enter = slideInVertically { it },
-                    exit = slideOutVertically { it }
-                ) {
-                    QueueScreen(onClose = { showQueue = false })
-                }
-            }
-        }
-    }
-}
-
-/** 底部 Tab 导航栏（对齐 Salt Player 主界面） */
-@Composable
-private fun BottomNav(selected: String, onSelect: (String) -> Unit) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp
-    ) {
-        tabEntries.forEach { e ->
-            NavigationBarItem(
-                selected = selected == e.route,
-                onClick = { onSelect(e.route) },
-                icon = { Icon(e.icon, null, tint = if (selected == e.route) e.tint else Color.Gray) },
-                label = { Text(e.label, fontSize = 11.sp) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = e.tint,
-                    indicatorColor = e.tint.copy(alpha = 0.12f)
-                )
-            )
         }
     }
 }
@@ -345,7 +408,7 @@ private fun BottomNav(selected: String, onSelect: (String) -> Unit) {
 private fun DrawerGroup(entries: List<DrawerEntry>, onClick: (String) -> Unit) {
     entries.forEach { e ->
         Row(
-            Modifier.fillMaxWidth().clickable { onClick(e.route) }.padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().clickable { onClick(e.route) }.padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(e.icon, null, tint = e.tint, modifier = Modifier.size(22.dp))
