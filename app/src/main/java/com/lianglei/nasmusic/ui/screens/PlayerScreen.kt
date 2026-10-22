@@ -15,15 +15,21 @@ import androidx.compose.runtime.*
 import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -65,7 +71,6 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     val dur by PlayerManager.durationMs.collectAsStateWithLifecycle()
     val song = queue.getOrNull(idx)
 
-    val bg = Brush.verticalGradient(listOf(Color(0xFF8B6914), Color(0xFF6B4E1A), Color(0xFF4A3728)))
     val ctx = androidx.compose.ui.platform.LocalContext.current
 
     var lrcLines by remember(song?.id) { mutableStateOf(emptyList<LrcLine>()) }
@@ -87,7 +92,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
         }
     }
 
-    // Find active lyric line
+    // Active lyric line + karaoke progress within the line
     val activeLrcIndex = remember(lrcLines, pos) {
         var active = -1
         lrcLines.forEachIndexed { i, line ->
@@ -95,8 +100,36 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
         }
         active
     }
+    val activeLrc = lrcLines.getOrNull(activeLrcIndex)
+    val nextLrcStart = lrcLines.getOrNull(activeLrcIndex + 1)?.time ?: (activeLrc?.time ?: 0L) + 4000L
+    val lineProgress = if (activeLrc != null && nextLrcStart > activeLrc.time) {
+        ((pos - activeLrc.time).toFloat() / (nextLrcStart - activeLrc.time).toFloat()).coerceIn(0f, 1f)
+    } else 0f
 
-    Box(Modifier.fillMaxSize().background(bg)) {
+    val coverModel = song?.let {
+        if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
+        else "content://media/external/audio/albumart/${it.albumId}"
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        // Frosted glass background: blurred album cover + dark scrim
+        AsyncImage(
+            model = coverModel,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize().scale(1.15f)
+                .blur(radius = 36.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Black.copy(alpha = 0.55f),
+                        Color.Black.copy(alpha = 0.25f),
+                        Color.Black.copy(alpha = 0.62f)
+                    )
+                )
+            )
+        )
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp)) {
             // Top bar: marquee title + artist + cast
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -131,19 +164,25 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             }
             Spacer(Modifier.height(24.dp))
 
-            // Lyrics area: prev / current / next
-            Column(Modifier.fillMaxWidth().height(100.dp), horizontalAlignment = Alignment.Start) {
+            // Lyrics area: prev / current (karaoke highlight) / next
+            Column(Modifier.fillMaxWidth().height(104.dp), horizontalAlignment = Alignment.Start) {
                 if (lrcLines.isEmpty()) {
                     Text("暂无歌词", color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
                 } else {
                     val prev = lrcLines.getOrNull(activeLrcIndex - 1)
-                    val active = lrcLines.getOrNull(activeLrcIndex)
                     val next = lrcLines.getOrNull(activeLrcIndex + 1)
-                    Text(prev?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1)
+                    Text(prev?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
-                    Text(active?.text ?: "", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    KaraokeText(
+                        text = activeLrc?.text ?: "",
+                        progress = lineProgress,
+                        activeColor = Color.White,
+                        dimColor = Color.White.copy(alpha = 0.55f),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                     Spacer(Modifier.height(8.dp))
-                    Text(next?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1)
+                    Text(next?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
 
@@ -199,6 +238,38 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+@Composable
+private fun KaraokeText(
+    text: String,
+    progress: Float,
+    activeColor: Color,
+    dimColor: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    fontWeight: FontWeight
+) {
+    val smooth by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 350),
+        label = "karaoke"
+    )
+    val total = text.length
+    val colored = (total * smooth).toInt().coerceIn(0, total)
+    val styled = remember(text, colored, activeColor, dimColor) {
+        buildAnnotatedString {
+            append(text)
+            addStyle(SpanStyle(color = dimColor), 0, total)
+            if (colored > 0) addStyle(SpanStyle(color = activeColor), 0, colored)
+        }
+    }
+    Text(
+        styled,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
 @Composable
