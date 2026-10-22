@@ -3,6 +3,7 @@ package com.lianglei.nasmusic.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -22,12 +23,15 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,9 +42,11 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import com.lianglei.nasmusic.player.PlayerManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 data class LrcLine(val time: Long, val text: String)
@@ -181,44 +187,86 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                     modifier = Modifier.size(26.dp)
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Album cover with subtle frame
+            // 封面/歌词 左右滑动切换（两块玻璃跟手平移：封面左滑出屏、歌词右滑入，反向亦然）
+            var panelWidth by remember { mutableStateOf(0) }
+            val slide = remember { Animatable(0f) } // 0 = 显示封面；-panelWidth = 显示歌词
+            val scope = rememberCoroutineScope()
             Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.08f)).padding(12.dp)
+                Modifier.fillMaxWidth()
+                    .onSizeChanged { panelWidth = it.width }
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { scope.launch { slide.stop() } },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                if (panelWidth > 0) {
+                                    scope.launch {
+                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat(), 0f))
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                scope.launch {
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
+                                    slide.animateTo(target, animationSpec = tween(260))
+                                }
+                            },
+                            onDragCancel = {
+                                scope.launch {
+                                    val target = if (slide.value < -panelWidth / 2f) -panelWidth.toFloat() else 0f
+                                    slide.animateTo(target, animationSpec = tween(260))
+                                }
+                            }
+                        )
+                    }
             ) {
-                AsyncImage(
-                    model = song?.let {
-                        if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
-                        else "content://media/external/audio/albumart/${it.albumId}"
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))
-                )
-            }
-            Spacer(Modifier.height(24.dp))
-
-            // Lyrics area: prev / current (karaoke highlight) / next
-            Column(Modifier.fillMaxWidth().height(104.dp), horizontalAlignment = Alignment.Start) {
-                if (lrcLines.isEmpty()) {
-                    Text("暂无歌词", color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
-                } else {
-                    val prev = lrcLines.getOrNull(activeLrcIndex - 1)
-                    val next = lrcLines.getOrNull(activeLrcIndex + 1)
-                    Text(prev?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(8.dp))
-                    KaraokeText(
-                        text = activeLrc?.text ?: "",
-                        progress = lineProgress,
-                        activeColor = Color.White,
-                        dimColor = Color.White.copy(alpha = 0.55f),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium
+                // 封面面板：slide=0 原位；左滑时向左平移出屏
+                Box(
+                    Modifier.fillMaxWidth().offset { IntOffset(slide.value.roundToInt(), 0) }
+                        .clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.08f)).padding(12.dp)
+                ) {
+                    AsyncImage(
+                        model = song?.let {
+                            if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
+                            else "content://media/external/audio/albumart/${it.albumId}"
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(next?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // 歌词面板：初始在右侧屏外（slide+panelWidth），滑到位后占据原位
+                Box(
+                    Modifier.fillMaxWidth().aspectRatio(1f)
+                        .offset { IntOffset(slide.value.roundToInt() + panelWidth, 0) }
+                        .clip(RoundedCornerShape(20.dp)).background(Color(0xCC1E1E22))
+                        .padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (lrcLines.isEmpty()) {
+                        Text("暂无歌词", color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            val prev = lrcLines.getOrNull(activeLrcIndex - 1)
+                            val next = lrcLines.getOrNull(activeLrcIndex + 1)
+                            Text(prev?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(12.dp))
+                            KaraokeText(
+                                text = activeLrc?.text ?: "",
+                                progress = lineProgress,
+                                activeColor = Color.White,
+                                dimColor = Color.White.copy(alpha = 0.55f),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Text(next?.text ?: "", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
                 }
             }
+            Spacer(Modifier.height(16.dp))
 
             Spacer(Modifier.weight(1f))
 

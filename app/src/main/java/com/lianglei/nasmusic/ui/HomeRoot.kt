@@ -313,7 +313,7 @@ private fun HomeContent(
                     popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 4 }, animationSpec = tween(300)) },
                     popExitTransition = { slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) }
                 ) {
-                    composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx) } }
+                    composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
                     composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
                     composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
@@ -326,15 +326,15 @@ private fun HomeContent(
                     composable("about") { AboutScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
-                        ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
+                        ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
                     }
                     composable("album/{albumId}") { backStackEntry ->
                         val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
-                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx) }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
+                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
                     }
                     composable("folder/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
-                        FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx) }
+                        FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }
                     }
                     composable("playlist/{guid}") { backStackEntry ->
                         val guid = backStackEntry.arguments?.getString("guid") ?: ""
@@ -347,7 +347,7 @@ private fun HomeContent(
                             }
                         }
                         val plName = playlists.find { it.guid == guid }?.name ?: "歌单"
-                        PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx) }
+                        PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx); showPlayerState.value = true }
                     }
                 }
             }
