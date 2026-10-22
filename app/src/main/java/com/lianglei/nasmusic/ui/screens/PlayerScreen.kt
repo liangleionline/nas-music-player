@@ -145,10 +145,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
         else "content://media/external/audio/albumart/${it.albumId}"
     }
 
-    // 从封面提取主色作为底色
+    // 从封面提取主色作为底色（共享 ImageLoader 实例，避免每首歌重建）
+    val bgLoader = remember { ImageLoader(ctx) }
     val baseColor by produceState<Color?>(initialValue = null, coverModel) {
         value = try {
-            val result = ImageLoader(ctx).execute(
+            val result = bgLoader.execute(
                 ImageRequest.Builder(ctx).data(coverModel).size(64).build()
             )
             val bmp = (result.drawable as? BitmapDrawable)?.bitmap
@@ -159,6 +160,16 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
     }
     val coverBase = baseColor?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
 
+    // Frosted glass background request：remember(coverModel) 复用同一请求对象，
+    // 避免每帧重组重建 ImageRequest 的额外开销
+    val bgRequest = remember(coverModel) {
+        ImageRequest.Builder(ctx)
+            .data(coverModel)
+            .transformations(DownscaleBlurTransformation(5))
+            .size(720)
+            .build()
+    }
+
     // 根容器拦截已上移到 HomeRoot 浮层（条件拦截：显示时拦截、隐藏时不拦截），
     // 内部 Slider/IconButton 等子节点不受影响，正常响应。
     Box(
@@ -168,11 +179,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
         // 不用 Modifier.blur：实时 RenderEffect 与层矩阵动画（弹出滑入/封面歌词切换位移）叠加时，
         // 在部分设备（三星 OneUI）产生残影/重影。预渲染模糊位图后，动画只移动静态图片层 → 零 RenderEffect、零残影。
         AsyncImage(
-            model = ImageRequest.Builder(ctx)
-                .data(coverModel)
-                .transformations(DownscaleBlurTransformation(5))
-                .size(720)
-                .build(),
+            model = bgRequest,
             contentDescription = null,
             modifier = Modifier.fillMaxSize().scale(1.15f)
         )
@@ -246,14 +253,14 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             },
                             onDragEnd = {
                                 scope.launch {
-                                    // 双向对称阈值：往任一方向滑过 1/6 行程即切换（就近原则），
-                                    // 封面→歌词 与 歌词→封面 手感一致（v1.4.31 从 1/4 再收紧到 1/6）
+                                    // 双向对称阈值：往任一方向滑过 1/8 行程即切换（就近原则），
+                                    // 封面→歌词 与 歌词→封面 手感一致（v1.4.32 从 1/6 再收紧到 1/8）
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val sixth = limit / 6f           // 距端 1/6
-                                    val fiveSixth = limit * 5f / 6f   // 距端 5/6
+                                    val eighth = limit / 8f            // 距端 1/8
+                                    val sevenEighth = limit * 7f / 8f  // 距端 7/8
                                     val target = when {
-                                        slide.value < fiveSixth -> limit  // 距歌词端<1/6，切歌词
-                                        slide.value > sixth -> 0f         // 距封面端<1/6，回封面
+                                        slide.value < sevenEighth -> limit  // 距歌词端<1/8，切歌词
+                                        slide.value > eighth -> 0f          // 距封面端<1/8，回封面
                                         else -> if (slide.value < limit / 2f) limit else 0f // 中间就近
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
@@ -262,11 +269,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}) {
                             onDragCancel = {
                                 scope.launch {
                                     val limit = -panelWidth.toFloat() - edgePx
-                                    val sixth = limit / 6f
-                                    val fiveSixth = limit * 5f / 6f
+                                    val eighth = limit / 8f
+                                    val sevenEighth = limit * 7f / 8f
                                     val target = when {
-                                        slide.value < fiveSixth -> limit
-                                        slide.value > sixth -> 0f
+                                        slide.value < sevenEighth -> limit
+                                        slide.value > eighth -> 0f
                                         else -> if (slide.value < limit / 2f) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
