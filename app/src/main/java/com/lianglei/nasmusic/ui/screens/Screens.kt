@@ -247,6 +247,17 @@ fun FolderBrowserScreen(
     onPlay: (List<Song>, Int) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    // 若歌曲全部仍是旧缓存的"飞牛NAS"（无路径），自动触发一次强制刷新以拿到服务器真实路径
+    var autoRefreshed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!autoRefreshed && songs.isNotEmpty() && songs.all { it.folder == "飞牛NAS" }
+            && com.lianglei.nasmusic.data.SourceManager.fnConnected.value
+            && !com.lianglei.nasmusic.data.SourceManager.loading.value) {
+            autoRefreshed = true
+            com.lianglei.nasmusic.util.CrashLogger.log("FolderBrowser: no paths in cached songs, force refresh Feiniu")
+            com.lianglei.nasmusic.data.SourceManager.refreshFeiniuForce()
+        }
+    }
     val currentSegs = remember(currentPath) {
         currentPath.trim('/').split('/').filter { it.isNotEmpty() }
     }
@@ -348,6 +359,16 @@ fun FolderBrowserScreen(
                 item {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text("此目录没有歌曲", color = Color.Gray, fontSize = 13.sp)
+                    }
+                }
+            }
+            if (currentSegs.isEmpty() && children.isEmpty() && curSongs.isNotEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                        Text(
+                            "未检测到目录结构：服务器未返回歌曲路径，已按全部歌曲平铺显示。\n已尝试自动刷新数据；若刷新后仍如此，请将 /sdcard/Download/fn-nas.log 发回排查（含 track path probe 记录）。",
+                            color = Color(0xFFB08968), fontSize = 12.sp, lineHeight = 16.sp
+                        )
                     }
                 }
             }
