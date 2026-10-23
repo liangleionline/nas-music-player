@@ -154,26 +154,33 @@ object FnApi {
         list
     }
 
-    /** 探测 track 对象里的文件路径字段（v1.4.49 分支功能：文件夹树浏览）。
-     * 三级兜底：① 常见字段名；② 扫描所有字段中"含 / 且不像 URL 的字符串"（服务器字段名未知时兜底）；
-     * ③ 从 url 字段剥出路径。命中即返回，返回空串表示服务器未提供路径信息。 */
+    /** 探测 track 对象里的文件路径字段（feature/fn-folder-browser 分支）。
+     * 优先级：① audioSpec.path（真实文件系统路径，已从真实服务器响应确认）；
+     * ② 常见字段名；③ 扫描所有字段中"含 / 且不像 URL 的字符串"；④ 从 url 字段剥出路径。
+     * 命中后统一剥离 NAS 系统前缀（/vol1/{用户}/Resources/Media/Music/），
+     * 让文件夹树直接以音乐库内的分类目录为根。返回空串表示服务器未提供路径。 */
     private fun extractTrackPath(t: JSONObject): String {
+        // ① audioSpec.path
+        val spec = t.optJSONObject("audioSpec")
+        val specPath = spec?.optString("path", "")?.trim()
+        if (!specPath.isNullOrEmpty()) return relPathOf(specPath)
+        // ② 常见字段名
         for (k in listOf("path", "relativePath", "sourcePath", "filePath", "audioPath", "dirPath")) {
             val v = t.optString(k, "").trim()
-            if (v.isNotEmpty()) return v
+            if (v.isNotEmpty()) return relPathOf(v)
         }
-        // ② 扫描所有字段值：字符串且含 '/'、非 URL、非时间戳/编号
+        // ③ 扫描所有字段值：字符串且含 '/'、非 URL、非时间戳/编号
         for (k in t.keys().asSequence().toList()) {
             val v = t.opt(k)
             if (v is String) {
                 val s = v.trim()
                 if (s.contains("/") && !s.startsWith("http") && !s.startsWith("ftp") && s.length in 5..500) {
                     FnLogger.log("track path probe: matched key='$k' value='$s'")
-                    return s
+                    return relPathOf(s)
                 }
             }
         }
-        // ③ 从 url 里剥出路径（必须是真实 http(s) URL 且带 / 路径段）
+        // ④ 从 url 里剥出路径（必须是真实 http(s) URL 且带 / 路径段）
         val url = t.optString("url", "")
         if (url.startsWith("http") && url.contains("/")) {
             val noQuery = url.substringBefore("?")
@@ -187,6 +194,13 @@ object FnApi {
             }
         }
         return ""
+    }
+
+    /** 剥离 NAS 系统前缀，保留音乐库内相对路径（如 "1.中文/歌手 - 歌名.mp3"）。 */
+    private fun relPathOf(p: String): String {
+        val marker = "/Resources/Media/Music/"
+        val idx = p.indexOf(marker)
+        return if (idx >= 0) p.substring(idx + marker.length) else p.trim('/')
     }
 
     data class FnPlaylist(val guid: String, val name: String, val coverId: String, val trackCount: Int)
