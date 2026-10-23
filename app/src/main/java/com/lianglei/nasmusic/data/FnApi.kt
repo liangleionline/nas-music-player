@@ -154,20 +154,36 @@ object FnApi {
         list
     }
 
-    /** 探测 track 对象里的文件路径字段（v1.4.49 分支功能：文件夹树浏览）。 */
+    /** 探测 track 对象里的文件路径字段（v1.4.49 分支功能：文件夹树浏览）。
+     * 三级兜底：① 常见字段名；② 扫描所有字段中"含 / 且不像 URL 的字符串"（服务器字段名未知时兜底）；
+     * ③ 从 url 字段剥出路径。命中即返回，返回空串表示服务器未提供路径信息。 */
     private fun extractTrackPath(t: JSONObject): String {
         for (k in listOf("path", "relativePath", "sourcePath", "filePath", "audioPath", "dirPath")) {
             val v = t.optString(k, "").trim()
             if (v.isNotEmpty()) return v
         }
-        // 兜底：从 url 里剥出路径（去掉 query 与主机段）
+        // ② 扫描所有字段值：字符串且含 '/'、非 URL、非时间戳/编号
+        for (k in t.keys().asSequence().toList()) {
+            val v = t.opt(k)
+            if (v is String) {
+                val s = v.trim()
+                if (s.contains("/") && !s.startsWith("http") && !s.startsWith("ftp") && s.length in 5..500) {
+                    FnLogger.log("track path probe: matched key='$k' value='$s'")
+                    return s
+                }
+            }
+        }
+        // ③ 从 url 里剥出路径（必须是真实 http(s) URL 且带 / 路径段）
         val url = t.optString("url", "")
-        if (url.contains("/")) {
+        if (url.startsWith("http") && url.contains("/")) {
             val noQuery = url.substringBefore("?")
-            val pathPart = noQuery.substringAfter("://", noQuery).substringAfter("/", noQuery)
-            if (pathPart.contains("/") || pathPart.isNotEmpty()) {
-                FnLogger.log("track path probe: derived from url '$url' -> '$pathPart'")
-                return "/$pathPart"
+            val hostless = noQuery.substringAfter("://", "")
+            if (hostless.isNotEmpty()) {
+                val pathPart = hostless.substringAfter("/", "")
+                if (pathPart.isNotEmpty()) {
+                    FnLogger.log("track path probe: derived from url '$url' -> '/$pathPart'")
+                    return "/$pathPart"
+                }
             }
         }
         return ""
