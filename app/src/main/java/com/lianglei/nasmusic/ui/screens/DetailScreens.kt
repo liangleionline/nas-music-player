@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.data.Song
+import com.lianglei.nasmusic.ui.suppressClickOnRightSwipe
 
 private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$albumId"
 
@@ -27,7 +28,7 @@ private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$al
 @Composable
 fun SongRow(song: Song, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick)
+        Modifier.fillMaxWidth().suppressClickOnRightSwipe(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -112,7 +113,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
             val albumCoverId = group.firstOrNull()?.coverId ?: ""
             val albumCover = if (albumCoverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(albumCoverId) else artUri(albumId)
             Row(
-                Modifier.fillMaxWidth().clickable { onOpenAlbum(albumId) }
+                Modifier.fillMaxWidth().suppressClickOnRightSwipe { onOpenAlbum(albumId) }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -168,7 +169,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
         item { Divider(Modifier.padding(horizontal = 20.dp)) }
         items(albumSongs.size) { i ->
             Row(
-                Modifier.fillMaxWidth().clickable { onPlay(songs.indexOf(albumSongs[i])) }
+                Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(songs.indexOf(albumSongs[i])) }
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -200,7 +201,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
             val (name, group) = artists.elementAt(i)
             val artCoverId = group.firstOrNull()?.coverId ?: ""
             Row(
-                Modifier.clickable { onOpenArtist(name) }
+                Modifier.suppressClickOnRightSwipe { onOpenArtist(name) }
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
