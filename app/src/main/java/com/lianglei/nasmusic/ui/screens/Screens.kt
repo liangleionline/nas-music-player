@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import com.lianglei.nasmusic.ui.suppressClickOnRightSwipe
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -96,7 +97,7 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
         LazyColumn(Modifier.fillMaxSize()) {
             items(filtered, key = { it.id }) { s ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { onPlay(filtered.indexOf(s)) }
+                    Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(filtered.indexOf(s)) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -153,7 +154,7 @@ fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
     LazyVerticalGrid(columns = GridCells.Fixed(2), contentPadding = PaddingValues(12.dp)) {
         items(songs.groupBy { it.albumId }.entries.toList()) { (albumId, group) ->
             val coverId = group.first().coverId
-            Column(Modifier.padding(8.dp).clickable { onOpenAlbum(albumId) }) {
+            Column(Modifier.padding(8.dp).suppressClickOnRightSwipe { onOpenAlbum(albumId) }) {
                 AsyncImage(
                     model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId),
                     contentDescription = null,
@@ -173,7 +174,7 @@ fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
     LazyColumn {
         items(groups) { (artist, group) ->
             val coverId = group.first().coverId
-            Row(Modifier.fillMaxWidth().padding(16.dp).clickable { onOpenArtist(artist) }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(16.dp).suppressClickOnRightSwipe { onOpenArtist(artist) }, verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
                     model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(group.first().albumId),
                     contentDescription = null,
@@ -206,7 +207,7 @@ fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
             }
         }
         items(groups) { (folder, group) ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).clickable { onOpenFolder(folder) }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).suppressClickOnRightSwipe { onOpenFolder(folder) }, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Folder, null, tint = Color(0xFF7E57C2), modifier = Modifier.size(32.dp))
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
@@ -235,7 +236,7 @@ fun PlaylistScreen(
         LazyColumn {
             items(playlists) { p ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { onOpenPlaylist(p.guid) }.padding(vertical = 12.dp),
+                    Modifier.fillMaxWidth().suppressClickOnRightSwipe { onOpenPlaylist(p.guid) }.padding(vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (p.coverId.isNotEmpty()) {
@@ -262,7 +263,7 @@ fun PlaylistScreen(
 
 @Composable
 private fun PlaceholderRow(title: String, sub: String, onClick: () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().suppressClickOnRightSwipe { onClick() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFE0E2E6)))
         Spacer(Modifier.width(16.dp))
         Column {

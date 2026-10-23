@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lianglei.nasmusic.data.MusicSource
 import com.lianglei.nasmusic.data.SourceManager
+import com.lianglei.nasmusic.ui.suppressClickOnRightSwipe
 
 private data class NasEntry(val name: String, val icon: ImageVector, val enabled: Boolean, val tint: Color)
 
@@ -47,7 +48,7 @@ fun NasLibraryScreen(
             )
         ) {
             Row(
-                Modifier.fillMaxWidth().clickable {
+                Modifier.fillMaxWidth().suppressClickOnRightSwipe {
                     SourceManager.switchTo(MusicSource.LOCAL)
                     Toast.makeText(context, "已切换到本地播放器", Toast.LENGTH_SHORT).show()
                 }.padding(16.dp),
@@ -84,7 +85,7 @@ fun NasLibraryScreen(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
             Row(
-                Modifier.fillMaxWidth().clickable {
+                Modifier.fillMaxWidth().suppressClickOnRightSwipe {
                     if (fnConnected) {
                         // Already connected: just switch to Feiniu source (serves from cache).
                         SourceManager.switchTo(MusicSource.FEINIU)
@@ -134,7 +135,7 @@ fun NasLibraryScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 Row(
-                    Modifier.fillMaxWidth().clickable {
+                    Modifier.fillMaxWidth().suppressClickOnRightSwipe {
                         Toast.makeText(context, "${e.name} 敬请期待", Toast.LENGTH_SHORT).show()
                     }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
