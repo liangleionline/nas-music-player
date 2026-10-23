@@ -84,23 +84,55 @@ object PlayerManager {
         }
         _queue.value = songs
         com.lianglei.nasmusic.util.CrashLogger.log("playQueue: ${songs.size} songs, start=$startIndex, title=${songs.getOrNull(startIndex)?.title}, uri=${songs.getOrNull(startIndex)?.mediaUri}")
-        val items = songs.map { s ->
-            MediaItem.Builder()
-                .setUri(s.mediaUri)
-                .setMediaId(s.id.toString())
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(s.title)
-                        .setArtist(s.artist)
-                        .setAlbumTitle(s.album)
-                        .build()
-                )
-                .build()
-        }
+        val items = songs.map { mediaItemOf(it) }
         c.setMediaItems(items, startIndex, 0L)
         c.prepare()
         applyModeToController()
         c.play()
+    }
+
+    private fun mediaItemOf(s: Song): MediaItem = MediaItem.Builder()
+        .setUri(s.mediaUri)
+        .setMediaId(s.id.toString())
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(s.title)
+                .setArtist(s.artist)
+                .setAlbumTitle(s.album)
+                .build()
+        )
+        .build()
+
+    /**
+     * "下一首播放"（歌曲列表加号，v1.4.47）：
+     * 把 [song] 放到当前播放曲目的下一首位置。
+     * - 队列中已存在该歌曲（按 id 匹配）→ 先移除再插入到下一首位置（相当于立刻提到下一首）；
+     * - 队列中不存在 → 直接插入到下一首位置；
+     * - 当前无播放曲目（currentIndex < 0）→ 追加到队列末尾。
+     * 每次点击都执行此逻辑：最后点击的歌就是接下来最先播放的一首。
+     * 返回：0 = 播放器未就绪（controller 为空）；1 = 新加入；2 = 已在队列中被提升。
+     */
+    fun playNext(song: Song): Int {
+        val c = controller ?: return 0
+        val q = _queue.value.toMutableList()
+        val cur = _currentIndex.value
+        val existed = q.indexOfFirst { it.id == song.id }
+        val target = if (cur in q.indices) cur + 1 else q.size
+        if (existed >= 0) {
+            if (existed == target) return 2 // 已经在下一首位置，无需操作
+            q.removeAt(existed)
+            val adjusted = if (existed < target) target - 1 else target
+            q.add(adjusted, song)
+            c.removeMediaItem(existed)
+            c.addMediaItem(adjusted, mediaItemOf(song))
+        } else {
+            q.add(target, song)
+            c.addMediaItem(target, mediaItemOf(song))
+        }
+        _queue.value = q
+        // 被移除项在当前曲目之前时，Media3 会把当前索引前移一位，立即同步，避免 UI 短暂错位
+        _currentIndex.value = c.currentMediaItemIndex
+        return if (existed >= 0) 2 else 1
     }
 
     fun togglePlayPause() {
@@ -186,11 +218,7 @@ object PlayerManager {
     private fun playQueueSilent(songs: List<Song>, startIndex: Int, position: Long) {
         val c = controller ?: return
         _queue.value = songs
-        val items = songs.map { s ->
-            MediaItem.Builder().setUri(s.mediaUri).setMediaId(s.id.toString())
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).build())
-                .build()
-        }
+        val items = songs.map { mediaItemOf(it) }
         c.setMediaItems(items, startIndex, position)
         c.prepare()
         applyModeToController()
