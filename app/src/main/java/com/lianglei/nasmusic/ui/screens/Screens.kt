@@ -125,6 +125,7 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
                         onClick = {
                             val r = com.lianglei.nasmusic.player.PlayerManager.playNext(s)
                             val msg = when (r) {
+                                3 -> "已加入并开始播放"
                                 2 -> "已移到下一首播放"
                                 1 -> "已加入下一首播放"
                                 else -> "播放器未就绪"

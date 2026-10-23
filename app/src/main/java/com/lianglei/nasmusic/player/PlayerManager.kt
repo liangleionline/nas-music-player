@@ -108,13 +108,16 @@ object PlayerManager {
      * 把 [song] 放到当前播放曲目的下一首位置。
      * - 队列中已存在该歌曲（按 id 匹配）→ 先移除再插入到下一首位置（相当于立刻提到下一首）；
      * - 队列中不存在 → 直接插入到下一首位置；
-     * - 当前无播放曲目（currentIndex < 0）→ 追加到队列末尾。
+     * - 当前无播放曲目（currentIndex < 0）→ 追加到队列末尾；
+     * - v1.4.48：队列为空时添加第一首 → 自动开始播放。
      * 每次点击都执行此逻辑：最后点击的歌就是接下来最先播放的一首。
-     * 返回：0 = 播放器未就绪（controller 为空）；1 = 新加入；2 = 已在队列中被提升。
+     * 返回：0 = 播放器未就绪（controller 为空）；1 = 新加入；2 = 已在队列中被提升；
+     * 3 = 空队列添加第一首并已开始播放。
      */
     fun playNext(song: Song): Int {
         val c = controller ?: return 0
         val q = _queue.value.toMutableList()
+        val emptyQueue = q.isEmpty()
         val cur = _currentIndex.value
         val existed = q.indexOfFirst { it.id == song.id }
         val target = if (cur in q.indices) cur + 1 else q.size
@@ -132,6 +135,13 @@ object PlayerManager {
         _queue.value = q
         // 被移除项在当前曲目之前时，Media3 会把当前索引前移一位，立即同步，避免 UI 短暂错位
         _currentIndex.value = c.currentMediaItemIndex
+        if (emptyQueue) {
+            // 空队列添加第一首：直接开始播放（先确保选中这首）
+            c.prepare()
+            if (c.currentMediaItemIndex < 0) c.seekTo(0, 0L)
+            c.play()
+            return 3
+        }
         return if (existed >= 0) 2 else 1
     }
 
