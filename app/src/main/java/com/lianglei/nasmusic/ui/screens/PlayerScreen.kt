@@ -341,10 +341,9 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
             // 旧逻辑基于"当前位置/起点位置"判断切换，存在两类问题：
             // ① 位置判断不对称（v1.4.29/31/32 从封面端实际需半程才切）；
             // ② scope.launch(默认 Main) 协程队列让 onDragEnd 读取的 slide.value 可能不是最新值（v1.4.33/34）。
-            // 新逻辑：onDragStart 记录起点值，onDragEnd 用"净位移方向"判定——
-            //   净位移向左(<0) → 切歌词；净位移向右(>0) → 回封面；
-            //   净位移 < 24dp（误触保护）→ 保持起点状态。
-            // 方向驱动天然双向对称，与当前位置、中间态、协程时序全部无关。
+            // v1.4.44 改为严格单向手势（用户要求）：封面态仅"左滑"跟手并切歌词，右滑完全忽略；
+            // 歌词态仅"右滑"跟手并切回封面，左滑完全忽略。实现：onDragStart 记录起点所在端，
+            // onHorizontalDrag 只放行"该端唯一有效方向"，onDragEnd/onDragCancel 只按"起点端+净位移方向"判定。
             // snapTo/stop/animateTo 全部用 Dispatchers.Main.immediate：调用即同步执行，跟手无延迟。
             var dragStart by remember { mutableStateOf(0f) }
             val scope = rememberCoroutineScope()
@@ -360,9 +359,15 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                             onHorizontalDrag = { change, dragAmount ->
                                 change.consume()
                                 if (panelWidth > 0) {
-                                    scope.launch(Dispatchers.Main.immediate) {
-                                        // 跟手平移；下限 -(面板宽+左侧边距)，封面右边缘正好到屏幕 x=0
-                                        slide.snapTo((slide.value + dragAmount).coerceIn(-panelWidth.toFloat() - edgePx, 0f))
+                                    val lim = -panelWidth.toFloat() - edgePx
+                                    val startIsLyric = dragStart < lim / 2f
+                                    // 单向：歌词态只放行右滑(>0)，封面态只放行左滑(<0)，反向忽略（不跟手）
+                                    val allowed = if (startIsLyric) dragAmount > 0f else dragAmount < 0f
+                                    if (allowed) {
+                                        scope.launch(Dispatchers.Main.immediate) {
+                                            // 跟手平移；下限 -(面板宽+左侧边距)，封面右边缘正好到屏幕 x=0
+                                            slide.snapTo((slide.value + dragAmount).coerceIn(lim, 0f))
+                                        }
                                     }
                                 }
                             },
@@ -370,12 +375,13 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                                 scope.launch(Dispatchers.Main.immediate) {
                                     val limit = -panelWidth.toFloat() - edgePx
                                     val delta = slide.value - dragStart // 净位移：向左<0，向右>0
-                                    val target = if (kotlin.math.abs(delta) < edgePx) {
-                                        // 误触保护（<24dp）：保持起点状态
-                                        if (dragStart < limit / 2f) 0f else limit
+                                    val startIsLyric = dragStart < limit / 2f
+                                    // 单向切换：歌词态仅右滑(净位移>阈值)回封面，否则保持歌词；
+                                    // 封面态仅左滑(净位移<-阈值)切歌词，否则保持封面
+                                    val target = if (startIsLyric) {
+                                        if (delta > edgePx) 0f else limit
                                     } else {
-                                        // 方向驱动：左滑切歌词、右滑回封面（对称）
-                                        if (delta < 0f) limit else 0f
+                                        if (delta < -edgePx) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
@@ -384,10 +390,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                                 scope.launch(Dispatchers.Main.immediate) {
                                     val limit = -panelWidth.toFloat() - edgePx
                                     val delta = slide.value - dragStart
-                                    val target = if (kotlin.math.abs(delta) < edgePx) {
-                                        if (dragStart < limit / 2f) 0f else limit
+                                    val startIsLyric = dragStart < limit / 2f
+                                    val target = if (startIsLyric) {
+                                        if (delta > edgePx) 0f else limit
                                     } else {
-                                        if (delta < 0f) limit else 0f
+                                        if (delta < -edgePx) limit else 0f
                                     }
                                     slide.animateTo(target, animationSpec = tween(260))
                                 }
