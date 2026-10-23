@@ -104,7 +104,7 @@ object FnApi {
     }
 
     suspend fun fetchAllTracks(onProgress: (String) -> Unit = {}): List<Song> = withContext(Dispatchers.IO) {
-        FnLogger.log("=== fetchAllTracks ===")
+        FnLogger.log("=== fetchAllTracks (app 1.4.50 build 131) ===")
         onProgress("开始连接飞牛音乐服务器...")
         val list = mutableListOf<Song>()
         var page = 1
