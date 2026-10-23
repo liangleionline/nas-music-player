@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private lateinit var controllerFuture: ListenableFuture<MediaController>
     private var ticker: Job? = null
+    private var bound = false
 
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -72,21 +73,39 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        val token = SessionToken(this, ComponentName(this, PlayerService::class.java))
-        controllerFuture = MediaController.Builder(this, token).buildAsync()
-        controllerFuture.addListener({
-            val c = controllerFuture.get()
-            PlayerManager.bind(c)
-        }, mainExecutor)
+        // v1.4.44 修复"切后台再回来进度归零/按钮失灵"：
+        // 旧实现 onStop 时 releaseFuture + unbind 置空 controller，回前台重新异步连接；
+        // 若连接失败/耗时，controller 持续为 null → tick() 不更新进度(停在0)、
+        // togglePlayPause 直接 return(按钮按不动)。现在连接在 Activity 存活期保持：
+        // onStart 仅首次/重建时建立连接，onStop 只停 ticker，onDestroy 才释放。
+        if (!bound) {
+            val token = SessionToken(this, ComponentName(this, PlayerService::class.java))
+            controllerFuture = MediaController.Builder(this, token).buildAsync()
+            controllerFuture.addListener({
+                try {
+                    PlayerManager.bind(controllerFuture.get())
+                    bound = true
+                } catch (t: Throwable) {
+                    CrashLogger.e("media controller bind failed", t)
+                }
+            }, mainExecutor)
+        }
         ticker = lifecycleScope.launch {
             while (true) { delay(500); PlayerManager.tick() }
         }
     }
 
     override fun onStop() {
+        // 只停进度轮询，不释放 controller 连接：播放服务常驻，回前台直接恢复进度与按钮
+        ticker?.cancel()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
         ticker?.cancel()
         if (::controllerFuture.isInitialized) MediaController.releaseFuture(controllerFuture)
         PlayerManager.unbind()
-        super.onStop()
+        bound = false
+        super.onDestroy()
     }
 }
