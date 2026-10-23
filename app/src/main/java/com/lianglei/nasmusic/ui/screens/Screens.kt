@@ -471,7 +471,7 @@ fun AboutScreen() {
     Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
         Text("NAS Music Player", fontWeight = FontWeight.Bold, fontSize = 22.sp)
         Spacer(Modifier.height(4.dp))
-        Text("Version 0.7.4", color = Color.Gray, fontSize = 13.sp)
+        Text("Version 1.4.43", color = Color.Gray, fontSize = 13.sp)
         Spacer(Modifier.height(20.dp))
 
         Text("关于本程序", fontWeight = FontWeight.Bold, fontSize = 16.sp)
