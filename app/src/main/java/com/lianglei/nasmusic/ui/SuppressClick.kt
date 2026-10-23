@@ -19,14 +19,15 @@ import androidx.compose.ui.unit.dp
  * 24dp 即打开抽屉；而 Compose 行的标准 clickable 在快速右滑（位移处于点击判定窗口内）
  * 时可能未被取消 → 抽屉打开的同时触发行点击（如误播放歌曲）。
  *
- * 机制（双重保险）：
- * 1. pointerInput 挂在 clickable 之前（外层，先收到事件）：手指从按下点右移超过 ~7dp
- *    （小于 tap slop，先于点击判定）即置 suppressed 标志并消费该 move——consumed 事件
- *    会让 clickable 的 tap 判定失效；
- * 2. onClick 内再查 suppressed：若本次手势发生过右滑则忽略点击并复位。
+ * 机制：pointerInput 挂在 clickable 之前（外层，先收到事件）：手指从按下点右移超过 ~7dp
+ *    （小于 tap slop，先于点击判定）即置 suppressed 标志；onClick 内查标志，若本次手势
+ *    发生过右滑则忽略点击并复位。
+ *
+ * 注意（v1.4.46）：绝不 consume 事件——消费 move 会让 LazyColumn 的滚动检测判定拖动被
+ * 中断（上滑滚动时手指轻微右偏即触发），导致列表手感发涩。标志机制已足够拦截误点击：
+ * 位移 7~8dp（点击判定窗口）由标志拦截；位移 >tap slop 时 clickable 自身取消点击。
  *
  * 影响范围：仅"右滑"被抑制。轻点（无位移）、左滑、上下滚动列表均不受影响。
- * 拖动结束的 up 也会被消费，确保不会在抬手瞬间补触发点击。
  */
 fun Modifier.suppressClickOnRightSwipe(onClick: () -> Unit): Modifier = composed {
     val suppressed = remember { mutableStateOf(false) }
@@ -46,16 +47,12 @@ fun Modifier.suppressClickOnRightSwipe(onClick: () -> Unit): Modifier = composed
                             downX = change.position.x
                             suppressed.value = false
                         } else if (!suppressed.value && change.position.x - downX > slopPx) {
-                            // 右移超过 7dp：判定为"右滑呼出抽屉"手势，抑制本次点击
+                            // 右移超过 7dp：判定为"右滑呼出抽屉"手势，抑制本次点击。
+                            // 只置标志、不 consume——消费会中断列表滚动拖动
                             suppressed.value = true
-                            change.consume()
                         }
-                    } else if (down) {
+                    } else {
                         down = false
-                        if (suppressed.value) {
-                            // 拖动结束的抬手也消费：杜绝 tap 在 up 瞬间补触发
-                            change.consume()
-                        }
                     }
                 }
             }
