@@ -128,6 +128,8 @@ object FnApi {
                 val album = t.optJSONObject("album")?.optString("name", "") ?: ""
                 val duration = t.optLong("duration", 0)
                 val coverId = t.optString("coverId", "")
+                val path = extractTrackPath(t)
+                if (i == 0) FnLogger.log("track path probe: path='$path' (fallback=${if (path.isEmpty()) "YES" else "no"}) keys=${t.keys().asSequence().toList().joinToString(",")}")
                 list.add(Song(
                     id = guid.hashCode().toLong(),
                     title = title,
@@ -136,7 +138,7 @@ object FnApi {
                     albumId = coverId.hashCode().toLong(),
                     duration = duration,
                     data = "$baseUrl/track/stream?guid=$guid",
-                    folder = "飞牛NAS",
+                    folder = if (path.isNotEmpty()) path else "飞牛NAS",
                     isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
                     coverId = coverId
                 ))
@@ -150,6 +152,25 @@ object FnApi {
         onProgress("歌曲加载完成，共 ${list.size} 首")
         FnLogger.log("Fetched ${list.size} tracks total")
         list
+    }
+
+    /** 探测 track 对象里的文件路径字段（v1.4.49 分支功能：文件夹树浏览）。 */
+    private fun extractTrackPath(t: JSONObject): String {
+        for (k in listOf("path", "relativePath", "sourcePath", "filePath", "audioPath", "dirPath")) {
+            val v = t.optString(k, "").trim()
+            if (v.isNotEmpty()) return v
+        }
+        // 兜底：从 url 里剥出路径（去掉 query 与主机段）
+        val url = t.optString("url", "")
+        if (url.contains("/")) {
+            val noQuery = url.substringBefore("?")
+            val pathPart = noQuery.substringAfter("://", noQuery).substringAfter("/", noQuery)
+            if (pathPart.contains("/") || pathPart.isNotEmpty()) {
+                FnLogger.log("track path probe: derived from url '$url' -> '$pathPart'")
+                return "/$pathPart"
+            }
+        }
+        return ""
     }
 
     data class FnPlaylist(val guid: String, val name: String, val coverId: String, val trackCount: Int)
@@ -202,6 +223,7 @@ object FnApi {
                 val album = t.optJSONObject("album")?.optString("name", "") ?: ""
                 val duration = t.optLong("duration", 0)
                 val coverId = t.optString("coverId", "")
+                val path = extractTrackPath(t)
                 list.add(Song(
                     id = guid.hashCode().toLong(),
                     title = title,
@@ -210,7 +232,7 @@ object FnApi {
                     albumId = coverId.hashCode().toLong(),
                     duration = duration,
                     data = "$baseUrl/track/stream?guid=$guid",
-                    folder = "飞牛NAS",
+                    folder = if (path.isNotEmpty()) path else "飞牛NAS",
                     isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
                     coverId = coverId
                 ))
