@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.animation.core.*
@@ -43,8 +44,15 @@ import coil.request.ImageRequest
 import coil.transform.Transformation
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.os.SystemClock
+import android.widget.Toast
+import com.lianglei.nasmusic.player.PlayMode
 import com.lianglei.nasmusic.player.PlayerManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -154,6 +162,46 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     val song = queue.getOrNull(idx)
 
     val ctx = androidx.compose.ui.platform.LocalContext.current
+
+    // 播放模式（随机按钮循环切换）+ 定时关闭状态
+    val playMode by PlayerManager.playMode.collectAsStateWithLifecycle()
+    var sleepUntil by remember { mutableStateOf(0L) }        // SystemClock.elapsedRealtime 截止点，0=未启用
+    var showSleepDialog by remember { mutableStateOf(false) }
+    var sleepH by remember { mutableStateOf(0) }
+    var sleepM by remember { mutableStateOf(0) }
+    var remainingSec by remember { mutableStateOf(0) }
+
+    // 定时关闭倒计时：每秒刷新；到点停止播放并退出应用
+    LaunchedEffect(sleepUntil) {
+        if (sleepUntil <= 0L) return@LaunchedEffect
+        while (sleepUntil > 0L) {
+            remainingSec = ((sleepUntil - SystemClock.elapsedRealtime()) / 1000L).toInt()
+            if (remainingSec <= 0) break
+            delay(1000)
+        }
+        if (sleepUntil > 0L) {
+            sleepUntil = 0L
+            remainingSec = 0
+            PlayerManager.stopPlayback()
+            (ctx as? Activity)?.finishAffinity()
+        }
+    }
+
+    fun startSleepTimer() {
+        val totalMs = ((sleepH * 3600L) + (sleepM * 60L)) * 1000L
+        if (totalMs <= 0L) return
+        sleepUntil = SystemClock.elapsedRealtime() + totalMs
+        remainingSec = (totalMs / 1000L).toInt()
+    }
+
+    fun openSystemEqualizer() {
+        val intent = Intent("android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL")
+        try {
+            ctx.startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(ctx, "无法打开系统均衡器", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var lrcLines by remember(song?.id) { mutableStateOf(emptyList<LrcLine>()) }
     LaunchedEffect(song?.id) {
@@ -446,22 +494,106 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
             }
             Spacer(Modifier.height(12.dp))
 
-            // Bottom action row - 5 items evenly weighted so center aligns with play button（对齐 Salt：图标 32dp）
+            // Bottom action row - 5 items evenly weighted so center aligns with play button（对齐 Salt：图标 32dp，细线 Outlined 风格）
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                listOf(
-                    Icons.Filled.Shuffle to {},
-                    Icons.Filled.Timer to {},
-                    Icons.Filled.Equalizer to {},
-                    Icons.Filled.QueueMusic to { onOpenQueue() },
-                    Icons.Filled.MoreVert to {}
-                ).forEach { (icon, action) ->
-                    IconButton(onClick = action, modifier = Modifier.weight(1f)) {
-                        Icon(icon, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
+                // 1) 播放模式：顺序播放(灰Repeat) → 列表循环(Repeat) → 单曲循环(RepeatOne) → 随机(Shuffle)
+                val modeIcon = when (playMode) {
+                    PlayMode.SEQUENTIAL -> Icons.Outlined.Repeat
+                    PlayMode.REPEAT_ALL -> Icons.Outlined.Repeat
+                    PlayMode.REPEAT_ONE -> Icons.Outlined.RepeatOne
+                    PlayMode.SHUFFLE -> Icons.Outlined.Shuffle
+                }
+                val modeTint = if (playMode == PlayMode.SEQUENTIAL) Color.White.copy(alpha = 0.35f) else Color.White
+                IconButton(onClick = { PlayerManager.cyclePlayMode() }, modifier = Modifier.weight(1f)) {
+                    Icon(modeIcon, null, tint = modeTint, modifier = Modifier.size(32.dp))
+                }
+                // 2) 定时关闭：点击弹出时间选择器；已定时时再次点击取消
+                IconButton(
+                    onClick = {
+                        if (sleepUntil > 0L) { sleepUntil = 0L; remainingSec = 0 }
+                        else { sleepH = 0; sleepM = 0; showSleepDialog = true }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Outlined.Timer, null,
+                            tint = if (sleepUntil > 0L) Color.White else Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(32.dp)
+                        )
+                        if (sleepUntil > 0L) {
+                            Text(
+                                if (remainingSec >= 3600) "${remainingSec / 3600}h" else "${(remainingSec / 60).coerceAtLeast(1)}m",
+                                color = Color.White, fontSize = 9.sp, lineHeight = 10.sp
+                            )
+                        }
                     }
+                }
+                // 3) 均衡器：跳系统均衡器设置页
+                IconButton(onClick = { openSystemEqualizer() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Outlined.Equalizer, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
+                }
+                // 4) 歌单
+                IconButton(onClick = onOpenQueue, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Outlined.QueueMusic, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
+                }
+                // 5) 更多
+                IconButton(onClick = { }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Outlined.MoreVert, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
                 }
             }
             Spacer(Modifier.height(8.dp))
         }
+    }
+
+    // 定时关闭时间选择器
+    if (showSleepDialog) {
+        AlertDialog(
+            onDismissRequest = { showSleepDialog = false },
+            containerColor = Color(0xFF26282F),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            confirmButton = {
+                TextButton(onClick = { startSleepTimer(); showSleepDialog = false }) {
+                    Text("确定", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSleepDialog = false }) {
+                    Text("取消", color = Color.White.copy(alpha = 0.7f))
+                }
+            },
+            title = { Text("定时关闭") },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+                        IconButton(onClick = { if (sleepH < 9) sleepH++ }) {
+                            Icon(Icons.Outlined.Add, null, tint = Color.White)
+                        }
+                        Text("$sleepH 小时", fontSize = 16.sp)
+                        IconButton(onClick = { if (sleepH > 0) sleepH-- }) {
+                            Icon(Icons.Outlined.Remove, null, tint = Color.White)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+                        IconButton(onClick = { if (sleepM < 59) sleepM += 5 }) {
+                            Icon(Icons.Outlined.Add, null, tint = Color.White)
+                        }
+                        Text("$sleepM 分钟", fontSize = 16.sp)
+                        IconButton(onClick = { if (sleepM > 0) sleepM -= 5 }) {
+                            Icon(Icons.Outlined.Remove, null, tint = Color.White)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (sleepH == 0 && sleepM == 0) "请选择时长，到点后停止播放并退出应用"
+                        else "到点后停止播放并退出应用",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        )
     }
 }
 
