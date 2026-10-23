@@ -36,15 +36,6 @@ fun QueueScreen(onClose: () -> Unit = {}) {
     Column(
         Modifier.fillMaxSize().background(bg).systemBarsPadding()
     ) {
-        // Top hint
-        Text(
-            "此处向下轻扫以返回播放界面",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 13.sp,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
-            textAlign = TextAlign.Center
-        )
-
         // Current song mini bar
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
@@ -116,15 +107,6 @@ fun QueueScreen(onClose: () -> Unit = {}) {
                     }
                 }
             }
-        }
-
-        // Bottom mode button
-        Box(Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-            AssistChip(
-                onClick = {},
-                label = { Text("随机播放模式", color = Color.White, fontSize = 14.sp) },
-                colors = AssistChipDefaults.assistChipColors(containerColor = Color.White.copy(alpha = 0.15f))
-            )
         }
     }
 }
