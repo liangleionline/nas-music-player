@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -313,9 +314,13 @@ private fun HomeContent(
                 NavHost(
                     nav,
                     startDestination = "songs",
+                    // 推拉门式 1:1 同步转场：新页面从右全宽滑入、旧页面以同速向左全宽退出，
+                    // 同一时刻两页各占半屏、无重叠；clipToBounds 保证退出页面在 Content 边界被
+                    // 裁剪，不会滑到左侧抽屉图层之上
+                    modifier = Modifier.clipToBounds(),
                     enterTransition = { slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) },
-                    exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 4 }, animationSpec = tween(300)) },
-                    popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 4 }, animationSpec = tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(300)) },
+                    popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(300)) },
                     popExitTransition = { slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) }
                 ) {
                     composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true } }
