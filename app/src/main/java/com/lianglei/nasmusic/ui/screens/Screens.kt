@@ -43,6 +43,7 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
     var sortMode by remember { mutableStateOf(0) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSortSheet by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(searchTrigger) {
         searching = searchTrigger
@@ -120,7 +121,18 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
                             Text("${s.artist} - ${s.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
                         }
                     }
-                    Icon(Icons.Filled.Add, "add", tint = Color.Gray, modifier = Modifier.padding(8.dp))
+                    IconButton(
+                        onClick = {
+                            val r = com.lianglei.nasmusic.player.PlayerManager.playNext(s)
+                            val msg = when (r) {
+                                2 -> "已移到下一首播放"
+                                1 -> "已加入下一首播放"
+                                else -> "播放器未就绪"
+                            }
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) { Icon(Icons.Filled.Add, "加入下一首播放", tint = Color.Gray, modifier = Modifier.size(20.dp)) }
                     Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
                 }
             }
