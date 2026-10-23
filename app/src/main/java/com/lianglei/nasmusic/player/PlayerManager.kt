@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * Process-wide observable player state. The Activity wires the MediaController
  * into [bind], and all Compose screens read from the exposed flows.
  */
+enum class PlayMode { SEQUENTIAL, REPEAT_ALL, REPEAT_ONE, SHUFFLE }
+
 object PlayerManager {
     private var controller: MediaController? = null
 
@@ -33,6 +35,10 @@ object PlayerManager {
 
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
+
+    // 播放模式：顺序播放 → 列表循环 → 单曲循环 → 随机播放（点随机按钮循环切换）
+    private val _playMode = MutableStateFlow(PlayMode.REPEAT_ALL)
+    val playMode: StateFlow<PlayMode> = _playMode.asStateFlow()
 
     fun bind(controller: MediaController) {
         // 换绑前移除旧监听，避免重复绑定累积
@@ -93,6 +99,7 @@ object PlayerManager {
         }
         c.setMediaItems(items, startIndex, 0L)
         c.prepare()
+        applyModeToController()
         c.play()
     }
 
@@ -108,6 +115,33 @@ object PlayerManager {
     fun next() = controller?.seekToNext().let {}
     fun prev() = controller?.seekToPrevious().let {}
     fun seekTo(ms: Long) { controller?.seekTo(ms); _positionMs.value = ms; saveState() }
+
+    /** 随机播放按钮：顺序播放 → 列表循环 → 单曲循环 → 随机播放，循环切换 */
+    fun cyclePlayMode() {
+        _playMode.value = when (_playMode.value) {
+            PlayMode.SEQUENTIAL -> PlayMode.REPEAT_ALL
+            PlayMode.REPEAT_ALL -> PlayMode.REPEAT_ONE
+            PlayMode.REPEAT_ONE -> PlayMode.SHUFFLE
+            PlayMode.SHUFFLE -> PlayMode.SEQUENTIAL
+        }
+        applyModeToController()
+    }
+
+    private fun applyModeToController() {
+        val c = controller ?: return
+        when (_playMode.value) {
+            PlayMode.SEQUENTIAL -> { c.repeatMode = Player.REPEAT_MODE_OFF; c.shuffleModeEnabled = false }
+            PlayMode.REPEAT_ALL -> { c.repeatMode = Player.REPEAT_MODE_ALL; c.shuffleModeEnabled = false }
+            PlayMode.REPEAT_ONE -> { c.repeatMode = Player.REPEAT_MODE_ONE; c.shuffleModeEnabled = false }
+            PlayMode.SHUFFLE -> { c.repeatMode = Player.REPEAT_MODE_ALL; c.shuffleModeEnabled = true }
+        }
+    }
+
+    /** 定时关闭到点：停止播放（配合 UI 层退出应用） */
+    fun stopPlayback() {
+        val c = controller ?: return
+        c.pause()
+    }
 
     fun removeFromQueue(index: Int) {
         controller?.removeMediaItem(index)
@@ -159,6 +193,7 @@ object PlayerManager {
         }
         c.setMediaItems(items, startIndex, position)
         c.prepare()
+        applyModeToController()
         // Don't auto-play, just restore position
     }
 
