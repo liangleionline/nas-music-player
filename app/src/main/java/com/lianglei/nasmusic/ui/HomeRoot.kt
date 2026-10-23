@@ -235,6 +235,7 @@ private fun HomeContent(
     val isDetail = currentRoute?.startsWith("artist/") == true ||
             currentRoute?.startsWith("album/") == true ||
             currentRoute?.startsWith("folder/") == true ||
+            currentRoute?.startsWith("fbrowse/") == true ||
             currentRoute?.startsWith("playlist/") == true
 
     val title = when {
@@ -245,6 +246,9 @@ private fun HomeContent(
         currentRoute == "playlists" -> "歌单"
         currentRoute == "scan" -> "媒体来源"
         currentRoute?.startsWith("folder/") == true -> backStack?.arguments?.getString("name") ?: ""
+        currentRoute?.startsWith("fbrowse/") == true -> {
+            (backStack?.arguments?.getString("path") ?: "").trim('/').split('/').filter { it.isNotEmpty() }.lastOrNull() ?: "文件夹"
+        }
         currentRoute?.startsWith("artist/") == true -> backStack?.arguments?.getString("name") ?: ""
         currentRoute?.startsWith("album/") == true -> {
             val albumId = backStack?.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
@@ -326,7 +330,18 @@ private fun HomeContent(
                     composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
                     composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
-                    composable("folders") { FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
+                    composable("folders") {
+                        if (currentSource == MusicSource.FEINIU) {
+                            FolderBrowserScreen(
+                                songs = songs,
+                                currentPath = "",
+                                onOpenFolder = { path -> if (path.isNotBlank()) nav.navigate("fbrowse/" + java.net.URLEncoder.encode(path, "UTF-8").replace("+", "%20")) },
+                                onPlay = { list, idx -> PlayerManager.playQueue(list, idx); showPlayerState.value = true }
+                            )
+                        } else {
+                            FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
+                        }
+                    }
                     composable("playlists") { PlaylistScreen(playlists = playlists, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
@@ -345,6 +360,15 @@ private fun HomeContent(
                     composable("folder/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
                         FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }
+                    }
+                    composable("fbrowse/{path}") { backStackEntry ->
+                        val path = backStackEntry.arguments?.getString("path") ?: ""
+                        FolderBrowserScreen(
+                            songs = songs,
+                            currentPath = path,
+                            onOpenFolder = { p -> if (p.isNotBlank()) nav.navigate("fbrowse/" + java.net.URLEncoder.encode(p, "UTF-8").replace("+", "%20")) },
+                            onPlay = { list, idx -> PlayerManager.playQueue(list, idx); showPlayerState.value = true }
+                        )
                     }
                     composable("playlist/{guid}") { backStackEntry ->
                         val guid = backStackEntry.arguments?.getString("guid") ?: ""

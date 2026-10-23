@@ -233,6 +233,128 @@ fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
     }
 }
 
+/**
+ * 飞牛文件夹树浏览（feature/fn-folder-browser 分支尝试实现）。
+ * Song.folder 保存服务器返回的完整文件路径（如 /vol1/media/music/周杰伦/夜曲.mp3），
+ * 路径按 '/' 分段，最后一段视为文件名、其余为目录层级；逐层下钻显示目录与歌曲。
+ * 无路径的歌（folder == "飞牛NAS"）归入顶层歌曲列表（功能降级为平铺）。
+ */
+@Composable
+fun FolderBrowserScreen(
+    songs: List<Song>,
+    currentPath: String,
+    onOpenFolder: (String) -> Unit,
+    onPlay: (List<Song>, Int) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val currentSegs = remember(currentPath) {
+        currentPath.trim('/').split('/').filter { it.isNotEmpty() }
+    }
+    // 每首歌的目录段 = 路径去掉最后一段（文件名）
+    fun dirSegsOf(folder: String): List<String> {
+        if (folder.isBlank() || folder == "飞牛NAS") return emptyList()
+        val segs = folder.trim('/').split('/').filter { it.isNotEmpty() }
+        return if (segs.size <= 1) emptyList() else segs.dropLast(1)
+    }
+    // 当前目录的子目录（去重 + 歌曲计数）
+    val children = remember(songs, currentPath) {
+        val map = LinkedHashMap<String, Pair<List<String>, Int>>()
+        for (s in songs) {
+            val dirs = dirSegsOf(s.folder)
+            if (dirs.size <= currentSegs.size || dirs.take(currentSegs.size) != currentSegs) continue
+            val name = dirs[currentSegs.size]
+            val segs = currentSegs + name
+            val prev = map[name]
+            map[name] = segs to (if (prev == null) 1 else prev.second + 1)
+        }
+        map.entries.sortedBy { it.key }.map { it.value }
+    }
+    // 当前目录下的歌曲
+    val curSongs = remember(songs, currentPath) {
+        songs.filter { dirSegsOf(it.folder) == currentSegs }
+    }
+    Column(Modifier.fillMaxSize()) {
+        // 路径面包屑
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (currentSegs.isEmpty()) "文件夹" else currentSegs.joinToString(" / "),
+                fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2
+            )
+            Spacer(Modifier.weight(1f))
+            Text("${children.size} 目录 · ${curSongs.size} 首", color = Color.Gray, fontSize = 12.sp)
+        }
+        LazyColumn(Modifier.fillMaxSize()) {
+            // 子目录
+            items(children.size) { i ->
+                val (segs, count) = children[i]
+                Row(
+                    Modifier.fillMaxWidth().suppressClickOnRightSwipe { onOpenFolder(segs.joinToString("/")) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Folder, null, tint = Color(0xFF7E57C2), modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(segs.last(), fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1)
+                        Spacer(Modifier.height(2.dp))
+                        Text("$count 首", color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+            }
+            // 当前目录歌曲
+            items(curSongs, key = { it.id }) { s ->
+                Row(
+                    Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(curSongs, curSongs.indexOf(s)) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = if (s.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(s.coverId) else artUri(s.albumId),
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(s.title, maxLines = 1, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                        Spacer(Modifier.height(3.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (s.isHighQuality) {
+                                Box(Modifier.background(Color(0xFFE8DCC8), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp)) {
+                                    Text("HQ", color = Color(0xFF8B6F47), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text("${s.artist} - ${s.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            val r = com.lianglei.nasmusic.player.PlayerManager.playNext(s)
+                            val msg = when (r) {
+                                3 -> "已加入并开始播放"
+                                2 -> "已移到下一首播放"
+                                1 -> "已加入下一首播放"
+                                else -> "播放器未就绪"
+                            }
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) { Icon(Icons.Filled.Add, "加入下一首播放", tint = Color.Gray, modifier = Modifier.size(20.dp)) }
+                    Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
+                }
+            }
+            if (children.isEmpty() && curSongs.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("此目录没有歌曲", color = Color.Gray, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun PlaylistScreen(
     playlists: List<com.lianglei.nasmusic.data.FnApi.FnPlaylist>,
