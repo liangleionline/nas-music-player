@@ -30,6 +30,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import com.lianglei.nasmusic.R
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -42,6 +44,7 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
+import com.lianglei.nasmusic.data.Song
 import coil.transform.Transformation
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -171,6 +174,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     var sleepH by remember { mutableStateOf(0) }
     var sleepM by remember { mutableStateOf(0) }
     var remainingSec by remember { mutableStateOf(0) }
+    // "更多" → 歌曲信息底部弹窗（先弹一半，上划全屏）
+    var showTrackInfo by remember { mutableStateOf(false) }
 
     // 定时关闭倒计时：每秒刷新；到点停止播放并退出应用
     LaunchedEffect(sleepUntil) {
@@ -200,7 +205,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         try {
             ctx.startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(ctx, "无法打开系统均衡器", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, ctx.getString(R.string.eq_unavailable), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -424,7 +429,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                     contentAlignment = Alignment.Center
                 ) {
                     if (lrcLines.isEmpty()) {
-                        Text("暂无歌词", color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
+                        Text(stringResource(R.string.no_lyrics), color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
                     } else {
                         Column(
                             Modifier.fillMaxWidth(),
@@ -546,8 +551,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                 IconButton(onClick = onOpenQueue, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Outlined.QueueMusic, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
                 }
-                // 5) 更多
-                IconButton(onClick = { }, modifier = Modifier.weight(1f)) {
+                // 5) 更多：歌曲信息等选项
+                IconButton(onClick = { showTrackInfo = true }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Outlined.MoreVert, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(32.dp))
                 }
             }
@@ -564,22 +569,22 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
             textContentColor = Color.White,
             confirmButton = {
                 TextButton(onClick = { startSleepTimer(); showSleepDialog = false }) {
-                    Text("确定", color = Color.White)
+                    Text(stringResource(R.string.ok), color = Color.White)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSleepDialog = false }) {
-                    Text("取消", color = Color.White.copy(alpha = 0.7f))
+                    Text(stringResource(R.string.cancel), color = Color.White.copy(alpha = 0.7f))
                 }
             },
-            title = { Text("定时关闭") },
+            title = { Text(stringResource(R.string.sleep_timer)) },
             text = {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
                         IconButton(onClick = { if (sleepH < 9) sleepH++ }) {
                             Icon(Icons.Outlined.Add, null, tint = Color.White)
                         }
-                        Text("$sleepH 小时", fontSize = 16.sp)
+                        Text(stringResource(R.string.hour_unit, sleepH), fontSize = 16.sp)
                         IconButton(onClick = { if (sleepH > 0) sleepH-- }) {
                             Icon(Icons.Outlined.Remove, null, tint = Color.White)
                         }
@@ -588,21 +593,25 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                         IconButton(onClick = { if (sleepM < 59) sleepM += 5 }) {
                             Icon(Icons.Outlined.Add, null, tint = Color.White)
                         }
-                        Text("$sleepM 分钟", fontSize = 16.sp)
+                        Text(stringResource(R.string.minute_unit, sleepM), fontSize = 16.sp)
                         IconButton(onClick = { if (sleepM > 0) sleepM -= 5 }) {
                             Icon(Icons.Outlined.Remove, null, tint = Color.White)
                         }
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        if (sleepH == 0 && sleepM == 0) "请选择时长，到点后停止播放并退出应用"
-                        else "到点后停止播放并退出应用",
+                        if (sleepH == 0 && sleepM == 0) stringResource(R.string.sleep_hint_pick)
+                        else stringResource(R.string.sleep_hint_stop),
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.6f)
                     )
                 }
             }
         )
+    }
+    // 歌曲信息底部弹窗（更多按钮）
+    if (showTrackInfo && song != null) {
+        TrackInfoSheet(song, ctx, onDismiss = { showTrackInfo = false })
     }
 }
 
@@ -861,4 +870,57 @@ private fun saturateColor(c: Color, factor: Float): Color {
         ((rgb shr 8) and 0xFF) / 255f,
         (rgb and 0xFF) / 255f
     )
+}
+
+// ── 歌曲信息底部弹窗（v1.4.58）：先弹出一半高度，用户上划继续覆盖全屏 ──
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: () -> Unit) {
+    var info by remember { mutableStateOf<com.lianglei.nasmusic.data.TrackInfo?>(null) }
+    LaunchedEffect(song.id) {
+        info = com.lianglei.nasmusic.data.trackInfoOf(song, ctx)
+    }
+    // skipPartiallyExpanded=false：先弹出一半高度，内容上划时自动展开至全屏
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF26282F),
+        contentColor = Color.White,
+        dragHandle = { /* 默认把手即可 */ }
+    ) {
+        val it = info
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
+            Text(stringResource(R.string.track_info_title), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+            if (it == null) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                    Text(stringResource(R.string.loading), color = Color.White.copy(alpha = 0.6f))
+                }
+            } else {
+                TrackInfoRow(stringResource(R.string.info_label_title), it.title)
+                TrackInfoRow(stringResource(R.string.info_label_artist), it.artist)
+                TrackInfoRow(stringResource(R.string.info_label_album), it.album)
+                TrackInfoRow(stringResource(R.string.info_label_source), it.source)
+                TrackInfoRow(stringResource(R.string.info_label_playcount), it.playCount.toString())
+                TrackInfoRow(stringResource(R.string.info_label_duration), it.durationText)
+                TrackInfoRow(stringResource(R.string.info_label_bitrate), it.bitrateText)
+                TrackInfoRow(stringResource(R.string.info_label_samplerate), it.sampleRateText)
+                TrackInfoRow(stringResource(R.string.info_label_size), it.sizeText)
+                TrackInfoRow(stringResource(R.string.info_label_format), it.formatText)
+                TrackInfoRow(stringResource(R.string.info_label_dir), it.directory.ifEmpty { "—" })
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackInfoRow(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp, modifier = Modifier.width(76.dp))
+        Text(value, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+    }
 }

@@ -41,6 +41,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
+import com.lianglei.nasmusic.R
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -56,24 +58,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-data class DrawerEntry(val label: String, val icon: ImageVector, val tint: Color, val route: String)
+data class DrawerEntry(val labelRes: Int, val icon: ImageVector, val tint: Color, val route: String)
 
 /** 主入口（Salt Player 同款：歌曲/专辑/艺术家/文件夹/歌单 在左侧抽屉） */
 private val mainEntries = listOf(
-    DrawerEntry("歌曲", Icons.Filled.MusicNote, Color(0xFF3CB371), "songs"),
-    DrawerEntry("专辑", Icons.Filled.Album, Color(0xFFE74C3C), "albums"),
-    DrawerEntry("艺术家", Icons.Filled.Mic, Color(0xFFF1C40F), "artists"),
-    DrawerEntry("文件夹", Icons.Filled.Folder, Color(0xFF7E57C2), "folders"),
-    DrawerEntry("歌单", Icons.Filled.QueueMusic, Color(0xFF1E88E5), "playlists"),
+    DrawerEntry(R.string.songs, Icons.Filled.MusicNote, Color(0xFF3CB371), "songs"),
+    DrawerEntry(R.string.albums, Icons.Filled.Album, Color(0xFFE74C3C), "albums"),
+    DrawerEntry(R.string.artists, Icons.Filled.Mic, Color(0xFFF1C40F), "artists"),
+    DrawerEntry(R.string.folders, Icons.Filled.Folder, Color(0xFF7E57C2), "folders"),
+    DrawerEntry(R.string.playlists, Icons.Filled.QueueMusic, Color(0xFF1E88E5), "playlists"),
 )
 
 /** 抽屉系统项（含 NAS 一级入口） */
 private val systemEntries = listOf(
-    DrawerEntry("音乐库", Icons.Filled.Cloud, Color(0xFF1F6FEB), "library"),
-    DrawerEntry("扫描音乐", Icons.Filled.FolderSpecial, Color(0xFF5C6BC0), "scan"),
-    DrawerEntry("统计", Icons.Filled.QueryStats, Color(0xFFE74C3C), "stats"),
-    DrawerEntry("设置", Icons.Filled.Settings, Color(0xFF4CAF50), "settings"),
-    DrawerEntry("关于", Icons.Filled.Info, Color(0xFF1E88E5), "about"),
+    DrawerEntry(R.string.library_title, Icons.Filled.Cloud, Color(0xFF1F6FEB), "library"),
+    DrawerEntry(R.string.scan_music, Icons.Filled.FolderSpecial, Color(0xFF5C6BC0), "scan"),
+    DrawerEntry(R.string.stats, Icons.Filled.QueryStats, Color(0xFFE74C3C), "stats"),
+    DrawerEntry(R.string.settings, Icons.Filled.Settings, Color(0xFF4CAF50), "settings"),
+    DrawerEntry(R.string.about, Icons.Filled.Info, Color(0xFF1E88E5), "about"),
 )
 
 private val DRAWER_WIDTH = 224.dp
@@ -149,7 +151,7 @@ fun HomeRoot() {
             (context as? android.app.Activity)?.finish()
         } else {
             lastBackPress = now
-            android.widget.Toast.makeText(context, "再按一次退出", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, context.getString(R.string.exit_prompt), android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -239,15 +241,15 @@ private fun HomeContent(
             currentRoute?.startsWith("playlist/") == true
 
     val title = when {
-        currentRoute == "songs" -> "歌曲"
-        currentRoute == "albums" -> "专辑"
-        currentRoute == "artists" -> "艺术家"
-        currentRoute == "folders" -> "文件夹"
-        currentRoute == "playlists" -> "歌单"
-        currentRoute == "scan" -> "媒体来源"
+        currentRoute == "songs" -> stringResource(R.string.songs)
+        currentRoute == "albums" -> stringResource(R.string.albums)
+        currentRoute == "artists" -> stringResource(R.string.artists)
+        currentRoute == "folders" -> stringResource(R.string.folders)
+        currentRoute == "playlists" -> stringResource(R.string.playlists)
+        currentRoute == "scan" -> stringResource(R.string.media_source)
         currentRoute?.startsWith("folder/") == true -> backStack?.arguments?.getString("name") ?: ""
         currentRoute?.startsWith("fbrowse/") == true -> {
-            (backStack?.arguments?.getString("path") ?: "").trim('/').split('/').filter { it.isNotEmpty() }.lastOrNull() ?: "文件夹"
+            (backStack?.arguments?.getString("path") ?: "").trim('/').split('/').filter { it.isNotEmpty() }.lastOrNull() ?: stringResource(R.string.folder)
         }
         currentRoute?.startsWith("artist/") == true -> backStack?.arguments?.getString("name") ?: ""
         currentRoute?.startsWith("album/") == true -> {
@@ -256,7 +258,7 @@ private fun HomeContent(
         }
         currentRoute?.startsWith("playlist/") == true -> {
             val guid = backStack?.arguments?.getString("guid")
-            playlists.find { it.guid == guid }?.name ?: "歌单"
+            playlists.find { it.guid == guid }?.name ?: stringResource(R.string.default_playlist)
         }
         else -> "NAS Music"
     }
@@ -346,7 +348,7 @@ private fun HomeContent(
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
                     composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
-                    composable("stats") { PlaceholderScreen("统计") }
+                    composable("stats") { StatsScreen(songs, onBack = { nav.popBackStack() }, onPlay = { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }) }
                     composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }) }
                     composable("about") { AboutScreen() }
                     composable("artist/{name}") { backStackEntry ->
@@ -380,7 +382,7 @@ private fun HomeContent(
                                 songs
                             }
                         }
-                        val plName = playlists.find { it.guid == guid }?.name ?: "歌单"
+                        val plName = playlists.find { it.guid == guid }?.name ?: stringResource(R.string.default_playlist)
                         PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx); showPlayerState.value = true }
                     }
                 }
@@ -458,6 +460,32 @@ private fun HomeContent(
     ) {
         QueueScreen(onClose = { showQueueState.value = false })
     }
+
+    // NAS 断线自动重连耗尽后的询问弹窗（v1.4.58）：
+    // 已自动重试 5 次仍失败 → 用户选择"继续重试"或"切回本地"
+    val retryPrompt by PlayerManager.retryPrompt.collectAsStateWithLifecycle()
+    if (retryPrompt) {
+        AlertDialog(
+            onDismissRequest = {},
+            containerColor = Color(0xFF26282F),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            confirmButton = {
+                TextButton(onClick = { PlayerManager.retryNow() }) {
+                    Text(stringResource(R.string.retry_btn), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { PlayerManager.switchToLocalAfterFailure() }) {
+                    Text(stringResource(R.string.switch_local_btn), color = Color.White.copy(alpha = 0.7f))
+                }
+            },
+            title = { Text(stringResource(R.string.playback_failed_title)) },
+            text = {
+                Text(stringResource(R.string.playback_failed_msg), fontSize = 14.sp)
+            }
+        )
+    }
     }
 }
 
@@ -491,7 +519,10 @@ private fun DrawerPanel(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            if (currentSource == MusicSource.FEINIU) "音源：飞牛NAS" else "音源：本地音乐",
+                            if (currentSource == MusicSource.FEINIU)
+                                stringResource(R.string.source_prefix, stringResource(R.string.source_feiniu))
+                            else
+                                stringResource(R.string.source_prefix, stringResource(R.string.source_local)),
                             fontWeight = FontWeight.SemiBold, fontSize = 14.sp
                         )
                     }
@@ -512,14 +543,17 @@ private fun DrawerPanel(
                         Icon(Icons.Filled.SwapHoriz, null, tint = Color(0xFF1F6FEB), modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            if (currentSource == MusicSource.FEINIU) "切回本地音乐" else "打开 NAS 音乐库",
+                            if (currentSource == MusicSource.FEINIU)
+                                stringResource(R.string.switch_local_music)
+                            else
+                                stringResource(R.string.open_nas_library),
                             color = Color(0xFF1F6FEB), fontSize = 13.sp
                         )
                     }
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Text("媒体库", fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
+            Text(stringResource(R.string.drawer_media_lib), fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
             DrawerGroup(mainEntries) { route ->
                 onCloseDrawer()
                 // 已在目标页则不再导航（避免 NavHost 转场动画覆盖产生重影）
@@ -531,7 +565,7 @@ private fun DrawerPanel(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Text("系统", fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
+            Text(stringResource(R.string.drawer_system), fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
             DrawerGroup(systemEntries) { route ->
                 onCloseDrawer()
                 if (route != currentRoute) {
@@ -552,7 +586,7 @@ private fun DrawerGroup(entries: List<DrawerEntry>, onClick: (String) -> Unit) {
         ) {
             Icon(e.icon, null, tint = e.tint, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(20.dp))
-            Text(e.label, fontSize = 15.sp)
+            Text(stringResource(e.labelRes), fontSize = 15.sp)
         }
     }
 }
@@ -574,7 +608,7 @@ private fun MiniPlayer(song: Song?, isPlaying: Boolean, buffering: Boolean, onCl
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(song?.title ?: "未在播放", fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 14.sp)
+                Text(song?.title ?: stringResource(R.string.not_playing), fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 14.sp)
                 Text(song?.artist ?: "—", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
             }
             if (buffering) {

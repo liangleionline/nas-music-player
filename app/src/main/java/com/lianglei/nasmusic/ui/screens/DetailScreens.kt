@@ -15,7 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.lianglei.nasmusic.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -27,7 +29,7 @@ private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$al
 /** "下一首播放"加号：与歌曲列表页同一入口，统一反馈文案 */
 private fun addNextWithToast(song: Song, context: android.content.Context) {
     com.lianglei.nasmusic.player.PlayerManager.playNext(song)
-    android.widget.Toast.makeText(context, "已加入下一首播放", android.widget.Toast.LENGTH_SHORT).show()
+    android.widget.Toast.makeText(context, context.getString(R.string.toast_added_next), android.widget.Toast.LENGTH_SHORT).show()
 }
 
 /** Reusable song row matching the Salt Player list style. */
@@ -60,7 +62,7 @@ fun SongRow(song: Song, onClick: () -> Unit, onAddNext: (() -> Unit)? = null) {
         // "下一首播放"加号：与歌曲列表页行为一致（已存在→提到下一首；空队列→加入并开始播放）
         if (onAddNext != null) {
             IconButton(onClick = onAddNext, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Add, "加入下一首播放", tint = Color.Gray, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = Color.Gray, modifier = Modifier.size(20.dp))
             }
         }
         Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
@@ -113,7 +115,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
             )
         }
         item {
-            Text("专辑", Modifier.padding(16.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.album_title), Modifier.padding(16.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         items(artistAlbums.size) { i ->
             val (albumId, group) = artistAlbums.elementAt(i)
@@ -131,7 +133,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(group.first().album, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1)
-                    Text("${group.first().artist} · ${group.size} 首", color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.artist_songs_line, group.first().artist, group.size), color = Color.Gray, fontSize = 12.sp)
                 }
             }
         }
@@ -147,6 +149,26 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
     val artists = remember(albumSongs) { albumSongs.groupBy { it.artist }.entries }
     val coverId = first?.coverId ?: ""
     val coverModel = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId)
+    // 采样率：飞牛端 audioSpec.sampleRate 已在拉取时解析；本地端首次进入用 MediaMetadataRetriever 懒读
+    var sampleRate by remember(albumSongs) { mutableStateOf(first?.sampleRate ?: 0) }
+    LaunchedEffect(albumSongs) {
+        val f = albumSongs.firstOrNull() ?: return@LaunchedEffect
+        if (f.sampleRate > 0 || f.data.startsWith("http://") || f.data.startsWith("https://")) {
+            sampleRate = f.sampleRate
+            return@LaunchedEffect
+        }
+        sampleRate = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val mmr = android.media.MediaMetadataRetriever()
+                try {
+                    mmr.setDataSource(f.data)
+                    mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)?.toIntOrNull() ?: 0
+                } finally { try { mmr.release() } catch (_: Throwable) {} }
+            } catch (_: Throwable) { 0 }
+        }
+    }
+    val yearText = if ((first?.year ?: 0) > 0) "${first?.year}" else "—"
+    val sampleRateText = if (sampleRate > 0) "$sampleRate Hz" else "—"
 
     LazyColumn(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
         item { Spacer(Modifier.height(24.dp)) }
@@ -162,15 +184,15 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
                     Spacer(Modifier.height(6.dp))
                     Text(first?.artist ?: "", color = Color.Gray, fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text("44100 Hz", color = Color.Gray, fontSize = 12.sp)
+                    Text(sampleRateText, color = Color.Gray, fontSize = 12.sp)
                 }
             }
         }
         item {
             Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.SpaceAround) {
-                StatColumn("${albumSongs.size}", "歌曲")
-                StatColumn(fmtDuration(totalMs), "时长")
-                StatColumn("—", "年份")
+                StatColumn("${albumSongs.size}", stringResource(R.string.songs))
+                StatColumn(fmtDuration(totalMs), stringResource(R.string.duration))
+                StatColumn(yearText, stringResource(R.string.year))
             }
         }
         item { Divider(Modifier.padding(horizontal = 20.dp)) }
@@ -199,7 +221,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
         }
         item {
             Text(
-                "参与创作的艺术家",
+                stringResource(R.string.contrib_artists),
                 Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
                 color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium
             )
@@ -220,7 +242,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(name, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                    Text("${group.size} 首", color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
                 }
             }
         }

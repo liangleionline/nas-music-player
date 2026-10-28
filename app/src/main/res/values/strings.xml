@@ -1,3 +1,172 @@
 <resources>
     <string name="app_name">NAS Music</string>
+
+    <!-- 通用 -->
+    <string name="back">返回</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="loading">加载中…</string>
+    <string name="songs">歌曲</string>
+    <string name="albums">专辑</string>
+    <string name="artists">艺术家</string>
+    <string name="folders">文件夹</string>
+    <string name="playlists">歌单</string>
+    <string name="stats">统计</string>
+    <string name="settings">设置</string>
+    <string name="about">关于</string>
+    <string name="media_source">媒体来源</string>
+    <string name="folder">文件夹</string>
+    <string name="default_playlist">歌单</string>
+    <string name="no_lyrics">暂无歌词</string>
+    <string name="no_songs_in_dir">此目录没有歌曲</string>
+    <string name="song_count">%1$d 首</string>
+    <string name="duration">时长</string>
+    <string name="year">年份</string>
+    <string name="album_title">专辑</string>
+    <string name="artist_songs_line">%1$s · %2$d 首</string>
+    <string name="contrib_artists">参与创作的艺术家</string>
+
+    <!-- 下一首播放 Toast -->
+    <string name="toast_added_next">已加入下一首播放</string>
+    <string name="toast_moved_next">已移到下一首播放</string>
+    <string name="toast_added_started">已加入并开始播放</string>
+    <string name="toast_player_not_ready">播放器未就绪</string>
+    <string name="add_next">加入下一首播放</string>
+
+    <!-- 主界面 / 抽屉 -->
+    <string name="exit_prompt">再按一次退出</string>
+    <string name="drawer_media_lib">媒体库</string>
+    <string name="drawer_system">系统</string>
+    <string name="source_prefix">音源：%1$s</string>
+    <string name="source_local">本地音乐</string>
+    <string name="source_feiniu">飞牛NAS</string>
+    <string name="switch_local_music">切回本地音乐</string>
+    <string name="open_nas_library">打开 NAS 音乐库</string>
+    <string name="not_playing">未在播放</string>
+
+    <!-- 播放失败重试弹窗 -->
+    <string name="retry_btn">继续重试</string>
+    <string name="switch_local_btn">切换本地</string>
+    <string name="playback_failed_title">播放失败</string>
+    <string name="playback_failed_msg">NAS 播放失败（已自动重试 5 次）。\n是否继续重试？选择"切换本地"将自动切回本地音乐模式。</string>
+
+    <!-- 播放页 -->
+    <string name="eq_unavailable">无法打开系统均衡器</string>
+    <string name="sleep_timer">定时关闭</string>
+    <string name="hour_unit">%1$d 小时</string>
+    <string name="minute_unit">%1$d 分钟</string>
+    <string name="sleep_hint_pick">请选择时长，到点后停止播放并退出应用</string>
+    <string name="sleep_hint_stop">到点后停止播放并退出应用</string>
+    <string name="track_info_title">歌曲信息</string>
+    <string name="info_label_title">标题</string>
+    <string name="info_label_artist">艺术家</string>
+    <string name="info_label_album">专辑</string>
+    <string name="info_label_source">来源</string>
+    <string name="info_label_playcount">播放次数</string>
+    <string name="info_label_duration">时长</string>
+    <string name="info_label_bitrate">比特率</string>
+    <string name="info_label_samplerate">采样率</string>
+    <string name="info_label_size">文件大小</string>
+    <string name="info_label_format">文件格式</string>
+    <string name="info_label_dir">所在目录</string>
+
+    <!-- 飞牛登录 -->
+    <string name="fn_please_fill">请填写完整信息</string>
+    <string name="fn_connecting">正在连接服务器 %1$s ...</string>
+    <string name="fn_verifying">正在验证用户名和密码...</string>
+    <string name="fn_success_fetching">登录成功，正在获取音乐库...</string>
+    <string name="fn_done">完成！共加载 %1$d 首歌曲</string>
+    <string name="fn_loaded_toast">连接成功，已加载 %1$d 首</string>
+    <string name="fn_failed">连接失败</string>
+    <string name="fn_login_failed">登录失败: %1$s</string>
+    <string name="fn_title">连接飞牛 NAS</string>
+    <string name="fn_history">历史连接</string>
+    <string name="fn_addr_label">NAS 地址</string>
+    <string name="fn_addr_placeholder">如 https://nas.example.com:2443</string>
+    <string name="fn_user_label">用户名</string>
+    <string name="fn_pwd_label">密码</string>
+    <string name="fn_connect_btn">连接</string>
+    <string name="fn_hint">默认端口 5666，API 路径 /music/api/v1\n请确保手机与 NAS 在同一局域网，或已配置外网访问</string>
+
+    <!-- 音乐库 -->
+    <string name="library_title">音乐库</string>
+    <string name="scan_music">扫描音乐</string>
+    <string name="toast_switched_local">已切换到本地播放器</string>
+    <string name="local_player">本地播放器</string>
+    <string name="current_in_use">当前使用中</string>
+    <string name="scan_local_music">扫描手机本地音乐</string>
+    <string name="network_source">网络音乐源</string>
+    <string name="toast_switched_feiniu">已切换到飞牛NAS</string>
+    <string name="fn_os">飞牛 fnOS</string>
+    <string name="fn_connected_in_use">当前使用中 · %1$s</string>
+    <string name="fn_connected">已连接 · %1$s</string>
+    <string name="fn_click_login">点击登录</string>
+    <string name="nas_synology">群晖 Synology</string>
+    <string name="nas_qnap">威联通 QNAP</string>
+    <string name="nas_ugreen">绿联 UGREEN</string>
+    <string name="coming_soon">%1$s 敬请期待</string>
+    <string name="not_supported">暂未支持</string>
+    <string name="source_switch_hint">选择音乐源后，歌曲/专辑/艺术家列表将自动切换</string>
+    <string name="logout_confirm_title">退出飞牛 NAS？</string>
+    <string name="logout_confirm_text">退出后将切回本地播放器，下次使用需要重新登录。</string>
+    <string name="toast_logged_out">已退出飞牛 NAS</string>
+    <string name="logout_btn">退出</string>
+
+    <!-- 歌曲列表 / 搜索 / 排序 -->
+    <string name="search_placeholder">搜索歌曲、专辑、艺术家</string>
+    <string name="sort_title">排序</string>
+    <string name="sort_custom">自定义</string>
+    <string name="sort_by_title">标题</string>
+    <string name="sort_by_artist">艺术家</string>
+    <string name="sort_by_album">专辑</string>
+    <string name="sort_dur_short">时长（短→长）</string>
+    <string name="sort_dur_long">时长（长→短）</string>
+    <string name="internal_storage">内部存储</string>
+    <string name="dir_count">%1$d 目录 · %2$d 首</string>
+    <string name="no_dir_structure">未检测到目录结构：服务器未返回歌曲路径，已按全部歌曲平铺显示。\n已尝试自动刷新数据；若刷新后仍如此，请将 /sdcard/Download/fn-nas.log 发回排查（含 track path probe 记录）。</string>
+    <string name="no_playlists">暂无歌单</string>
+    <string name="reload_from_server">从飞牛服务器重新加载</string>
+
+    <!-- 扫描页 -->
+    <string name="scan_starting">正在扫描本地音乐文件...</string>
+    <string name="scan_done">扫描完成，共 %1$d 首歌曲</string>
+    <string name="scan_error">错误: %1$s</string>
+    <string name="scan_start_btn">开始扫描本地音乐</string>
+    <string name="custom_folders">自定义文件夹</string>
+    <string name="add_custom_folder">添加自定义文件夹</string>
+    <string name="skip_short_audio">不扫描 60 秒以下音频</string>
+    <string name="manage_permission">管理外部存储权限</string>
+    <string name="blocked_folders">被屏蔽的文件夹</string>
+    <string name="add_blocked_folder">添加屏蔽文件夹</string>
+    <string name="scanning_dialog">正在扫描...</string>
+    <string name="scan_complete_dialog">扫描完成</string>
+    <string name="placeholder_suffix">%1$s （待实现）</string>
+
+    <!-- 设置页 -->
+    <string name="play_cache">播放缓存</string>
+    <string name="cache_usage">当前已使用 %1$s（上限约 200MB，自动缓存最近听过的歌，二次播放秒开）</string>
+    <string name="clearing">清理中…</string>
+    <string name="clear_cache">清空缓存</string>
+
+    <!-- 统计页 -->
+    <string name="stats_no_record">还没有播放记录，去听首歌吧</string>
+    <string name="stats_total">共 %1$d 首（按播放次数排序）</string>
+    <string name="count_times">%1$d 次</string>
+
+    <!-- 关于 -->
+    <string name="about_title">关于本程序</string>
+    <string name="about_desc">一款基于 Android Jetpack Compose 开发的开源音乐播放器，支持本地音乐扫描播放，同时支持通过飞牛 NAS 官方音乐接口流式播放 NAS 中的音乐库。</string>
+    <string name="open_source_refs">开源引用</string>
+    <string name="ref_media3">• Media3 / ExoPlayer — 媒体播放引擎 (Apache 2.0)</string>
+    <string name="ref_compose">• Compose Material3 — UI 组件库 (Apache 2.0)</string>
+    <string name="ref_coil">• Coil — 图片加载 (Apache 2.0)</string>
+    <string name="ref_salt">• Salt Player / SaltUI — UI 设计参考 (GPL-3.0)</string>
+    <string name="ref_saltaudio">• SaltAudioTag — 音频标签读取参考 (GPL-3.0)</string>
+    <string name="ref_fnmusic">• fn-music-tv — 飞牛音乐 API 参考</string>
+    <string name="license_title">开源协议</string>
+    <string name="license_text">本程序以 GNU General Public License v3.0 (GPL-3.0) 协议开源发布。\n你可以自由使用、修改和分发本程序，但衍生作品必须同样采用 GPL-3.0 协议开源。\n源代码托管于 GitHub: liangleionline/nas-music-player</string>
+
+    <!-- 队列页 -->
+    <string name="queue_title">播放队列</string>
+    <string name="clear">清除</string>
 </resources>

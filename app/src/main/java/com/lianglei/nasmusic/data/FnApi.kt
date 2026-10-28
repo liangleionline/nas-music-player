@@ -146,6 +146,9 @@ object FnApi {
         val duration = t.optLong("duration", 0)
         val coverId = t.optString("coverId", "")
         val path = extractTrackPath(t)
+        val spec = t.optJSONObject("audioSpec")
+        val isFlac = spec?.optString("code", "")?.contains("flac", true) == true ||
+                spec?.optString("format", "")?.contains("flac", true) == true
         return Song(
             id = guid.hashCode().toLong(),
             title = title,
@@ -155,8 +158,13 @@ object FnApi {
             duration = duration,
             data = "$baseUrl/track/stream?guid=$guid",
             folder = if (path.isNotEmpty()) path else "飞牛NAS",
-            isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
-            coverId = coverId
+            isHighQuality = isFlac,
+            coverId = coverId,
+            year = t.optInt("year", 0),
+            bitrate = spec?.optInt("bitrate", 0) ?: 0,
+            sampleRate = spec?.optInt("sampleRate", 0) ?: 0,
+            fileSize = spec?.optLong("size", 0L) ?: 0L,
+            format = spec?.optString("format", "") ?: ""
         )
     }
 

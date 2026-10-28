@@ -18,6 +18,7 @@ class App : Application(), ImageLoaderFactory {
         CrashLogger.install(this)
         FnLogger.rotateIfLarge()
         com.lianglei.nasmusic.data.SourceManager.init(this)
+        com.lianglei.nasmusic.data.StatsStore.init(this)
         com.lianglei.nasmusic.player.PlayerManager.init(this)
         CrashLogger.log("App onCreate, versionName=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
     }

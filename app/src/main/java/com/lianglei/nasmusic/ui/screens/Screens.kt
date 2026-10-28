@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.lianglei.nasmusic.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,7 +88,7 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("搜索歌曲、专辑、艺术家", fontSize = 13.sp) },
+                placeholder = { Text(stringResource(R.string.search_placeholder), fontSize = 13.sp) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             )
@@ -128,15 +130,15 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
                         onClick = {
                             val r = com.lianglei.nasmusic.player.PlayerManager.playNext(s)
                             val msg = when (r) {
-                                3 -> "已加入并开始播放"
-                                2 -> "已移到下一首播放"
-                                1 -> "已加入下一首播放"
-                                else -> "播放器未就绪"
+                                3 -> context.getString(R.string.toast_added_started)
+                                2 -> context.getString(R.string.toast_moved_next)
+                                1 -> context.getString(R.string.toast_added_next)
+                                else -> context.getString(R.string.toast_player_not_ready)
                             }
                             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(36.dp)
-                    ) { Icon(Icons.Filled.Add, "加入下一首播放", tint = Color.Gray, modifier = Modifier.size(20.dp)) }
+                    ) { Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = Color.Gray, modifier = Modifier.size(20.dp)) }
                     Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
                 }
             }
@@ -146,9 +148,16 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
     if (showSortSheet) {
         ModalBottomSheet(onDismissRequest = { showSortSheet = false }, sheetState = sheetState) {
             Column(Modifier.padding(20.dp).padding(bottom = 24.dp)) {
-                Text("排序", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(stringResource(R.string.sort_title), fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(16.dp))
-                val options = listOf("自定义", "标题", "艺术家", "专辑", "时长（短→长）", "时长（长→短）")
+                val options = listOf(
+                    stringResource(R.string.sort_custom),
+                    stringResource(R.string.sort_by_title),
+                    stringResource(R.string.sort_by_artist),
+                    stringResource(R.string.sort_by_album),
+                    stringResource(R.string.sort_dur_short),
+                    stringResource(R.string.sort_dur_long)
+                )
                 options.forEachIndexed { idx, label ->
                     Row(
                         Modifier.fillMaxWidth().clickable {
@@ -178,7 +187,7 @@ fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(group.first().album, maxLines = 1, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Text("${group.size} 首", color = Color.Gray, fontSize = 12.sp)
+                Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
             }
         }
     }
@@ -199,7 +208,7 @@ fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(artist, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                    Text("${group.size} 首", color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
                 }
             }
         }
@@ -216,7 +225,7 @@ fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
                     Icon(Icons.Filled.SdStorage, null, tint = Color.Gray)
                     Spacer(Modifier.width(16.dp))
                     Column {
-                        Text("内部存储", fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.internal_storage), fontWeight = FontWeight.Medium)
                         Text("/storage/emulated/0", color = Color.Gray, fontSize = 12.sp)
                     }
                 }
@@ -228,7 +237,7 @@ fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(folder, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                    Text("${group.size} 首", color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
                 }
                 Icon(Icons.Filled.MoreVert, null, tint = Color.Gray)
             }
@@ -291,11 +300,11 @@ fun FolderBrowserScreen(
         // 路径面包屑
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (currentSegs.isEmpty()) "文件夹" else currentSegs.joinToString(" / "),
+                if (currentSegs.isEmpty()) stringResource(R.string.folder) else currentSegs.joinToString(" / "),
                 fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2
             )
             Spacer(Modifier.weight(1f))
-            Text("${children.size} 目录 · ${curSongs.size} 首", color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(R.string.dir_count, children.size, curSongs.size), color = Color.Gray, fontSize = 12.sp)
         }
         LazyColumn(Modifier.fillMaxSize()) {
             // 子目录
@@ -311,7 +320,7 @@ fun FolderBrowserScreen(
                     Column(Modifier.weight(1f)) {
                         Text(segs.last(), fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1)
                         Spacer(Modifier.height(2.dp))
-                        Text("$count 首", color = Color.Gray, fontSize = 12.sp)
+                        Text(stringResource(R.string.song_count, count), color = Color.Gray, fontSize = 12.sp)
                     }
                 }
             }
@@ -346,22 +355,22 @@ fun FolderBrowserScreen(
                         onClick = {
                             val r = com.lianglei.nasmusic.player.PlayerManager.playNext(s)
                             val msg = when (r) {
-                                3 -> "已加入并开始播放"
-                                2 -> "已移到下一首播放"
-                                1 -> "已加入下一首播放"
-                                else -> "播放器未就绪"
+                                3 -> context.getString(R.string.toast_added_started)
+                                2 -> context.getString(R.string.toast_moved_next)
+                                1 -> context.getString(R.string.toast_added_next)
+                                else -> context.getString(R.string.toast_player_not_ready)
                             }
                             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(36.dp)
-                    ) { Icon(Icons.Filled.Add, "加入下一首播放", tint = Color.Gray, modifier = Modifier.size(20.dp)) }
+                    ) { Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = Color.Gray, modifier = Modifier.size(20.dp)) }
                     Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
                 }
             }
             if (children.isEmpty() && curSongs.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text("此目录没有歌曲", color = Color.Gray, fontSize = 13.sp)
+                        Text(stringResource(R.string.no_songs_in_dir), color = Color.Gray, fontSize = 13.sp)
                     }
                 }
             }
@@ -369,7 +378,7 @@ fun FolderBrowserScreen(
                 item {
                     Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
                         Text(
-                            "未检测到目录结构：服务器未返回歌曲路径，已按全部歌曲平铺显示。\n已尝试自动刷新数据；若刷新后仍如此，请将 /sdcard/Download/fn-nas.log 发回排查（含 track path probe 记录）。",
+                            stringResource(R.string.no_dir_structure),
                             color = Color(0xFFB08968), fontSize = 12.sp, lineHeight = 16.sp
                         )
                     }
@@ -387,7 +396,7 @@ fun PlaylistScreen(
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         if (playlists.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无歌单", color = Color.Gray)
+                Text(stringResource(R.string.no_playlists), color = Color.Gray)
             }
             return@Column
         }
@@ -410,7 +419,7 @@ fun PlaylistScreen(
                     Column {
                         Text(p.name, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                         if (p.trackCount > 0) {
-                            Text("${p.trackCount} 首", color = Color.Gray, fontSize = 12.sp)
+                            Text(stringResource(R.string.song_count, p.trackCount), color = Color.Gray, fontSize = 12.sp)
                         }
                     }
                 }
@@ -473,7 +482,7 @@ fun ScanSourceScreen() {
                     Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Refresh, null, tint = Color(0xFF1F6FEB))
                         Spacer(Modifier.width(12.dp))
-                        Text("从飞牛服务器重新加载", color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.reload_from_server), color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -489,12 +498,12 @@ fun ScanSourceScreen() {
                         scanLog = emptyList()
                         scope.launch {
                             try {
-                                scanLog = scanLog + "正在扫描本地音乐文件..."
+                                scanLog = scanLog + context.getString(R.string.scan_starting)
                                 com.lianglei.nasmusic.data.SourceManager.refreshLocalForce(context)
                                 val count = com.lianglei.nasmusic.data.SourceManager.songs.value.size
-                                scanLog = scanLog + "扫描完成，共 $count 首歌曲"
+                                scanLog = scanLog + context.getString(R.string.scan_done, count)
                             } catch (t: Throwable) {
-                                scanLog = scanLog + "错误: ${t.message}"
+                                scanLog = scanLog + context.getString(R.string.scan_error, t.message ?: "")
                             }
                             scanning = false
                             showDialog = true
@@ -504,14 +513,14 @@ fun ScanSourceScreen() {
                     Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Refresh, null, tint = Color(0xFF1F6FEB))
                         Spacer(Modifier.width(12.dp))
-                        Text("开始扫描本地音乐", color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.scan_start_btn), color = Color(0xFF1F6FEB), fontWeight = FontWeight.Medium)
                     }
                 }
             }
 
             // Custom folders
             item {
-                Text("自定义文件夹", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text(stringResource(R.string.custom_folders), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
             }
             items(customFolders) { folder ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -533,19 +542,19 @@ fun ScanSourceScreen() {
                     Row(Modifier.clickable { launcher.launch(null) }.padding(16.dp)) {
                         Icon(Icons.Filled.CreateNewFolder, null, tint = Color(0xFF1F6FEB))
                         Spacer(Modifier.width(12.dp))
-                        Text("添加自定义文件夹", color = Color(0xFF1F6FEB))
+                        Text(stringResource(R.string.add_custom_folder), color = Color(0xFF1F6FEB))
                     }
                 }
             }
 
             // Settings
             item {
-                Text("设置", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text(stringResource(R.string.settings), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
             }
             item {
                 Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("不扫描 60 秒以下音频", Modifier.weight(1f))
+                        Text(stringResource(R.string.skip_short_audio), Modifier.weight(1f))
                         Switch(checked = skipShort, onCheckedChange = {
                             skipShort = it
                             prefs.edit().putBoolean("skip_short", it).apply()
@@ -559,7 +568,7 @@ fun ScanSourceScreen() {
                         val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                         context.startActivity(intent)
                     }.padding(16.dp)) {
-                        Text("管理外部存储权限", Modifier.weight(1f))
+                        Text(stringResource(R.string.manage_permission), Modifier.weight(1f))
                         Icon(Icons.Filled.OpenInNew, null, tint = Color.Gray)
                     }
                 }
@@ -567,7 +576,7 @@ fun ScanSourceScreen() {
 
             // Blocked folders
             item {
-                Text("被屏蔽的文件夹", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text(stringResource(R.string.blocked_folders), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
             }
             items(blockedFolders) { folder ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -589,7 +598,7 @@ fun ScanSourceScreen() {
                     Row(Modifier.clickable { launcher.launch(null) }.padding(16.dp)) {
                         Icon(Icons.Filled.Add, null, tint = Color(0xFF1F6FEB))
                         Spacer(Modifier.width(12.dp))
-                        Text("添加屏蔽文件夹", color = Color(0xFF1F6FEB))
+                        Text(stringResource(R.string.add_blocked_folder), color = Color(0xFF1F6FEB))
                     }
                 }
             }
@@ -600,7 +609,7 @@ fun ScanSourceScreen() {
     if (showDialog || scanning) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text(if (scanning) "正在扫描..." else "扫描完成") },
+            title = { Text(if (scanning) stringResource(R.string.scanning_dialog) else stringResource(R.string.scan_complete_dialog)) },
             text = {
                 Column(
                     Modifier.height(200.dp).verticalScroll(rememberScrollState())
@@ -612,7 +621,7 @@ fun ScanSourceScreen() {
                 TextButton(
                     onClick = { showDialog = false },
                     enabled = !scanning
-                ) { Text("确定") }
+                ) { Text(stringResource(R.string.ok)) }
             }
         )
     }
@@ -621,7 +630,7 @@ fun ScanSourceScreen() {
 @Composable
 fun PlaceholderScreen(name: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("$name （待实现）", color = Color.Gray)
+        Text(stringResource(R.string.placeholder_suffix, name), color = Color.Gray)
     }
 }
 
@@ -640,9 +649,9 @@ fun SettingsScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
             }
-            Text("设置", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(stringResource(R.string.settings), fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
 
         // 缓存行
@@ -653,10 +662,10 @@ fun SettingsScreen(onBack: () -> Unit) {
             Icon(Icons.Filled.DeleteSweep, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("播放缓存", fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Text(stringResource(R.string.play_cache), fontWeight = FontWeight.Medium, fontSize = 15.sp)
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "当前已使用 ${formatBytes(cacheBytes)}（上限约 200MB，自动缓存最近听过的歌，二次播放秒开）",
+                    stringResource(R.string.cache_usage, formatBytes(cacheBytes)),
                     color = Color.Gray, fontSize = 12.sp
                 )
             }
@@ -677,7 +686,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 ),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
             ) {
-                Text(if (clearing) "清理中…" else "清空缓存", fontSize = 13.sp)
+                Text(if (clearing) stringResource(R.string.clearing) else stringResource(R.string.clear_cache), fontSize = 13.sp)
             }
         }
     }
@@ -689,6 +698,75 @@ private fun formatBytes(b: Long): String = when {
     else -> "$b B"
 }
 
+/** 统计页：按播放次数从高到低排列歌曲列表（v1.4.58） */
+@Composable
+fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (Int) -> Unit) {
+    // 进入页面时从 StatsStore 读取播放次数并降序排序
+    var stats by remember { mutableStateOf(emptyList<Pair<Song, Int>>()) }
+    LaunchedEffect(songs) {
+        val counts = com.lianglei.nasmusic.data.StatsStore.allCounts()
+        stats = songs.filter { (counts[it.id] ?: 0) > 0 }
+            .map { it to (counts[it.id] ?: 0) }
+            .sortedByDescending { it.second }
+    }
+    Column(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+            }
+            Text(stringResource(R.string.stats), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
+        if (stats.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.stats_no_record), color = Color.Gray)
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f)) {
+                item {
+                    Text(
+                        stringResource(R.string.stats_total, stats.size),
+                        Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        color = Color.Gray, fontSize = 12.sp
+                    )
+                }
+                items(stats.size) { i ->
+                    val (s, count) = stats[i]
+                    Row(
+                        Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(songs.indexOf(s)) }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${i + 1}", color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp))
+                        Spacer(Modifier.width(8.dp))
+                        AsyncImage(
+                            model = if (s.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(s.coverId)
+                            else "content://media/external/audio/albumart/${s.albumId}",
+                            contentDescription = null,
+                            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(8.dp))
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(s.title, maxLines = 1, fontSize = 15.sp)
+                            Spacer(Modifier.height(3.dp))
+                            Text("${s.artist} - ${s.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
+                        }
+                        // 播放次数徽章
+                        Box(
+                            Modifier.background(Color(0xFFE8DCC8), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(stringResource(R.string.count_times, count), color = Color(0xFF8B6F47), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun AboutScreen() {
     Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
@@ -697,30 +775,28 @@ fun AboutScreen() {
         Text("Version ${BuildConfig.VERSION_NAME}", color = Color.Gray, fontSize = 13.sp)
         Spacer(Modifier.height(20.dp))
 
-        Text("关于本程序", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(stringResource(R.string.about_title), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
         Text(
-            "一款基于 Android Jetpack Compose 开发的开源音乐播放器，支持本地音乐扫描播放，同时支持通过飞牛 NAS 官方音乐接口流式播放 NAS 中的音乐库。",
+            stringResource(R.string.about_desc),
             color = Color.DarkGray, fontSize = 13.sp
         )
         Spacer(Modifier.height(20.dp))
 
-        Text("开源引用", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(stringResource(R.string.open_source_refs), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
-        Text("• Media3 / ExoPlayer — 媒体播放引擎 (Apache 2.0)", color = Color.DarkGray, fontSize = 12.sp)
-        Text("• Compose Material3 — UI 组件库 (Apache 2.0)", color = Color.DarkGray, fontSize = 12.sp)
-        Text("• Coil — 图片加载 (Apache 2.0)", color = Color.DarkGray, fontSize = 12.sp)
-        Text("• Salt Player / SaltUI — UI 设计参考 (GPL-3.0)", color = Color.DarkGray, fontSize = 12.sp)
-        Text("• SaltAudioTag — 音频标签读取参考 (GPL-3.0)", color = Color.DarkGray, fontSize = 12.sp)
-        Text("• fn-music-tv — 飞牛音乐 API 参考", color = Color.DarkGray, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_media3), color = Color.DarkGray, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_compose), color = Color.DarkGray, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_coil), color = Color.DarkGray, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_salt), color = Color.DarkGray, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_saltaudio), color = Color.DarkGray, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_fnmusic), color = Color.DarkGray, fontSize = 12.sp)
         Spacer(Modifier.height(20.dp))
 
-        Text("开源协议", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(stringResource(R.string.license_title), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
         Text(
-            "本程序以 GNU General Public License v3.0 (GPL-3.0) 协议开源发布。\n" +
-            "你可以自由使用、修改和分发本程序，但衍生作品必须同样采用 GPL-3.0 协议开源。\n" +
-            "源代码托管于 GitHub: liangleionline/nas-music-player",
+            stringResource(R.string.license_text),
             color = Color.DarkGray, fontSize = 12.sp
         )
     }

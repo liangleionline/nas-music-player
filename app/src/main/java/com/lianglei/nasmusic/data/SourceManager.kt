@@ -111,6 +111,8 @@ object SourceManager {
                     put("album", s.album); put("albumId", s.albumId); put("folder", s.folder)
                     put("duration", s.duration); put("data", s.data)
                     put("coverId", s.coverId); put("isHighQuality", s.isHighQuality)
+                    put("year", s.year); put("bitrate", s.bitrate); put("sampleRate", s.sampleRate)
+                    put("fileSize", s.fileSize); put("format", s.format)
                 })
             }
             f.writeText(arr.toString())
@@ -133,7 +135,10 @@ object SourceManager {
                     duration = o.optLong("duration"),
                     data = o.optString("data"), folder = o.optString("folder"),
                     isHighQuality = o.optBoolean("isHighQuality"),
-                    coverId = o.optString("coverId")
+                    coverId = o.optString("coverId"),
+                    year = o.optInt("year"), bitrate = o.optInt("bitrate"),
+                    sampleRate = o.optInt("sampleRate"), fileSize = o.optLong("fileSize"),
+                    format = o.optString("format")
                 ))
             }
             feiniuCache = list
