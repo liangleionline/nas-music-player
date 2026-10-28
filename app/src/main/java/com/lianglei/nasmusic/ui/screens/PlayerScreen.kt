@@ -800,7 +800,7 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
         val cols = ArrayList<Color>(13)
         for (i in 0 until 13) {
             val pos = i / 12f * 3f
-            val seg = pos.toInt()
+            val seg = (pos.toInt()).coerceIn(0, 2)   // i=12 → pos=3.0 → seg 钳制到 2，收尾回到 cs[0]（首尾同色闭环）
             val k = pos - seg
             val s = (seg + 1) % 3
             val c0 = cs[seg]
