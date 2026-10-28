@@ -766,12 +766,10 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
 }
 
 /**
- * 迷幻烟雾背景：6 个超大径向渐变烟团，圆心全部固定在屏幕外
- * （左/右/上/下/右上/左下），以不同频率极缓慢漂移 + 呼吸，
- * blendMode=Plus 叠加（亮色烟雾感），颜色取自封面主色（统一提亮至最低亮度 0.45）
- * + 固定白色烟团（灰蒙蒙效果）。
- * 渐变采用"环形三停"（中心 alpha=0、0.32r 处最浓、向外淡出），
- * 核心亮区物理上位于屏幕外 → 屏幕内只有从四边渗入的羽化光雾，彻底杜绝暗斑/黑洞。
+ * 迷幻烟雾背景：全屏连续线性渐变（封面主色提亮至最低亮度 0.42 后取 3 色），
+ * 色带方向由 phase 驱动绕屏幕中心极缓慢旋转（首尾同色无缝循环），
+ * 整屏每个像素都被渐变覆盖 → 几何上不存在圆斑/暗洞；
+ * 中央叠一层低 alpha 提亮色柔光，恒亮于底色。
  * phase 由真实帧时间差值驱动（帧率无关），running=false 时暂停（播放页隐藏零消耗），
  * 收起再弹出时从当前相位续走，不跳变。
  */
@@ -791,65 +789,45 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
     }
     Canvas(Modifier.fillMaxSize()) {
         val t = phase.value
-        // 调色板统一提亮到最低亮度 0.45：任何封面（含深棕/黑）都不会产生"暗色烟团"，
-        // Plus 叠加下只有发光色，不存在黑洞源头
-        val base = if (palette.isEmpty()) listOf(Color(0xFF5A5A5E), Color(0xFF9A6A3B))
-        else palette.map { lightenIfDark(it, 0.45f) }
         val cw = size.width
         val ch = size.height
-        val cx0 = cw * 0.5f
-        val cy0 = ch * 0.5f
-        // 烟团圆心全部固定在屏幕外（左/右/上/下/右上/左下 六个方位）：
-        // 径向渐变的核心亮区（0.32r 内 alpha 峰值）物理上不可能出现在屏幕内，
-        // 屏幕里只有从四边渗入的大半径羽化光雾 → 彻底杜绝暗斑/黑洞
-        val anchors = listOf(
-            Offset(-cw * 0.16f, ch * 0.30f),   // 左
-            Offset(cw * 1.16f, ch * 0.70f),    // 右
-            Offset(cw * 0.30f, -ch * 0.18f),   // 上
-            Offset(cw * 0.70f, ch * 1.18f),    // 下
-            Offset(cw * 1.12f, -ch * 0.14f),   // 右上
-            Offset(-cw * 0.12f, ch * 1.14f)    // 左下
-        )
-        anchors.forEachIndexed { i, a ->
-            val c = if (i == 5) Color.White.copy(alpha = 0.35f) else base[i % base.size]
-            // 沿屏幕边缘缓慢漂移（drift 在 ±1 之间），漂移量远小于圆心到屏幕的距离，
-            // 圆心始终保持屏外；左右团沿纵向漂、上下团沿横向漂
-            val drift = sin(t * 0.5f + i * 1.9f)
-            val driftY = sin(t * 0.7f + i * 2.6f) * ch * 0.10f
-            val driftX = sin(t * 0.6f + i * 0.9f) * cw * 0.06f
-            val cx = if (a.x < cx0) a.x + driftX else a.x - driftX
-            val cy = a.y + driftY
-            // 大半径：0.62~0.72 屏高，羽化边缘覆盖大半屏，光从四边渗入
-            val r = ch * (0.62f + 0.10f * sin(t * 0.35f + i * 1.3f))
-            val peak = if (i == 5) 0.30f else 0.26f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    0.0f to c.copy(alpha = 0.0f),
-                    0.32f to c.copy(alpha = peak),
-                    1.0f to c.copy(alpha = 0.0f),
-                    center = Offset(cx, cy),
-                    radius = r
+        // 调色板：封面主色统一提亮到最低亮度 0.42（保留色相），任何封面都不会产生暗色
+        val cs = if (palette.isEmpty())
+            listOf(Color(0xFF6A6A6E), Color(0xFF9A7A4B), Color(0xFF5E7A6A))
+        else palette.take(3).map { lightenIfDark(it, 0.42f) }
+        // 全屏线性渐变（对径旋转、首尾同色无缝循环）：整屏被连续色带覆盖，
+        // 没有圆形烟团 → 几何上不存在"洞/斑"；phase 驱动色带方向极缓慢旋转形成流动感
+        val ang = t * 0.05f
+        val dx = cos(ang) * cw * 0.42f
+        val dy = sin(ang) * ch * 0.42f
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    cs[0].copy(alpha = 0.62f),
+                    cs[1].copy(alpha = 0.45f),
+                    cs[2].copy(alpha = 0.38f),
+                    cs[1].copy(alpha = 0.45f),
+                    cs[0].copy(alpha = 0.62f)
                 ),
-                radius = r,
-                center = Offset(cx, cy),
-                blendMode = BlendMode.Plus
-            )
-        }
-        // 中央柔和光：提亮后的主色、低透明度渐变（非实心、非暗色）——
-        // 只是给中央一点封面色氛围，亮度始终高于底色，不会形成暗区
-        val centerCol = lightenIfDark(centerFill, 0.50f)
+                start = Offset(cw * 0.5f - dx, ch * 0.5f - dy),
+                end = Offset(cw * 0.5f + dx, ch * 0.5f + dy)
+            ),
+            size = size
+        )
+        // 中央柔和光晕：亮色低 alpha，给中央一点封面色氛围（恒亮于底色，非实心非暗色）
+        val centerCol = lightenIfDark(centerFill, 0.52f)
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(
-                    centerCol.copy(alpha = 0.22f),
-                    centerCol.copy(alpha = 0.08f),
+                    centerCol.copy(alpha = 0.25f),
+                    centerCol.copy(alpha = 0.10f),
                     centerCol.copy(alpha = 0f)
                 ),
-                center = Offset(cx0, cy0),
-                radius = cw * 0.50f
+                center = Offset(cw * 0.5f, ch * 0.5f),
+                radius = cw * 0.55f
             ),
-            radius = cw * 0.50f,
-            center = Offset(cx0, cy0)
+            radius = cw * 0.55f,
+            center = Offset(cw * 0.5f, ch * 0.5f)
         )
     }
 }
