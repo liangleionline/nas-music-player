@@ -312,21 +312,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     Box(
         Modifier.fillMaxSize().background(coverBase)
     ) {
-        // 迷幻烟雾背景：颜色取自封面主色（KMeans 提取的红/黑/白/黄等），
-        // 6 个径向渐变烟团缓慢漂移 + 呼吸，Plus 叠加出灰蒙蒙烟雾感；
+        // 背景（烟雾渐变 + 中央光晕 + 垂直暗化遮罩）合并为单层 Canvas：
+        // 内容只静态绘制一次，动画只改 graphicsLayer 的旋转/缩放合成变换（零像素重绘），
+        // 且全屏绘制层从 4 层压到 1 层（消除 overdraw）→ TV 盒子弱 GPU 也不掉帧。
         // running=false（播放页隐藏）时帧循环暂停，零消耗。
-        SmokeBackground(palette = palette, running = backgroundRunning, centerFill = coverBase)
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.32f),
-                        Color.Black.copy(alpha = 0.10f),
-                        Color.Black.copy(alpha = 0.38f)
-                    )
-                )
-            )
-        )
+        SmokeBackdrop(palette = palette, running = backgroundRunning, centerFill = coverBase)
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp)) {
             // 顶部信息栏：标题（静态单行省略，避免跑马灯裁剪错乱）+ 歌手 + 投屏图标
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1014,15 +1004,16 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
 }
 
 /**
- * 迷幻烟雾背景：全屏连续线性渐变（封面主色提亮至最低亮度 0.42 后取 3 色），
- * 色带方向由 phase 驱动绕屏幕中心极缓慢旋转（首尾同色无缝循环），
- * 整屏每个像素都被渐变覆盖 → 几何上不存在圆斑/暗洞；
- * 中央叠一层低 alpha 提亮色柔光，恒亮于底色。
- * phase 由真实帧时间差值驱动（帧率无关），running=false 时暂停（播放页隐藏零消耗），
- * 收起再弹出时从当前相位续走，不跳变。
+ * 播放页背景（烟雾渐变 + 中央柔光 + 垂直暗化遮罩，单层 Canvas）：
+ * 关键性能设计——Canvas 内容（渐变/光晕/遮罩）完全静态，只随重组重绘一次；
+ * phase 驱动的"流动感"只通过 graphicsLayer 的 rotationZ/scale 合成变换实现
+ * （GPU 对整层做纹理变换，不逐像素重绘渐变着色器）→ TV 盒子弱 GPU 不掉帧。
+ * 全屏绘制层从原来的"底色 + 烟雾 + 遮罩"3 层合并为 1 层（消除 overdraw）。
+ * 渐变放大 1.18 倍 + 旋转 ±8° 摆动 + 缓慢呼吸，边缘永不露底。
+ * phase 由真实帧时间差值驱动（帧率无关），running=false 时暂停（播放页隐藏零消耗）。
  */
 @Composable
-fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = Color(0xFF2A2A2E)) {
+fun SmokeBackdrop(palette: List<Color>, running: Boolean, centerFill: Color = Color(0xFF2A2A2E)) {
     val phase = remember { Animatable(0f) }
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
@@ -1033,15 +1024,21 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
             val dt = (now - last).toFloat() / 1e9f   // 秒（帧差，float 精确）
             last = now
             frame++
-            // 30fps 推进（每 2 帧推进一次 phase，Canvas 重绘频率减半）：
-            // 视觉上烟雾依然是"缓慢缭绕"，但全屏渐变绘制负载减半，TV 盒子 GPU 更从容
+            // 30fps 推进 phase：phase 只驱动 graphicsLayer 变换（合成阶段），Canvas 内容零重绘
             if (frame % 2 == 0) {
                 phase.snapTo((phase.value + dt * 0.12f) % 1000f)
             }
         }
     }
-    Canvas(Modifier.fillMaxSize()) {
-        val t = phase.value
+    Canvas(
+        Modifier.fillMaxSize().graphicsLayer {
+            // 合成变换：±8° 缓慢摆动 + 1.18 倍放大呼吸（放大保证旋转不露角）
+            rotationZ = sin(phase.value * 0.012f) * 8f
+            val s = 1.18f + sin(phase.value * 0.006f) * 0.04f
+            scaleX = s
+            scaleY = s
+        }
+    ) {
         val cw = size.width
         val ch = size.height
         // 调色板：封面主色统一提亮到最低亮度 0.42（保留色相），任何封面都不会产生暗色
@@ -1055,9 +1052,9 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
             val pos = i / 12f * 3f
             val seg = (pos.toInt()).coerceIn(0, 2)   // i=12 → pos=3.0 → seg 钳制到 2，收尾回到 cs[0]（首尾同色闭环）
             val k = pos - seg
-            val s = (seg + 1) % 3
+            val s2 = (seg + 1) % 3
             val c0 = cs[seg]
-            val c1 = cs[s]
+            val c1 = cs[s2]
             cols.add(
                 Color(
                     c0.red + (c1.red - c0.red) * k,
@@ -1067,17 +1064,14 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
             )
         }
         // 全屏线性渐变：跨度大幅放大（±1.6 倍对角线）→ 同一色带覆盖范围远大于屏幕，
-        // 屏幕只截取渐变的极小一段，颜色随位置变化极缓，肉眼看不到色阶断层；
-        // phase 驱动渐变方向极缓慢旋转形成流动感
-        val ang = t * 0.05f
+        // 屏幕只截取渐变的极小一段，颜色随位置变化极缓，肉眼看不到色阶断层（方向静态，
+        // 流动感由整层旋转摆动承担）
         val R = maxOf(cw, ch) * 1.6f
-        val dx = cos(ang) * R
-        val dy = sin(ang) * R
         drawRect(
             brush = Brush.linearGradient(
                 colors = cols,
-                start = Offset(cw * 0.5f - dx, ch * 0.5f - dy),
-                end = Offset(cw * 0.5f + dx, ch * 0.5f + dy)
+                start = Offset(cw * 0.5f - R, ch * 0.5f - R),
+                end = Offset(cw * 0.5f + R, ch * 0.5f + R)
             ),
             size = size
         )
@@ -1095,6 +1089,18 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
             ),
             radius = cw * 0.55f,
             center = Offset(cw * 0.5f, ch * 0.5f)
+        )
+        // 垂直暗化遮罩（原独立 Box 层，合并到同一 Canvas 消除 overdraw）：顶部/底部压暗，
+        // 保证白字可读
+        drawRect(
+            brush = Brush.verticalGradient(
+                listOf(
+                    Color.Black.copy(alpha = 0.32f),
+                    Color.Black.copy(alpha = 0.10f),
+                    Color.Black.copy(alpha = 0.38f)
+                )
+            ),
+            size = size
         )
     }
 }
