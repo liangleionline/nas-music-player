@@ -280,4 +280,27 @@ object FnApi {
         }.build()
         return client.newCall(req).execute().use { it.body?.string() ?: "" }
     }
+
+    /**
+     * HTTP Range 请求读取指定字节区间（用于读取歌曲文件头部/尾部标签区解析内嵌歌词）。
+     * start/end 为包含边界；start 传负数（如 -1048576）表示 suffix range 读文件末尾 |start| 字节。
+     * 失败返回 null。
+     */
+    suspend fun fetchRange(url: String, start: Long, end: Long): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val range = if (start < 0) "bytes=$start" else "bytes=$start-$end"
+            val req = Request.Builder().url(url)
+                .header("Range", range)
+                .apply {
+                    if (token.isNotEmpty()) header("Authorization", token)
+                }
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful && resp.body != null) resp.body!!.bytes() else null
+            }
+        } catch (e: Exception) {
+            FnLogger.error("fetchRange failed ($start-$end)", e)
+            null
+        }
+    }
 }

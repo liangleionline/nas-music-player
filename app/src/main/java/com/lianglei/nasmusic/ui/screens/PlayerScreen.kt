@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -42,7 +43,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.ImageLoader
 import coil.compose.AsyncImage
@@ -222,10 +225,10 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
                 val parsed = if (lrcFile.exists()) {
                     parseLrc(lrcFile.readText())
-                } else if (file.exists()) {
-                    val embedded = readEmbeddedLyrics(file)
+                } else {
+                    val embedded = readEmbeddedLyrics(song) // 本地读文件标签区 / 飞牛 URL Range 读头尾
                     if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
-                } else emptyList()
+                }
                 // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）
                 parsed.flatMap { line ->
                     val (jp, trans) = splitLrcLine(line.text)
@@ -652,7 +655,9 @@ private fun KaraokeText(
 }
 
 /**
- * 读取文件内嵌歌词，统一返回 LRC 格式文本（行带 [mm:ss.cc] 时间戳）。
+ * 读取歌曲内嵌歌词，统一返回 LRC 格式文本（行带 [mm:ss.cc] 时间戳）。
+ * 本地文件（song.data 为路径）直接读文件头/尾标签区；
+ * 飞牛 NAS（song.data 为流式 URL）用 HTTP Range 请求读头/尾 1MB。
  * 支持：
  *  - MP3/MP2（ID3v2.2/2.3/2.4）：USLT 帧（v2.2 为 ULT）、SYLT 同步歌词帧（v2.2 为 SLT）
  *  - FLAC：Vorbis Comment 的 LYRICS / UNSYNCEDLYRICS / SYNCEDLYRICS
@@ -660,17 +665,78 @@ private fun KaraokeText(
  *  - OGG/OPUS：暂未支持（返回空）
  * 纯文本（无时间戳）歌词按行生成 4 秒间隔时间戳，保证面板可逐行显示。
  */
-private fun readEmbeddedLyrics(file: File): String = try {
-    when (file.extension.lowercase()) {
-        "mp3", "mp2", "mpa" -> readId3Lyrics(file)
-        "flac" -> readFlacLyrics(file)
-        "m4a", "mp4", "aac", "m4b", "m4r" -> readM4aLyrics(file)
+private suspend fun readEmbeddedLyrics(song: Song): String {
+    return try {
+        val data = song.data
+        val ext = data.substringAfterLast('.', "").lowercase()
+        if (data.startsWith("http")) {
+            // 飞牛：Range 读头部 1MB（MP3/FLAC 标签区在头部；M4A moov 若不在头部再试尾部 1MB）
+            val head = com.lianglei.nasmusic.data.FnApi.fetchRange(data, 0L, 1024L * 1024 - 1) ?: return ""
+            val fromHead = readEmbeddedLyricsBytes(head, ext)
+            if (fromHead.isNotEmpty()) fromHead
+            else {
+                val tail = com.lianglei.nasmusic.data.FnApi.fetchRange(data, -1024L * 1024, -1) ?: return ""
+                readEmbeddedLyricsBytes(tail, ext)
+            }
+        } else {
+            val file = File(data)
+            if (file.exists()) readEmbeddedLyricsFile(file) else ""
+        }
+    } catch (e: Exception) {
+        com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyrics failed", e)
+        ""
+    }
+}
+
+/** 按扩展名分发 bytes 解析 */
+private fun readEmbeddedLyricsBytes(bytes: ByteArray, ext: String): String = try {
+    when (ext) {
+        "mp3", "mp2", "mpa" -> readId3LyricsBytes(bytes)
+        "flac" -> readFlacLyricsBytes(bytes)
+        "m4a", "mp4", "aac", "m4b", "m4r" -> readM4aLyricsBytes(bytes)
         "ogg", "opus", "oga" -> "" // OGG 容器歌词暂未支持
         else -> ""
     }
 } catch (e: Exception) {
-    com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyrics failed", e)
+    com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyricsBytes failed", e)
     ""
+}
+
+/** 本地文件读取：MP3/FLAC 读头部标签区（2MB 足够）；M4A 头/尾各 2MB 兜底（moov 可能在尾部） */
+private fun readEmbeddedLyricsFile(file: File): String = try {
+    when (file.extension.lowercase()) {
+        "mp3", "mp2", "mpa" -> readId3LyricsBytes(readPrefix(file, 2 * 1024 * 1024))
+        "flac" -> readFlacLyricsBytes(readPrefix(file, 2 * 1024 * 1024))
+        "m4a", "mp4", "aac", "m4b", "m4r" -> {
+            val head = readM4aLyricsBytes(readPrefix(file, 2 * 1024 * 1024))
+            if (head.isNotEmpty()) head else readM4aLyricsBytes(readSuffix(file, 2 * 1024 * 1024))
+        }
+        else -> ""
+    }
+} catch (e: Exception) {
+    com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyricsFile failed", e)
+    ""
+}
+
+private fun readPrefix(file: File, n: Int): ByteArray {
+    java.io.RandomAccessFile(file, "r").use { raf ->
+        val len = raf.length()
+        val size = minOf(n, len.toInt())
+        val b = ByteArray(size)
+        raf.readFully(b)
+        return b
+    }
+}
+
+private fun readSuffix(file: File, n: Int): ByteArray {
+    java.io.RandomAccessFile(file, "r").use { raf ->
+        val len = raf.length()
+        val size = minOf(n, len.toInt())
+        raf.seek(len - size)
+        val b = ByteArray(size)
+        raf.readFully(b)
+        return b
+    }
 }
 
 /** ID3 同步安全整数（28-bit） */
@@ -744,125 +810,118 @@ private fun fmtLrcTime(ms: Long): String {
     return String.format(java.util.Locale.US, "[%02d:%02d.%02d]", m, s, cs)
 }
 
-/** 读取 MP3 的 ID3v2 内嵌歌词（USLT/ULT + SYLT/SLT），返回 LRC 文本 */
-private fun readId3Lyrics(file: File): String {
-    file.inputStream().use { fis ->
-        val header = ByteArray(10)
-        if (fis.read(header) != 10) return ""
-        if (header[0] != 'I'.code.toByte() || header[1] != 'D'.code.toByte() || header[2] != '3'.code.toByte()) return ""
-        val major = header[3].toInt() and 0xFF
-        val flags = header[5].toInt() and 0xFF
-        val tagSize = syncsafeInt(header, 6)
-        if (tagSize <= 0) return ""
-        val data = ByteArray(tagSize)
-        if (fis.read(data) != tagSize) return ""
-        var pos = 0
-        // 跳过 Extended header（v2.3：4 字节大端 size 不含自身；v2.4：4 字节 syncsafe size 含自身）
-        if (flags and 0x40 != 0 && pos + 10 <= data.size) {
-            val extSize = if (major >= 4) syncsafeInt(data, 0) else be32Int(data, 0)
-            if (extSize > 0) pos += if (major >= 4) extSize else 4 + extSize
-        }
-        val frameIdLen = if (major == 2) 3 else 4
-        val frameHeaderLen = if (major == 2) 6 else 10
-        var uslt = ""
-        val sylt = StringBuilder()
-        while (pos + frameHeaderLen <= data.size) {
-            val frameId = String(data, pos, frameIdLen, Charsets.ISO_8859_1)
-            val frameSize = if (major == 2) {
-                ((data[pos + 3].toInt() and 0xFF) shl 16) or ((data[pos + 4].toInt() and 0xFF) shl 8) or (data[pos + 5].toInt() and 0xFF)
-            } else if (major >= 4) syncsafeInt(data, pos + 4) else be32Int(data, pos + 4)
-            if (frameSize <= 0 || pos + frameHeaderLen + frameSize > data.size) break
-            val body = data.copyOfRange(pos + frameHeaderLen, pos + frameHeaderLen + frameSize)
-            val isUslt = if (major == 2) frameId == "ULT" else frameId == "USLT"
-            val isSylt = if (major == 2) frameId == "SLT" else frameId == "SYLT"
-            if (isUslt && body.size >= 5) {
-                val enc = body[0].toInt() and 0xFF
-                val descEnd = id3Terminator(body, 4, enc) // 跳过 encoding(1)+language(3)+descriptor
-                if (descEnd in 4..body.size) {
-                    val lyrics = id3Decode(body, descEnd, body.size, enc).trim()
-                    if (lyrics.isNotEmpty()) { uslt = lyrics; break }
-                }
-            } else if (isSylt && body.size >= 7) {
-                val enc = body[0].toInt() and 0xFF
-                var p = id3Terminator(body, 6, enc) // 跳过 encoding(1)+language(3)+format(1)+contentType(1)+descriptor
-                if (p < 0) p = 7
-                // 内容区：[text \0][time: 4 字节大端毫秒] 反复
-                while (p < body.size) {
-                    val textEnd = id3Terminator(body, p, enc)
-                    if (textEnd < 0 || textEnd > body.size) break
-                    val text = id3Decode(body, p, textEnd, enc).trim()
-                    if (text.isNotEmpty() && textEnd + 4 <= body.size) {
-                        sylt.append(fmtLrcTime(be32Int(body, textEnd).toLong() and 0xFFFFFFFFL)).append(text).append('\n')
-                    }
-                    p = textEnd + 4
-                }
-            }
-            pos += frameHeaderLen + frameSize
-        }
-        if (uslt.isNotEmpty()) return plainToLrc(uslt)
-        return plainToLrc(sylt.toString())
+/** 解析 MP3 的 ID3v2 内嵌歌词（USLT/ULT + SYLT/SLT），bytes 含 ID3 头（从 0 开始），返回 LRC 文本 */
+private fun readId3LyricsBytes(bytes: ByteArray): String {
+    if (bytes.size < 10) return ""
+    val header = bytes
+    if (header[0] != 'I'.code.toByte() || header[1] != 'D'.code.toByte() || header[2] != '3'.code.toByte()) return ""
+    val major = header[3].toInt() and 0xFF
+    val flags = header[5].toInt() and 0xFF
+    val tagSize = syncsafeInt(header, 6)
+    if (tagSize <= 0) return ""
+    val avail = minOf(tagSize, bytes.size - 10)
+    var pos = 0
+    // 跳过 Extended header（v2.3：4 字节大端 size 不含自身；v2.4：4 字节 syncsafe size 含自身）
+    if (flags and 0x40 != 0 && pos + 10 <= avail) {
+        val extSize = if (major >= 4) syncsafeInt(bytes, 10) else be32Int(bytes, 10)
+        if (extSize > 0) pos += if (major >= 4) extSize else 4 + extSize
     }
+    val frameIdLen = if (major == 2) 3 else 4
+    val frameHeaderLen = if (major == 2) 6 else 10
+    var uslt = ""
+    val sylt = StringBuilder()
+    while (pos + frameHeaderLen <= avail) {
+        val frameId = String(bytes, 10 + pos, frameIdLen, Charsets.ISO_8859_1)
+        val frameSize = if (major == 2) {
+            ((bytes[10 + pos + 3].toInt() and 0xFF) shl 16) or ((bytes[10 + pos + 4].toInt() and 0xFF) shl 8) or (bytes[10 + pos + 5].toInt() and 0xFF)
+        } else if (major >= 4) syncsafeInt(bytes, 10 + pos + 4) else be32Int(bytes, 10 + pos + 4)
+        if (frameSize <= 0 || pos + frameHeaderLen + frameSize > avail) break
+        val body = bytes.copyOfRange(10 + pos + frameHeaderLen, 10 + pos + frameHeaderLen + frameSize)
+        val isUslt = if (major == 2) frameId == "ULT" else frameId == "USLT"
+        val isSylt = if (major == 2) frameId == "SLT" else frameId == "SYLT"
+        if (isUslt && body.size >= 5) {
+            val enc = body[0].toInt() and 0xFF
+            val descEnd = id3Terminator(body, 4, enc) // 跳过 encoding(1)+language(3)+descriptor
+            if (descEnd in 4..body.size) {
+                val lyrics = id3Decode(body, descEnd, body.size, enc).trim()
+                if (lyrics.isNotEmpty()) { uslt = lyrics; break }
+            }
+        } else if (isSylt && body.size >= 7) {
+            val enc = body[0].toInt() and 0xFF
+            var p = id3Terminator(body, 6, enc) // 跳过 encoding(1)+language(3)+format(1)+contentType(1)+descriptor
+            if (p < 0) p = 7
+            // 内容区：[text \0][time: 4 字节大端毫秒] 反复
+            while (p < body.size) {
+                val textEnd = id3Terminator(body, p, enc)
+                if (textEnd < 0 || textEnd > body.size) break
+                val text = id3Decode(body, p, textEnd, enc).trim()
+                if (text.isNotEmpty() && textEnd + 4 <= body.size) {
+                    sylt.append(fmtLrcTime(be32Int(body, textEnd).toLong() and 0xFFFFFFFFL)).append(text).append('\n')
+                }
+                p = textEnd + 4
+            }
+        }
+        pos += frameHeaderLen + frameSize
+    }
+    if (uslt.isNotEmpty()) return plainToLrc(uslt)
+    return plainToLrc(sylt.toString())
 }
 
-/** 读取 FLAC 的 Vorbis Comment 歌词（LYRICS/UNSYNCEDLYRICS/SYNCEDLYRICS），返回 LRC 文本 */
-private fun readFlacLyrics(file: File): String {
-    file.inputStream().use { fis ->
-        val magic = ByteArray(4)
-        if (fis.read(magic) != 4 || String(magic, Charsets.ISO_8859_1) != "fLaC") return ""
-        var lyrics = ""
-        while (true) {
-            val bh = ByteArray(4)
-            if (fis.read(bh) != 4) break
-            val type = bh[0].toInt() and 0x7F
-            val len = ((bh[1].toInt() and 0xFF) shl 16) or ((bh[2].toInt() and 0xFF) shl 8) or (bh[3].toInt() and 0xFF)
-            if (len <= 0 || len > 16 * 1024 * 1024) break
-            val payload = ByteArray(len)
-            if (fis.read(payload) != len) break
-            if (type == 4) { // VORBIS_COMMENT
-                var p = 0
-                if (p + 4 > payload.size) break
-                val vendorLen = le32Int(payload, p); p += 4
-                if (vendorLen < 0 || vendorLen > payload.size - p) break
-                p += vendorLen
-                if (p + 4 > payload.size) break
-                val count = le32Int(payload, p); p += 4
-                if (count < 0 || count > 1024) break
-                repeat(count) {
-                    if (p + 4 > payload.size) return@repeat
-                    val clen = le32Int(payload, p); p += 4
-                    if (clen < 0 || clen > payload.size - p) return@repeat
-                    val keyVal = String(payload, p, clen, Charsets.UTF_8)
-                    p += clen
-                    val idx = keyVal.indexOf('=')
-                    if (idx > 0) {
-                        val key = keyVal.substring(0, idx).uppercase()
-                        if ((key == "LYRICS" || key == "UNSYNCEDLYRICS" || key == "SYNCEDLYRICS") && lyrics.isEmpty()) {
-                            lyrics = keyVal.substring(idx + 1)
-                        }
+/** 解析 FLAC 的 Vorbis Comment 歌词（LYRICS/UNSYNCEDLYRICS/SYNCEDLYRICS），bytes 含 fLaC 头，返回 LRC 文本 */
+private fun readFlacLyricsBytes(bytes: ByteArray): String {
+    if (bytes.size < 8 || String(bytes, 0, 4, Charsets.ISO_8859_1) != "fLaC") return ""
+    var p = 4
+    var lyrics = ""
+    while (p + 4 <= bytes.size) {
+        val type = bytes[p].toInt() and 0x7F
+        val len = ((bytes[p + 1].toInt() and 0xFF) shl 16) or ((bytes[p + 2].toInt() and 0xFF) shl 8) or (bytes[p + 3].toInt() and 0xFF)
+        if (len <= 0 || len > 16 * 1024 * 1024) break
+        if (p + 4 + len > bytes.size) break
+        if (type == 4) { // VORBIS_COMMENT
+            val payload = bytes.copyOfRange(p + 4, p + 4 + len)
+            var q = 0
+            if (q + 4 > payload.size) break
+            val vendorLen = le32Int(payload, q); q += 4
+            if (vendorLen < 0 || vendorLen > payload.size - q) break
+            q += vendorLen
+            if (q + 4 > payload.size) break
+            val count = le32Int(payload, q); q += 4
+            if (count < 0 || count > 1024) break
+            repeat(count) {
+                if (q + 4 > payload.size) return@repeat
+                val clen = le32Int(payload, q); q += 4
+                if (clen < 0 || clen > payload.size - q) return@repeat
+                val keyVal = String(payload, q, clen, Charsets.UTF_8)
+                q += clen
+                val idx = keyVal.indexOf('=')
+                if (idx > 0) {
+                    val key = keyVal.substring(0, idx).uppercase()
+                    if ((key == "LYRICS" || key == "UNSYNCEDLYRICS" || key == "SYNCEDLYRICS") && lyrics.isEmpty()) {
+                        lyrics = keyVal.substring(idx + 1)
                     }
                 }
-                if (lyrics.isNotEmpty()) break
             }
-            if (bh[0].toInt() and 0x80 != 0) break // last metadata block
+            if (lyrics.isNotEmpty()) break
         }
-        return plainToLrc(lyrics)
+        if (bytes[p].toInt() and 0x80 != 0) break // last metadata block
+        p += 4 + len
     }
+    return plainToLrc(lyrics)
 }
 
-/** 在 [start,end) 内查找指定类型 box，返回其 payload 区（起始、结束）；找不到返回 null */
-private fun findM4aBox(raf: java.io.RandomAccessFile, start: Long, end: Long, type: String): Pair<Long, Long>? {
+/** 在 bytes 的 [start,end) 内查找指定类型 box，返回其 payload 区（起始、结束）；找不到返回 null */
+private fun findM4aBoxBytes(b: ByteArray, start: Int, end: Int, type: String): Pair<Int, Int>? {
     var p = start
     while (p + 8 <= end) {
-        raf.seek(p)
-        var size = raf.readInt().toLong() and 0xFFFFFFFFL
-        val typeBytes = ByteArray(4)
-        raf.readFully(typeBytes)
-        val t = String(typeBytes, Charsets.ISO_8859_1)
-        val headerLen = if (size == 1L) {
-            size = raf.readLong()
-            16L
-        } else 8L
-        val boxEnd = if (size == 0L) end else p + size
+        var size = be32Int(b, p).toLong() and 0xFFFFFFFFL
+        val t = String(b, p + 4, 4, Charsets.ISO_8859_1)
+        var headerLen = 8
+        if (size == 1L && p + 16 <= end) {
+            size = 0
+            for (i in 0..7) size = (size shl 8) or (b[p + 8 + i].toLong() and 0xFF)
+            headerLen = 16
+        }
+        val boxEnd = if (size == 0L) end else (p + size).toInt()
         if (size != 0L && boxEnd > end) return null
         if (t == type) return Pair(p + headerLen, boxEnd)
         if (size == 0L) return null
@@ -871,27 +930,22 @@ private fun findM4aBox(raf: java.io.RandomAccessFile, start: Long, end: Long, ty
     return null
 }
 
-/** 读取 M4A/MP4 的 iTunes ©lyr 内嵌歌词，返回 LRC 文本 */
-private fun readM4aLyrics(file: File): String {
-    java.io.RandomAccessFile(file, "r").use { raf ->
-        val len = raf.length()
-        val moov = findM4aBox(raf, 0L, len, "moov") ?: return ""
-        val udta = findM4aBox(raf, moov.first, moov.second, "udta") ?: return ""
-        val meta = findM4aBox(raf, udta.first, udta.second, "meta") ?: return ""
-        // meta 是 fullbox：version/flags 占 4 字节，子 box 从 +4 开始
-        val ilst = findM4aBox(raf, meta.first + 4, meta.second, "ilst") ?: return ""
-        val lyr = findM4aBox(raf, ilst.first, ilst.second, "\u00A9lyr") ?: return ""
-        // ©lyr 的 payload 是 data box：[type(4)][locale(4)] + 文本
-        val data = findM4aBox(raf, lyr.first, lyr.second, "data")
-        val textStart = if (data != null) data.first + 8 else lyr.first + 8
-        val textEnd = if (data != null) data.second else lyr.second
-        if (textStart >= textEnd) return ""
-        val n = (textEnd - textStart).toInt().coerceAtMost(4 * 1024 * 1024)
-        val bytes = ByteArray(n)
-        raf.seek(textStart)
-        raf.readFully(bytes)
-        return plainToLrc(String(bytes, Charsets.UTF_8))
-    }
+/** 解析 M4A/MP4 的 iTunes ©lyr 内嵌歌词，bytes 从文件任意位置开始（需含 moov→udta→meta→ilst→©lyr 链），返回 LRC 文本 */
+private fun readM4aLyricsBytes(bytes: ByteArray): String {
+    val len = bytes.size
+    val moov = findM4aBoxBytes(bytes, 0, len, "moov") ?: return ""
+    val udta = findM4aBoxBytes(bytes, moov.first, moov.second, "udta") ?: return ""
+    val meta = findM4aBoxBytes(bytes, udta.first, udta.second, "meta") ?: return ""
+    // meta 是 fullbox：version/flags 占 4 字节，子 box 从 +4 开始
+    val ilst = findM4aBoxBytes(bytes, meta.first + 4, meta.second, "ilst") ?: return ""
+    val lyr = findM4aBoxBytes(bytes, ilst.first, ilst.second, "\u00A9lyr") ?: return ""
+    // ©lyr 的 payload 是 data box：[type(4)][locale(4)] + 文本
+    val data = findM4aBoxBytes(bytes, lyr.first, lyr.second, "data")
+    val textStart = if (data != null) data.first + 8 else lyr.first + 8
+    val textEnd = if (data != null) data.second else lyr.second
+    if (textStart >= textEnd || textStart >= bytes.size) return ""
+    val n = minOf(textEnd, bytes.size) - textStart
+    return plainToLrc(String(bytes, textStart, n, Charsets.UTF_8))
 }
 
 private fun fmtTime(ms: Long): String {
@@ -1065,15 +1119,14 @@ private fun saturateColor(c: Color, factor: Float): Color {
     )
 }
 
-// ── 歌曲信息底部弹窗（v1.4.62 重写）：不再使用 material3 ModalBottomSheet ──
+// ── 歌曲信息底部弹窗（v1.4.63 重写交互）：不再使用 material3 ModalBottomSheet ──
 // material3 1.2.1 的弹窗在独立窗口(ModalBottomSheetWindow)中组合，其返回键处理无法从外部定制：
 //   · shouldDismissOnBackPress=true（默认）：API33+ 注册 OnBackInvokedCallback，全屏状态下按返回只
 //     partialExpand() 收回半屏，再按一次才收起（"返回键只收一半"）；
-//   · false：窗口不处理返回，但焦点窗口会把返回事件吞掉，Activity 层 BackHandler 永远收不到（v1.4.61
-//     彻底失效）。
+//   · false：窗口不处理返回，但焦点窗口会把返回事件吞掉，Activity 层 BackHandler 永远收不到。
 // 故改为自实现面板：直接在页面组合内绘制（无独立窗口），返回键必然到达 Activity 的
-// OnBackPressedDispatcher，一次返回即平滑收起关闭；交互复刻原弹窗：半屏弹出 → 内容上滑展开全屏 →
-// 遮罩/返回键一次收起。
+// OnBackPressedDispatcher。交互：先弹出半屏（45% 屏高）→ 手指在面板上拖动整个弹窗上滑展开全屏、
+// 下滑收回半屏 → 返回键/遮罩点击一次平滑收起（动画到 0 后移除）。
 @Composable
 private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: () -> Unit) {
     var info by remember { mutableStateOf<com.lianglei.nasmusic.data.TrackInfo?>(null) }
@@ -1084,38 +1137,18 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
     var dismissing by remember { mutableStateOf(false) }
     val sheetFraction by animateFloatAsState(
         targetValue = when { dismissing -> 0f; expanded -> 1f; else -> 0.45f },
-        animationSpec = tween(300),
+        animationSpec = tween(280),
         label = "sheetFraction"
     )
     LaunchedEffect(sheetFraction) {
         if (dismissing && sheetFraction <= 0.01f) onDismiss()
     }
-    val scrollState = rememberScrollState()
-    // 滚动联动（复刻 ModalBottomSheet）：内容滚到顶后继续上拉 → 面板展开全屏；
-    // 全屏且内容滚到顶后下拉 → 面板收回半屏
-    val nestedScroll = remember(scrollState) {
-        object : NestedScrollConnection {
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                val dy = available.y
-                if (!expanded && source == NestedScrollSource.Drag && dy < 0f && scrollState.value <= 0) {
-                    expanded = true
-                    return Offset(0f, dy)
-                }
-                return Offset.Zero
-            }
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val dy = available.y
-                if (expanded && source == NestedScrollSource.Drag && dy > 0f && scrollState.value <= 0) {
-                    expanded = false
-                    return Offset(0f, dy)
-                }
-                return Offset.Zero
-            }
-        }
-    }
+    // 面板拖动跟手位移：上滑展开全屏、下滑收回半屏（阈值 96dp）
+    var dragDy by remember { mutableStateOf(0f) }
+    val dragThreshold = with(LocalDensity.current) { 96.dp.toPx() }
     fun dismiss() { dismissing = true }
     // 返回键：面板在页面组合内（无独立窗口），返回事件必然到达 Activity 的 OnBackPressedDispatcher，
-    // 一次返回直接平滑收起关闭（面板动画到 0 后触发 onDismiss）
+    // 一次返回直接平滑收起关闭
     BackHandler { dismiss() }
     Box(Modifier.fillMaxSize()) {
         // 遮罩：点击一次直接收起
@@ -1128,13 +1161,27 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
                 .background(Color.Black)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { dismiss() }
         )
-        // 面板：底部对齐，半屏 45% 屏高 → 全屏 100%
+        // 面板：整体拖动（跟手位移），松手后按位移阈值展开/收起
         Surface(
             Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .fillMaxHeight(sheetFraction)
-                .nestedScroll(nestedScroll)
-                .verticalScroll(scrollState),
+                .offset { IntOffset(0, dragDy.roundToInt()) }
+                .pointerInput(expanded) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { _, dy -> dragDy += dy },
+                        onDragEnd = {
+                            val d = dragDy
+                            dragDy = 0f
+                            if (expanded) {
+                                if (d > dragThreshold) expanded = false
+                            } else {
+                                if (d < -dragThreshold) expanded = true
+                            }
+                        },
+                        onDragCancel = { dragDy = 0f }
+                    )
+                },
             color = Color(0xFF26282F),
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
         ) {
