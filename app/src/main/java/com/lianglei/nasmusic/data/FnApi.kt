@@ -284,23 +284,52 @@ object FnApi {
     /**
      * HTTP Range 请求读取指定字节区间（用于读取歌曲文件头部/尾部标签区解析内嵌歌词）。
      * start/end 为包含边界；start 传负数（如 -1048576）表示 suffix range 读文件末尾 |start| 字节。
-     * 失败返回 null。
+     * Range 请求失败（如服务器返回 416 / 不支持 Range）时自动退化为普通 GET 全量下载并截取前 4MB，
+     * 保证标签区解析可用；全部失败返回 null（记录日志便于排查）。
      */
-    suspend fun fetchRange(url: String, start: Long, end: Long): ByteArray? = withContext(Dispatchers.IO) {
-        try {
-            val range = if (start < 0) "bytes=$start" else "bytes=$start-$end"
-            val req = Request.Builder().url(url)
-                .header("Range", range)
-                .apply {
-                    if (token.isNotEmpty()) header("Authorization", token)
+    suspend fun fetchRange(url: String, start: Long, end: Long): ByteArray? {
+        var last: Exception? = null
+        repeat(2) { attempt ->
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    val range = if (start < 0) "bytes=$start" else "bytes=$start-$end"
+                    val req = Request.Builder().url(url)
+                        .header("Range", range)
+                        .apply {
+                            if (token.isNotEmpty()) header("Authorization", token)
+                        }
+                        .build()
+                    client.newCall(req).execute().use { resp ->
+                        val code = resp.code
+                        val body = if (resp.isSuccessful && resp.body != null) resp.body!!.bytes() else null
+                        FnLogger.log("fetchRange attempt=${attempt + 1} code=$code req='$range' bytes=${body?.size ?: 0}")
+                        body
+                    }
                 }
-                .build()
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful && resp.body != null) resp.body!!.bytes() else null
+                if (bytes != null) return bytes
+            } catch (e: Exception) {
+                last = e
+                FnLogger.error("fetchRange attempt=${attempt + 1} failed", e)
             }
-        } catch (e: Exception) {
-            FnLogger.error("fetchRange failed ($start-$end)", e)
-            null
         }
+        // 兜底：Range 不被支持（如 416）时退化为普通 GET，全量下载后截取前 4MB（ID3/FLAC 标签区在头部）
+        try {
+            val bytes = withContext(Dispatchers.IO) {
+                val req = Request.Builder().url(url).apply {
+                    if (token.isNotEmpty()) header("Authorization", token)
+                }.build()
+                client.newCall(req).execute().use { resp ->
+                    val code = resp.code
+                    val b = if (resp.isSuccessful && resp.body != null) resp.body!!.bytes() else null
+                    FnLogger.log("fetchRange fallback GET code=$code bytes=${b?.size ?: 0}")
+                    if (b != null && b.size > 4 * 1024 * 1024) b.copyOfRange(0, 4 * 1024 * 1024) else b
+                }
+            }
+            if (bytes != null) return bytes
+        } catch (e: Exception) {
+            FnLogger.error("fetchRange fallback GET failed", e)
+        }
+        FnLogger.error("fetchRange giving up ($start-$end)", last ?: Exception("no body"))
+        return null
     }
 }
