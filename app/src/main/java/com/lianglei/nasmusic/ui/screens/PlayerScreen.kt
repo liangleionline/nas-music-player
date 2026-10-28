@@ -104,25 +104,28 @@ class DownscaleBlurTransformation(private val levels: Int = 5) : Transformation 
 
 fun parseLrc(text: String): List<LrcLine> {
     val lines = mutableListOf<LrcLine>()
+    // 纯标签行：整行只是一个 [xxx] 标签（ti/ar/al/by/ver/offset 等 LRC 元数据），不显示为歌词
+    val tagLine = Regex("^\\[[^\\]]+\\]$")
     text.lines().forEach { line ->
         val matcher = Regex("\\[(\\d+):(\\d+)(?:[.:](\\d+))?]").findAll(line)
         val content = line.replace(Regex("\\[\\d+:\\d+([.:]\\d+)?]"), "").trim()
-        if (content.isNotEmpty()) {
-            matcher.forEach { m ->
-                val min = m.groupValues[1].toLong()
-                val sec = m.groupValues[2].toLong()
-                val frac = m.groupValues[3]
-                // 小数部分位数决定单位：1 位=十分之一秒(×100)，2 位=百分之一秒(×10)，3 位及以上=毫秒(×1)
-                // 注意：kuwo 等中文歌词工具生成的是 3 位毫秒（如 [00:13.217] = 13.217 秒），
-                // 若统一按 2 位 ×10 计算会放大第 3 位 10 倍，导致歌词提前最多 9 秒——这是不同步的根因
-                val ms = when {
-                    frac.isEmpty() -> 0L
-                    frac.length >= 3 -> frac.take(3).toLong()
-                    frac.length == 2 -> frac.toLong() * 10
-                    else -> frac.toLong() * 100
-                }
-                lines.add(LrcLine(min * 60000 + sec * 1000 + ms, content))
+        // 过滤 LRC 元数据标签行（如 [ver:v1.0]、[ti:标题]、[ar:歌手]）：它们没有时间戳，
+        // 常见于把整个 .lrc 文件内嵌进 ID3 USLT 的情况，不当作歌词显示
+        if (content.isEmpty() || tagLine.matches(content)) return@forEach
+        matcher.forEach { m ->
+            val min = m.groupValues[1].toLong()
+            val sec = m.groupValues[2].toLong()
+            val frac = m.groupValues[3]
+            // 小数部分位数决定单位：1 位=十分之一秒(×100)，2 位=百分之一秒(×10)，3 位及以上=毫秒(×1)
+            // 注意：kuwo 等中文歌词工具生成的是 3 位毫秒（如 [00:13.217] = 13.217 秒），
+            // 若统一按 2 位 ×10 计算会放大第 3 位 10 倍，导致歌词提前最多 9 秒——这是不同步的根因
+            val ms = when {
+                frac.isEmpty() -> 0L
+                frac.length >= 3 -> frac.take(3).toLong()
+                frac.length == 2 -> frac.toLong() * 10
+                else -> frac.toLong() * 100
             }
+            lines.add(LrcLine(min * 60000 + sec * 1000 + ms, content))
         }
     }
     return lines.sortedBy { it.time }
@@ -226,17 +229,21 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     }
 
     var lrcLines by remember(song?.id) { mutableStateOf(emptyList<LrcLine>()) }
+    // 歌词来源标签（对齐设计图左下角"词 EMBEDDED"）：EMBEDDED=内嵌标签 / LRC=同目录 .lrc 文件
+    var lyricSource by remember(song?.id) { mutableStateOf("") }
     LaunchedEffect(song?.id) {
-        if (song == null) { lrcLines = emptyList(); return@LaunchedEffect }
+        if (song == null) { lrcLines = emptyList(); lyricSource = ""; return@LaunchedEffect }
         lrcLines = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val file = File(song.data)
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
-                val parsed = if (lrcFile.exists()) {
+                val parsed: List<LrcLine> = if (lrcFile.exists()) {
+                    lyricSource = "LRC"
                     parseLrc(lrcFile.readText())
                 } else {
                     val embedded = readEmbeddedLyricsCached(song, ctx) // 本地读标签区 / 飞牛 URL Range 读头尾，带磁盘缓存
-                    if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
+                    if (embedded.isNotEmpty()) { lyricSource = "EMBEDDED"; parseLrc(embedded) }
+                    else { lyricSource = ""; emptyList() }
                 }
                 // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）
                 parsed.flatMap { line ->
@@ -245,6 +252,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                     else listOf(line)
                 }
             } catch (e: Exception) {
+                lyricSource = ""
                 emptyList()
             }
         }
@@ -502,6 +510,15 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                                 }
                             }
                         }
+                    }
+                    // 歌词来源标签（左下角，对齐设计图"词 EMBEDDED"）
+                    if (lyricSource.isNotEmpty() && lrcLines.isNotEmpty()) {
+                        Text(
+                            "词 $lyricSource",
+                            color = Color.White.copy(alpha = 0.45f),
+                            fontSize = 12.sp,
+                            modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 6.dp)
+                        )
                     }
                 }
             }
