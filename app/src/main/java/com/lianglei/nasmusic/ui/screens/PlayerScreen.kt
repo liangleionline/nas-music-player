@@ -111,7 +111,16 @@ fun parseLrc(text: String): List<LrcLine> {
             matcher.forEach { m ->
                 val min = m.groupValues[1].toLong()
                 val sec = m.groupValues[2].toLong()
-                val ms = if (m.groupValues[3].isNotEmpty()) m.groupValues[3].toLong() * 10 else 0L
+                val frac = m.groupValues[3]
+                // 小数部分位数决定单位：1 位=十分之一秒(×100)，2 位=百分之一秒(×10)，3 位及以上=毫秒(×1)
+                // 注意：kuwo 等中文歌词工具生成的是 3 位毫秒（如 [00:13.217] = 13.217 秒），
+                // 若统一按 2 位 ×10 计算会放大第 3 位 10 倍，导致歌词提前最多 9 秒——这是不同步的根因
+                val ms = when {
+                    frac.isEmpty() -> 0L
+                    frac.length >= 3 -> frac.take(3).toLong()
+                    frac.length == 2 -> frac.toLong() * 10
+                    else -> frac.toLong() * 100
+                }
                 lines.add(LrcLine(min * 60000 + sec * 1000 + ms, content))
             }
         }
