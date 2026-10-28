@@ -81,23 +81,4 @@ class MusicRepository(private val ctx: Context) {
         }
         list
     }
-
-    suspend fun buildAlbums(songs: List<Song>): List<Album> = withContext(Dispatchers.Default) {
-        songs.groupBy { it.albumId }.map { (id, group) ->
-            Album(id, group.first().album, group.first().artist, group.size, 0)
-        }.sortedBy { it.title }
-    }
-
-    suspend fun buildArtists(songs: List<Song>): List<Artist> = withContext(Dispatchers.Default) {
-        songs.groupBy { it.artist }.map { (name, g) -> Artist(name, g.size) }
-            .sortedBy { it.name }
-    }
-
-    suspend fun buildFolders(songs: List<Song>): List<Folder> = withContext(Dispatchers.Default) {
-        songs.groupBy { it.folder }.map { (name, g) -> Folder(name, g.first().data.substringBeforeLast('/'), g.size) }
-            .sortedBy { it.name }
-    }
-
-    fun albumArtUri(albumId: Long): Uri =
-        Uri.parse("content://media/external/audio/albumart/$albumId")
 }

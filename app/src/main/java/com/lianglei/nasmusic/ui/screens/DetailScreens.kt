@@ -24,9 +24,15 @@ import com.lianglei.nasmusic.ui.suppressClickOnRightSwipe
 
 private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$albumId"
 
+/** "下一首播放"加号：与歌曲列表页同一入口，统一反馈文案 */
+private fun addNextWithToast(song: Song, context: android.content.Context) {
+    com.lianglei.nasmusic.player.PlayerManager.playNext(song)
+    android.widget.Toast.makeText(context, "已加入下一首播放", android.widget.Toast.LENGTH_SHORT).show()
+}
+
 /** Reusable song row matching the Salt Player list style. */
 @Composable
-fun SongRow(song: Song, onClick: () -> Unit) {
+fun SongRow(song: Song, onClick: () -> Unit, onAddNext: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().suppressClickOnRightSwipe(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -51,28 +57,30 @@ fun SongRow(song: Song, onClick: () -> Unit) {
                 Text("${song.artist} - ${song.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
             }
         }
-        Icon(Icons.Filled.Add, "add", tint = Color.Gray, modifier = Modifier.padding(8.dp))
+        // "下一首播放"加号：与歌曲列表页行为一致（已存在→提到下一首；空队列→加入并开始播放）
+        if (onAddNext != null) {
+            IconButton(onClick = onAddNext, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Filled.Add, "加入下一首播放", tint = Color.Gray, modifier = Modifier.size(20.dp))
+            }
+        }
         Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
     }
 }
 
-/** Song list header row: shuffle icon + count, sort icon, filter icon. */
+/** Song list header row: shuffle icon + count. */
 @Composable
 fun SongListHeader(count: Int) {
     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.Shuffle, null, tint = Color.Gray)
         Spacer(Modifier.width(12.dp))
         Text("$count", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Spacer(Modifier.weight(1f))
-        Icon(Icons.Filled.Sort, null, tint = Color.Gray)
-        Spacer(Modifier.width(20.dp))
-        Icon(Icons.Filled.FilterList, null, tint = Color.Gray)
     }
 }
 
 /** Artist detail page: circular avatar + artist name + songs + albums by this artist. */
 @Composable
 fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> Unit, onOpenAlbum: (Long) -> Unit = {}) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val artistSongs = remember(songs, artistName) { songs.filter { it.artist == artistName } }
     val artistAlbums = remember(artistSongs) { artistSongs.groupBy { it.albumId }.entries }
     val coverId = artistSongs.firstOrNull()?.coverId ?: ""
@@ -94,16 +102,15 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
             )
         }
         item {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Shuffle, null, tint = Color.Gray)
-                Spacer(Modifier.width(12.dp))
-                Text("${artistSongs.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(Modifier.weight(1f))
-                Text("折叠", color = Color.Gray, fontSize = 14.sp)
-            }
+            SongListHeader(artistSongs.size)
         }
         items(artistSongs.size) { i ->
-            SongRow(artistSongs[i]) { onPlay(songs.indexOf(artistSongs[i])) }
+            val s = artistSongs[i]
+            SongRow(
+                s,
+                onClick = { onPlay(songs.indexOf(s)) },
+                onAddNext = { addNextWithToast(s, ctx) }
+            )
         }
         item {
             Text("专辑", Modifier.padding(16.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -239,11 +246,17 @@ private fun fmtDuration(ms: Long): String {
 @Composable
 fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> Unit) {
     val folderSongs = remember(songs, folderName) { songs.filter { it.folder == folderName } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize()) {
         SongListHeader(folderSongs.size)
         LazyColumn(Modifier.weight(1f)) {
             items(folderSongs.size) { i ->
-                SongRow(folderSongs[i]) { onPlay(songs.indexOf(folderSongs[i])) }
+                val s = folderSongs[i]
+                SongRow(
+                    s,
+                    onClick = { onPlay(songs.indexOf(s)) },
+                    onAddNext = { addNextWithToast(s, ctx) }
+                )
             }
         }
     }
@@ -252,11 +265,17 @@ fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> U
 /** Playlist detail page: placeholder playlist songs (show all songs for now). */
 @Composable
 fun PlaylistDetailScreen(name: String, songs: List<Song>, onPlay: (Int) -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize()) {
         SongListHeader(songs.size)
         LazyColumn(Modifier.weight(1f)) {
             items(songs.size) { i ->
-                SongRow(songs[i]) { onPlay(i) }
+                val s = songs[i]
+                SongRow(
+                    s,
+                    onClick = { onPlay(i) },
+                    onAddNext = { addNextWithToast(s, ctx) }
+                )
             }
         }
     }

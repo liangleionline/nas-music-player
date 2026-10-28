@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.transform.Transformation
 import android.graphics.Bitmap
@@ -260,7 +261,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     }
 
     // 从封面提取多个主色（KMeans，缩小位图 IO 线程执行），作为底色 + 烟雾动画调色板
-    val bgLoader = remember { ImageLoader(ctx) }
+    // 复用 App 级全局 ImageLoader（App 实现 ImageLoaderFactory），不每屏新建实例
+    val bgLoader = ctx.imageLoader
     val palette by produceState<List<Color>>(initialValue = emptyList(), coverModel) {
         value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -694,26 +696,6 @@ private fun fmtTime(ms: Long): String {
     if (ms <= 0) return "00:00"
     val s = ms / 1000
     return String.format(Locale.US, "%02d:%02d", s / 60, s % 60)
-}
-
-/** 取封面平均主色 */
-private fun dominantColorOf(bmp: Bitmap): Color {
-    var r = 0L; var g = 0L; var b = 0L; var n = 0L
-    var x = 0
-    while (x < bmp.width) {
-        var y = 0
-        while (y < bmp.height) {
-            val p = bmp.getPixel(x, y)
-            r += (p shr 16) and 0xFF
-            g += (p shr 8) and 0xFF
-            b += p and 0xFF
-            n++
-            y += 2
-        }
-        x += 2
-    }
-    if (n == 0L) return Color(0xFF2A2A2E)
-    return Color(r / n / 255f, g / n / 255f, b / n / 255f)
 }
 
 /** KMeans 提取 k 个主色（输入为缩小后的封面位图），按像素占比降序返回 */
