@@ -391,16 +391,22 @@ private fun HomeContent(
     }
 
     // 播放页全屏浮层：常驻组合（预热）——首次进入无组合开销，动画只改 graphicsLayer
-    // 矩阵/alpha（GPU 合成、内容零重绘、零重组合 → 不掉帧）。隐藏时（slide=1）条件关闭
+    // 矩阵（GPU 合成、内容零重绘、零重组合 → 不掉帧）。隐藏时（slide=1）条件关闭
     // 拦截，不挡下层触摸；动画期间/显示时拦截点击穿透。
     val playerSlide = remember { Animatable(1f) }
     val overlayCtx = LocalContext.current
+    // 关键优化：拦截开关/烟雾开关必须是"布尔结果"的 derivedStateOf —— 动画期间 Animatable.value
+    // 每帧变化，若在组合阶段直接读 value 做条件判断，HomeRoot 会整棵子树每帧重组（这才是掉帧元凶）。
+    // derivedStateOf 只在该布尔翻转时通知组合，动画全程（值单调趋近目标、布尔不变）组合零重组；
+    // graphicsLayer 块内的 value 读取是绘制阶段快照读，只重绘不重组，天然无此问题。
+    val playerIntercept = remember { derivedStateOf { playerSlide.value < 0.98f } }
+    val playerBgRunning = remember { derivedStateOf { playerSlide.value < 0.05f } }
     LaunchedEffect(showPlayer) {
         if (showPlayer) {
             // 预热封面：请求必须与 PlayerScreen 封面 AsyncImage 完全同 key（同 model、不指定
             // size/transformations）→ 命中同一 Coil 内存缓存，动画期间 AsyncImage 零解码、零下载。
             // 之前的 720px+blur 版本没有任何 UI 使用，是无效预热（key 不同，缓存白占）。
-            // 最多等 300ms 就绪（内网封面秒回 → 立即滑入）；超时则直接滑，封面稍后淡入显示。
+            // 最多等 300ms 就绪（内网封面秒回 → 立即滑入）；超时则直接滑，封面稍后显示。
             val song = PlayerManager.queue.value.getOrNull(PlayerManager.currentIndex.value)
             val model = song?.let {
                 if (it.coverId.isNotEmpty()) FnApi.coverUrl(it.coverId)
@@ -416,17 +422,18 @@ private fun HomeContent(
                 }
             }
             delay(50)  // 首绘稳定后再滑
-            playerSlide.animateTo(0f, tween(280))
+            playerSlide.animateTo(0f, tween(320))
         } else {
-            playerSlide.animateTo(1f, tween(280))
+            playerSlide.animateTo(1f, tween(320))
         }
     }
     Box(
         Modifier.fillMaxSize().graphicsLayer {
+            // 只做平移合成：删掉全屏 alpha 逐帧混合（TV 盒子 Mali GPU 上 alpha 合成代价 ~5-10 倍，
+            // 是滑入不丝滑的主因之一）；纯 translationY 图层移动最省
             translationY = playerSlide.value * size.height
-            alpha = 1f - playerSlide.value
         }.then(
-            if (playerSlide.value < 0.98f)
+            if (playerIntercept.value)
                 Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -436,13 +443,14 @@ private fun HomeContent(
     ) {
         PlayerScreen(
             onOpenQueue = { showQueueState.value = true },
-            // 滑入/滑出动画期间（playerSlide ≥ 0.05）暂停烟雾帧循环 → 动画纯 graphicsLayer 合成、
-            // 零竞争不掉帧；到位后（<0.05）烟雾恢复流动
-            backgroundRunning = playerSlide.value < 0.05f
+            // 滑入/滑出动画期间暂停烟雾帧循环 → 动画纯 graphicsLayer 平移、零竞争；
+            // 到位后（<0.05）烟雾恢复流动。derivedStateOf 包装，动画期间不触发重组
+            backgroundRunning = playerBgRunning.value
         )
     }
     // 队列页全屏浮层：同上（常驻组合预热 + 条件拦截）
     val queueSlide = remember { Animatable(1f) }
+    val queueIntercept = remember { derivedStateOf { queueSlide.value < 0.98f } }
     LaunchedEffect(showQueue) {
         if (showQueue) queueSlide.animateTo(0f, tween(280))
         else queueSlide.animateTo(1f, tween(280))
@@ -450,9 +458,8 @@ private fun HomeContent(
     Box(
         Modifier.fillMaxSize().graphicsLayer {
             translationY = queueSlide.value * size.height
-            alpha = 1f - queueSlide.value
         }.then(
-            if (queueSlide.value < 0.98f)
+            if (queueIntercept.value)
                 Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null

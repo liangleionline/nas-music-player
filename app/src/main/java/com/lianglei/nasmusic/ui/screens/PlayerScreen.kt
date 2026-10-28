@@ -1107,12 +1107,17 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
         var last = withFrameNanos { it }
+        var frame = 0
         while (true) {
             val now = withFrameNanos { it }
             val dt = (now - last).toFloat() / 1e9f   // 秒（帧差，float 精确）
             last = now
-            // 每秒推进 0.06 → 主频团约 40~90s 一个来回，呼吸约 4 分钟（烟雾缭绕级缓慢）
-            phase.snapTo((phase.value + dt * 0.06f) % 1000f)
+            frame++
+            // 30fps 推进（每 2 帧推进一次 phase，Canvas 重绘频率减半）：
+            // 视觉上烟雾依然是"缓慢缭绕"，但全屏渐变绘制负载减半，TV 盒子 GPU 更从容
+            if (frame % 2 == 0) {
+                phase.snapTo((phase.value + dt * 0.12f) % 1000f)
+            }
         }
     }
     Canvas(Modifier.fillMaxSize()) {
