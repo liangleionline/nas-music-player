@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -1122,13 +1123,13 @@ private fun saturateColor(c: Color, factor: Float): Color {
     )
 }
 
-// ── 歌曲信息底部弹窗（v1.4.64 交互重做）──
+// ── 歌曲信息底部弹窗（v1.4.65 交互定稿）──
 // 不再使用 material3 ModalBottomSheet（其窗口层返回键处理不可外部定制，已弃用）。
 // 自实现面板：直接在页面组合内绘制（无独立窗口），返回键必然到达 Activity 的
 // OnBackPressedDispatcher，一次返回即收起。
-// 交互（本次修正）：面板高度用 Animatable 跟手拉伸——半屏 45% 弹出（420ms 减速动画，可见），
-// 手指上滑时面板高度随手指增长（顶边跟手、底边固定，拖动过程下方始终是面板，无空隙/无"蹦出"），
-// 松手按当前高度吸附到全屏或半屏；下滑同理反向；返回键/遮罩点击一次平滑收起（动画到 0 后移除）。
+// 交互：半屏 45% 屏高弹出（420ms 减速动画）→ 手指上滑面板高度跟手拉伸（顶边跟手、底边固定），
+// 展开上限 = 内容自然高度（"文字到哪弹到哪"，不占满全屏）；松手吸附阈值缩短（上滑约 60dp 即展开、
+// 下滑约 50dp 收回半屏）；返回键/遮罩点击一次平滑收起（动画到 0 后移除）。
 @Composable
 private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: () -> Unit) {
     var info by remember { mutableStateOf<com.lianglei.nasmusic.data.TrackInfo?>(null) }
@@ -1137,111 +1138,136 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
     }
     var expanded by remember { mutableStateOf(false) }
     var dismissing by remember { mutableStateOf(false) }
-    val sheetFraction = remember { Animatable(0f) }
+    var contentH by remember { mutableFloatStateOf(0f) } // 内容自然高度 px（隐藏测量副本回报）
+    val sheetH = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
-    // 弹出：0 → 半屏 45%，动画明显可见
-    LaunchedEffect(Unit) {
-        sheetFraction.snapTo(0f)
-        sheetFraction.animateTo(0.45f, tween(420, easing = FastOutSlowInEasing))
-    }
-    // 收起动画到 0 后移除
-    LaunchedEffect(sheetFraction.value) {
-        if (dismissing && sheetFraction.value <= 0.01f) onDismiss()
-    }
-    fun dismiss() {
-        if (!dismissing) {
-            dismissing = true
-            scope.launch {
-                sheetFraction.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+    val density = LocalDensity.current
+    val upThreshold = with(density) { 60.dp.toPx() }
+    val downThreshold = with(density) { 50.dp.toPx() }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val screenH = constraints.maxHeight.toFloat()
+        val halfH = 0.45f * screenH
+        val fullH = if (contentH > 1f) contentH.coerceIn(halfH, screenH) else screenH
+        // 弹出：0 → 半屏 45%，动画明显可见
+        LaunchedEffect(Unit) {
+            sheetH.snapTo(0f)
+            sheetH.animateTo(halfH, tween(420, easing = FastOutSlowInEasing))
+        }
+        // 收起动画到 0 后移除
+        LaunchedEffect(sheetH.value) {
+            if (dismissing && sheetH.value <= 1f) onDismiss()
+        }
+        fun dismiss() {
+            if (!dismissing) {
+                dismissing = true
+                scope.launch {
+                    sheetH.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+                }
             }
         }
-    }
-    // 返回键：一次返回直接平滑收起关闭
-    BackHandler { dismiss() }
-    Box(Modifier.fillMaxSize()) {
-        // 遮罩：点击一次直接收起
-        Box(
-            Modifier.fillMaxSize()
-                .graphicsLayer {
-                    alpha = if (dismissing) sheetFraction.value * 0.45f
-                    else (0.30f + 0.15f * sheetFraction.value).coerceIn(0f, 0.5f)
+        // 返回键：一次返回直接平滑收起关闭
+        BackHandler { dismiss() }
+        Box(Modifier.fillMaxSize()) {
+            // 隐藏测量副本：无高度约束 wrap 内容，回报内容自然高度（与面板同宽同 padding）
+            Box(Modifier.fillMaxSize().alpha(0f)) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 32.dp)
+                        .onSizeChanged { contentH = it.height.toFloat() }
+                ) {
+                    TrackInfoContent(info)
                 }
-                .background(Color.Black)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { dismiss() }
-        )
-        // 面板：高度 = 半屏 45% ~ 全屏 100%，拖动时高度跟手拉伸（顶边跟手、底边固定）
-        Surface(
-            Modifier.align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .fillMaxHeight(sheetFraction.value)
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onVerticalDrag = { _, dy ->
-                            val target = (sheetFraction.value - dy / size.height).coerceIn(0.04f, 1f)
-                            scope.launch { sheetFraction.snapTo(target) }
-                        },
-                        onDragEnd = {
-                            scope.launch {
-                                if (dismissing) return@launch
-                                val v = sheetFraction.value
-                                if (expanded) {
-                                    if (v < 0.62f) {
-                                        expanded = false
-                                        sheetFraction.animateTo(0.45f, tween(300, easing = FastOutSlowInEasing))
+            }
+            // 遮罩：点击一次直接收起
+            Box(
+                Modifier.fillMaxSize()
+                    .graphicsLayer {
+                        val ratio = (sheetH.value / halfH).coerceIn(0f, 1f)
+                        alpha = if (dismissing) ratio * 0.45f else (0.30f + 0.15f * ratio).coerceIn(0f, 0.5f)
+                    }
+                    .background(Color.Black)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { dismiss() }
+            )
+            // 面板：高度跟手拉伸（半屏 45% 屏高 ~ 内容自然高度），顶边跟手、底边固定
+            Surface(
+                Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(with(density) { sheetH.value.toDp() })
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .pointerInput(contentH, screenH) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { _, dy ->
+                                val target = (sheetH.value - dy).coerceIn(0f, fullH)
+                                scope.launch { sheetH.snapTo(target) }
+                            },
+                            onDragEnd = {
+                                scope.launch {
+                                    if (dismissing) return@launch
+                                    val v = sheetH.value
+                                    if (expanded) {
+                                        if (v < halfH - downThreshold) {
+                                            expanded = false
+                                            sheetH.animateTo(halfH, tween(300, easing = FastOutSlowInEasing))
+                                        } else {
+                                            sheetH.animateTo(fullH, tween(300, easing = FastOutSlowInEasing))
+                                        }
                                     } else {
-                                        sheetFraction.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
-                                    }
-                                } else {
-                                    if (v > 0.72f) {
-                                        expanded = true
-                                        sheetFraction.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
-                                    } else {
-                                        sheetFraction.animateTo(0.45f, tween(300, easing = FastOutSlowInEasing))
+                                        if (v > halfH + upThreshold) {
+                                            expanded = true
+                                            sheetH.animateTo(fullH, tween(300, easing = FastOutSlowInEasing))
+                                        } else {
+                                            sheetH.animateTo(halfH, tween(300, easing = FastOutSlowInEasing))
+                                        }
                                     }
                                 }
+                            },
+                            onDragCancel = {
+                                scope.launch {
+                                    sheetH.animateTo(if (expanded) fullH else halfH, tween(300, easing = FastOutSlowInEasing))
+                                }
                             }
-                        },
-                        onDragCancel = {
-                            scope.launch {
-                                sheetFraction.animateTo(if (expanded) 1f else 0.45f, tween(300, easing = FastOutSlowInEasing))
-                            }
-                        }
-                    )
-                },
-            color = Color(0xFF26282F),
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 32.dp)) {
-                val it = info
-                // 拖拽把手
-                Box(
-                    Modifier.align(Alignment.CenterHorizontally)
-                        .width(36.dp).height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.3f))
-                )
-                Spacer(Modifier.height(18.dp))
-                Text(stringResource(R.string.track_info_title), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                if (it == null) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.loading), color = Color.White.copy(alpha = 0.6f))
-                    }
-                } else {
-                    TrackInfoRow(stringResource(R.string.info_label_title), it.title)
-                    TrackInfoRow(stringResource(R.string.info_label_artist), it.artist)
-                    TrackInfoRow(stringResource(R.string.info_label_album), it.album)
-                    TrackInfoRow(stringResource(R.string.info_label_source), it.source)
-                    TrackInfoRow(stringResource(R.string.info_label_playcount), it.playCount.toString())
-                    TrackInfoRow(stringResource(R.string.info_label_duration), it.durationText)
-                    TrackInfoRow(stringResource(R.string.info_label_bitrate), it.bitrateText)
-                    TrackInfoRow(stringResource(R.string.info_label_samplerate), it.sampleRateText)
-                    TrackInfoRow(stringResource(R.string.info_label_size), it.sizeText)
-                    TrackInfoRow(stringResource(R.string.info_label_format), it.formatText)
-                    TrackInfoRow(stringResource(R.string.info_label_dir), it.directory.ifEmpty { "—" })
+                        )
+                    },
+                color = Color(0xFF26282F),
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 32.dp)) {
+                    TrackInfoContent(info)
                 }
             }
         }
+    }
+}
+
+/** 弹窗内容（面板与隐藏测量副本共用，保证两者高度一致）；需在 ColumnScope 内调用（内容用了 align） */
+@Composable
+private fun ColumnScope.TrackInfoContent(it: com.lianglei.nasmusic.data.TrackInfo?) {
+    // 拖拽把手
+    Box(
+        Modifier.align(Alignment.CenterHorizontally)
+            .width(36.dp).height(4.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color.White.copy(alpha = 0.3f))
+    )
+    Spacer(Modifier.height(18.dp))
+    Text(stringResource(R.string.track_info_title), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(8.dp))
+    if (it == null) {
+        Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.loading), color = Color.White.copy(alpha = 0.6f))
+        }
+    } else {
+        TrackInfoRow(stringResource(R.string.info_label_title), it.title)
+        TrackInfoRow(stringResource(R.string.info_label_artist), it.artist)
+        TrackInfoRow(stringResource(R.string.info_label_album), it.album)
+        TrackInfoRow(stringResource(R.string.info_label_source), it.source)
+        TrackInfoRow(stringResource(R.string.info_label_playcount), it.playCount.toString())
+        TrackInfoRow(stringResource(R.string.info_label_duration), it.durationText)
+        TrackInfoRow(stringResource(R.string.info_label_bitrate), it.bitrateText)
+        TrackInfoRow(stringResource(R.string.info_label_samplerate), it.sampleRateText)
+        TrackInfoRow(stringResource(R.string.info_label_size), it.sizeText)
+        TrackInfoRow(stringResource(R.string.info_label_format), it.formatText)
+        TrackInfoRow(stringResource(R.string.info_label_dir), it.directory.ifEmpty { "—" })
     }
 }
 
