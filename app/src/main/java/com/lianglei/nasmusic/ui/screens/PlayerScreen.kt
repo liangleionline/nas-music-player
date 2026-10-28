@@ -788,7 +788,11 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
     }
     Canvas(Modifier.fillMaxSize()) {
         val t = phase.value
-        val base = if (palette.isEmpty()) listOf(Color(0xFF3A3A3E), Color(0xFF8B5A2B)) else palette
+        // 烟团与中央圆统一做"暗色提亮"：暗封面（深棕/黑主色）在 BlendMode.Plus 下不发光，
+        // 会在深底上形成黑洞感；提亮到最低亮度后保留色相，变成真正发光的烟雾
+        val base = if (palette.isEmpty()) listOf(Color(0xFF3A3A3E), Color(0xFF8B5A2B))
+        else palette.map { lightenIfDark(it, 0.30f) }
+        val centerCol = lightenIfDark(centerFill, 0.34f)
         val cw = size.width
         val ch = size.height
         val cx0 = cw * 0.5f
@@ -820,14 +824,14 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
                 blendMode = BlendMode.Plus
             )
         }
-        // 中央实心羽化圆（封面主色 coverBase）：直接盖住多团尾巴在中央的叠加残留，
+        // 中央实心羽化圆（提亮后的封面主色）：直接盖住多团尾巴在中央的叠加残留，
         // 光斑根除；中央底色 = 封面主色（与封面颜色直接呼应），边缘羽化无硬边
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(
-                    centerFill,
-                    centerFill.copy(alpha = 0.88f),
-                    centerFill.copy(alpha = 0f)
+                    centerCol,
+                    centerCol.copy(alpha = 0.88f),
+                    centerCol.copy(alpha = 0f)
                 ),
                 center = Offset(cx0, cy0),
                 radius = cw * 0.50f
@@ -842,6 +846,14 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
 private fun darkenToLuminance(c: Color, maxLum: Float): Color {
     val lum = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
     val f = if (lum > maxLum) maxLum / lum else 1f
+    return Color(c.red * f, c.green * f, c.blue * f)
+}
+
+/** 暗色提亮：低于 minLum 时按比例提升 RGB（保留色相），让暗封面的烟雾团也能"发光"而非黑洞 */
+private fun lightenIfDark(c: Color, minLum: Float): Color {
+    val lum = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
+    if (lum >= minLum) return c
+    val f = minLum / lum
     return Color(c.red * f, c.green * f, c.blue * f)
 }
 
