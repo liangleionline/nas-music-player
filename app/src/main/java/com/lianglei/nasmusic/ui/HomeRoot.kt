@@ -347,7 +347,7 @@ private fun HomeContent(
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
                     composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
                     composable("stats") { PlaceholderScreen("统计") }
-                    composable("settings") { PlaceholderScreen("设置") }
+                    composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }) }
                     composable("about") { AboutScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""

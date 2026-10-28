@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +33,7 @@ import com.lianglei.nasmusic.data.MusicRepository
 import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.player.PlayerManager
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$albumId"
 
@@ -621,6 +623,70 @@ fun PlaceholderScreen(name: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text("$name （待实现）", color = Color.Gray)
     }
+}
+
+/** 设置页：播放缓存用量展示 + 一键清空（v1.4.56 新增） */
+@Composable
+fun SettingsScreen(onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var cacheBytes by remember { mutableStateOf(com.lianglei.nasmusic.player.CacheManager.cacheSizeBytes()) }
+    var clearing by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    Column(Modifier.fillMaxSize()) {
+        // 顶栏：返回 + 标题
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+            }
+            Text("设置", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
+
+        // 缓存行
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.DeleteSweep, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("播放缓存", fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "当前已使用 ${formatBytes(cacheBytes)}（上限约 200MB，自动缓存最近听过的歌，二次播放秒开）",
+                    color = Color.Gray, fontSize = 12.sp
+                )
+            }
+            Button(
+                onClick = {
+                    clearing = true
+                    scope.launch {
+                        withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            com.lianglei.nasmusic.player.CacheManager.clear(context)
+                        }
+                        cacheBytes = com.lianglei.nasmusic.player.CacheManager.cacheSizeBytes()
+                        clearing = false
+                    }
+                },
+                enabled = !clearing && cacheBytes > 0,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF4CAF50)
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                Text(if (clearing) "清理中…" else "清空缓存", fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+private fun formatBytes(b: Long): String = when {
+    b >= 1024L * 1024L -> String.format("%.1f MB", b / 1024f / 1024f)
+    b >= 1024L -> String.format("%.0f KB", b / 1024f)
+    else -> "$b B"
 }
 
 @Composable
