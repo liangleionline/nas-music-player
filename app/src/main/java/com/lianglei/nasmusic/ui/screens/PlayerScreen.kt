@@ -699,12 +699,21 @@ private suspend fun readEmbeddedLyrics(song: Song): String {
         com.lianglei.nasmusic.util.CrashLogger.log("lyrics: ext='$ext' data=${if (data.startsWith("http")) "url" else "file"}")
         if (data.startsWith("http")) {
             // 飞牛：Range 读头部 1MB（MP3/FLAC 标签区在头部；M4A moov 若不在头部再试尾部 1MB）
-            val head = com.lianglei.nasmusic.data.FnApi.fetchRange(data, 0L, 1024L * 1024 - 1) ?: return ""
+            val head = com.lianglei.nasmusic.data.FnApi.fetchRange(data, 0L, 1024L * 1024 - 1) ?: run {
+                com.lianglei.nasmusic.util.CrashLogger.log("lyrics: head fetch failed")
+                return ""
+            }
             val fromHead = readEmbeddedLyricsBytes(head, ext)
+            com.lianglei.nasmusic.util.CrashLogger.log("lyrics: head bytes=${head.size} parsed=${fromHead.length}")
             if (fromHead.isNotEmpty()) fromHead
             else {
-                val tail = com.lianglei.nasmusic.data.FnApi.fetchRange(data, -1024L * 1024, -1) ?: return ""
-                readEmbeddedLyricsBytes(tail, ext)
+                val tail = com.lianglei.nasmusic.data.FnApi.fetchRange(data, -1024L * 1024, -1) ?: run {
+                    com.lianglei.nasmusic.util.CrashLogger.log("lyrics: tail fetch failed")
+                    return ""
+                }
+                val fromTail = readEmbeddedLyricsBytes(tail, ext)
+                com.lianglei.nasmusic.util.CrashLogger.log("lyrics: tail bytes=${tail.size} parsed=${fromTail.length}")
+                fromTail
             }
         } else {
             val file = File(data)
@@ -797,6 +806,8 @@ private fun le32Int(b: ByteArray, off: Int): Int =
 /**
  * ID3 文本解码。encoding：0=ISO-8859-1，1=UTF-16(带BOM)，2=UTF-16BE，3=UTF-8。
  * 带 BOM 时优先按 BOM 判断实际字节序。
+ * encoding=0 时很多中文 MP3 实际存的是 UTF-8 或 GBK（工具不规范），
+ * 依次尝试严格 UTF-8 → GBK，命中非 ASCII 可解码文本即使用；全 ASCII 或都失败再回 ISO-8859-1。
  */
 private fun id3Decode(b: ByteArray, start: Int, end: Int, encoding: Int): String {
     if (start < 0 || end > b.size || start > end) return ""
@@ -806,11 +817,29 @@ private fun id3Decode(b: ByteArray, start: Int, end: Int, encoding: Int): String
             String(s, 2, s.size - 2, Charsets.UTF_16LE)
         s.size >= 2 && s[0] == 0xFE.toByte() && s[1] == 0xFF.toByte() ->
             String(s, 2, s.size - 2, Charsets.UTF_16BE)
-        encoding == 0 -> String(s, Charsets.ISO_8859_1)
+        encoding == 0 -> {
+            val utf8 = tryDecodeStrict(s, "UTF-8")
+            if (utf8 != null && utf8.any { it.code > 127 }) utf8
+            else {
+                val gbk = tryDecodeStrict(s, "GBK")
+                if (gbk != null && gbk.any { it.code > 127 }) gbk else String(s, Charsets.ISO_8859_1)
+            }
+        }
         encoding == 1 -> String(s, Charsets.UTF_16)
         encoding == 2 -> String(s, Charsets.UTF_16BE)
         else -> String(s, Charsets.UTF_8)
     }
+}
+
+/** 严格模式解码（非法字节抛异常），用于探测实际编码 */
+private fun tryDecodeStrict(bytes: ByteArray, name: String): String? = try {
+    java.nio.charset.Charset.forName(name)
+        .newDecoder()
+        .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+        .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        .decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+} catch (e: Exception) {
+    null
 }
 
 /** 返回 ID3 帧内 null 结尾字符串（descriptor/歌词行）结束后的位置；找不到返回 -1 */

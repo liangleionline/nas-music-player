@@ -284,8 +284,10 @@ object FnApi {
     /**
      * HTTP Range 请求读取指定字节区间（用于读取歌曲文件头部/尾部标签区解析内嵌歌词）。
      * start/end 为包含边界；start 传负数（如 -1048576）表示 suffix range 读文件末尾 |start| 字节。
-     * Range 请求失败（如服务器返回 416 / 不支持 Range）时自动退化为普通 GET 全量下载并截取前 4MB，
-     * 保证标签区解析可用；全部失败返回 null（记录日志便于排查）。
+     * 重要：某些服务器忽略 Range 头直接返回整个文件。若全量下载，10MB 级文件在远程 NAS 上极易
+     * 触发 30s readTimeout 导致"歌词时有时无"。因此无论响应是 206 还是 200，一律最多只读取
+     * 前 4MB 即停止（ID3/FLAC 标签区在头部；M4A 由调用方用尾部请求兜底）。
+     * Range 请求失败时退化为普通 GET（同样限读 4MB）；全部失败返回 null（记录日志便于排查）。
      */
     suspend fun fetchRange(url: String, start: Long, end: Long): ByteArray? {
         var last: Exception? = null
@@ -301,7 +303,7 @@ object FnApi {
                         .build()
                     client.newCall(req).execute().use { resp ->
                         val code = resp.code
-                        val body = if (resp.isSuccessful && resp.body != null) resp.body!!.bytes() else null
+                        val body = if (resp.isSuccessful && resp.body != null) readLimited(resp.body!!, 4L * 1024 * 1024) else null
                         FnLogger.log("fetchRange attempt=${attempt + 1} code=$code req='$range' bytes=${body?.size ?: 0}")
                         body
                     }
@@ -312,7 +314,7 @@ object FnApi {
                 FnLogger.error("fetchRange attempt=${attempt + 1} failed", e)
             }
         }
-        // 兜底：Range 不被支持（如 416）时退化为普通 GET，全量下载后截取前 4MB（ID3/FLAC 标签区在头部）
+        // 兜底：Range 不被支持（如 416）时退化为普通 GET，同样限读前 4MB（ID3/FLAC 标签区在头部）
         try {
             val bytes = withContext(Dispatchers.IO) {
                 val req = Request.Builder().url(url).apply {
@@ -320,9 +322,9 @@ object FnApi {
                 }.build()
                 client.newCall(req).execute().use { resp ->
                     val code = resp.code
-                    val b = if (resp.isSuccessful && resp.body != null) resp.body!!.bytes() else null
+                    val b = if (resp.isSuccessful && resp.body != null) readLimited(resp.body!!, 4L * 1024 * 1024) else null
                     FnLogger.log("fetchRange fallback GET code=$code bytes=${b?.size ?: 0}")
-                    if (b != null && b.size > 4 * 1024 * 1024) b.copyOfRange(0, 4 * 1024 * 1024) else b
+                    b
                 }
             }
             if (bytes != null) return bytes
@@ -332,4 +334,20 @@ object FnApi {
         FnLogger.error("fetchRange giving up ($start-$end)", last ?: Exception("no body"))
         return null
     }
+}
+
+/** 从响应体最多读取 max 字节即返回，防止服务器忽略 Range 头全量返回时下载整个文件拖垮超时 */
+private fun readLimited(body: okhttp3.ResponseBody, max: Long): ByteArray? = try {
+    val source = body.source()
+    val buf = okio.Buffer()
+    var got = 0L
+    while (got < max) {
+        val n = source.read(buf, minOf(max - got, 16L * 1024))
+        if (n == -1L) break
+        got += n
+    }
+    buf.readByteArray()
+} catch (e: Exception) {
+    FnLogger.error("readLimited failed (max=$max)", e)
+    null
 }
