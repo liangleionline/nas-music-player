@@ -43,7 +43,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -668,7 +667,11 @@ private fun KaraokeText(
 private suspend fun readEmbeddedLyrics(song: Song): String {
     return try {
         val data = song.data
-        val ext = data.substringAfterLast('.', "").lowercase()
+        // 扩展名从 folder 取（本地为路径、飞牛为相对路径，均含真实文件名）；
+        // 绝不能从 song.data 取——飞牛端 data 是 "…/track/stream?guid=…"，substringAfterLast('.') 会取到
+        // IP/域名里带点后面的乱码，导致解析器永远走空分支
+        val ext = song.folder.substringAfterLast('.', "").lowercase()
+            .ifEmpty { data.substringAfterLast('.', "").lowercase() }
         if (data.startsWith("http")) {
             // 飞牛：Range 读头部 1MB（MP3/FLAC 标签区在头部；M4A moov 若不在头部再试尾部 1MB）
             val head = com.lianglei.nasmusic.data.FnApi.fetchRange(data, 0L, 1024L * 1024 - 1) ?: return ""
@@ -1119,14 +1122,13 @@ private fun saturateColor(c: Color, factor: Float): Color {
     )
 }
 
-// ── 歌曲信息底部弹窗（v1.4.63 重写交互）：不再使用 material3 ModalBottomSheet ──
-// material3 1.2.1 的弹窗在独立窗口(ModalBottomSheetWindow)中组合，其返回键处理无法从外部定制：
-//   · shouldDismissOnBackPress=true（默认）：API33+ 注册 OnBackInvokedCallback，全屏状态下按返回只
-//     partialExpand() 收回半屏，再按一次才收起（"返回键只收一半"）；
-//   · false：窗口不处理返回，但焦点窗口会把返回事件吞掉，Activity 层 BackHandler 永远收不到。
-// 故改为自实现面板：直接在页面组合内绘制（无独立窗口），返回键必然到达 Activity 的
-// OnBackPressedDispatcher。交互：先弹出半屏（45% 屏高）→ 手指在面板上拖动整个弹窗上滑展开全屏、
-// 下滑收回半屏 → 返回键/遮罩点击一次平滑收起（动画到 0 后移除）。
+// ── 歌曲信息底部弹窗（v1.4.64 交互重做）──
+// 不再使用 material3 ModalBottomSheet（其窗口层返回键处理不可外部定制，已弃用）。
+// 自实现面板：直接在页面组合内绘制（无独立窗口），返回键必然到达 Activity 的
+// OnBackPressedDispatcher，一次返回即收起。
+// 交互（本次修正）：面板高度用 Animatable 跟手拉伸——半屏 45% 弹出（420ms 减速动画，可见），
+// 手指上滑时面板高度随手指增长（顶边跟手、底边固定，拖动过程下方始终是面板，无空隙/无"蹦出"），
+// 松手按当前高度吸附到全屏或半屏；下滑同理反向；返回键/遮罩点击一次平滑收起（动画到 0 后移除）。
 @Composable
 private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: () -> Unit) {
     var info by remember { mutableStateOf<com.lianglei.nasmusic.data.TrackInfo?>(null) }
@@ -1135,51 +1137,75 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
     }
     var expanded by remember { mutableStateOf(false) }
     var dismissing by remember { mutableStateOf(false) }
-    val sheetFraction by animateFloatAsState(
-        targetValue = when { dismissing -> 0f; expanded -> 1f; else -> 0.45f },
-        animationSpec = tween(280),
-        label = "sheetFraction"
-    )
-    LaunchedEffect(sheetFraction) {
-        if (dismissing && sheetFraction <= 0.01f) onDismiss()
+    val sheetFraction = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    // 弹出：0 → 半屏 45%，动画明显可见
+    LaunchedEffect(Unit) {
+        sheetFraction.snapTo(0f)
+        sheetFraction.animateTo(0.45f, tween(420, easing = FastOutSlowInEasing))
     }
-    // 面板拖动跟手位移：上滑展开全屏、下滑收回半屏（阈值 96dp）
-    var dragDy by remember { mutableStateOf(0f) }
-    val dragThreshold = with(LocalDensity.current) { 96.dp.toPx() }
-    fun dismiss() { dismissing = true }
-    // 返回键：面板在页面组合内（无独立窗口），返回事件必然到达 Activity 的 OnBackPressedDispatcher，
-    // 一次返回直接平滑收起关闭
+    // 收起动画到 0 后移除
+    LaunchedEffect(sheetFraction.value) {
+        if (dismissing && sheetFraction.value <= 0.01f) onDismiss()
+    }
+    fun dismiss() {
+        if (!dismissing) {
+            dismissing = true
+            scope.launch {
+                sheetFraction.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+            }
+        }
+    }
+    // 返回键：一次返回直接平滑收起关闭
     BackHandler { dismiss() }
     Box(Modifier.fillMaxSize()) {
         // 遮罩：点击一次直接收起
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer {
-                    alpha = if (dismissing) sheetFraction * 0.45f
-                    else (0.30f + 0.15f * sheetFraction).coerceIn(0f, 0.5f)
+                    alpha = if (dismissing) sheetFraction.value * 0.45f
+                    else (0.30f + 0.15f * sheetFraction.value).coerceIn(0f, 0.5f)
                 }
                 .background(Color.Black)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { dismiss() }
         )
-        // 面板：整体拖动（跟手位移），松手后按位移阈值展开/收起
+        // 面板：高度 = 半屏 45% ~ 全屏 100%，拖动时高度跟手拉伸（顶边跟手、底边固定）
         Surface(
             Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(sheetFraction)
-                .offset { IntOffset(0, dragDy.roundToInt()) }
-                .pointerInput(expanded) {
+                .fillMaxHeight(sheetFraction.value)
+                .pointerInput(Unit) {
                     detectVerticalDragGestures(
-                        onVerticalDrag = { _, dy -> dragDy += dy },
+                        onVerticalDrag = { _, dy ->
+                            val target = (sheetFraction.value - dy / size.height).coerceIn(0.04f, 1f)
+                            scope.launch { sheetFraction.snapTo(target) }
+                        },
                         onDragEnd = {
-                            val d = dragDy
-                            dragDy = 0f
-                            if (expanded) {
-                                if (d > dragThreshold) expanded = false
-                            } else {
-                                if (d < -dragThreshold) expanded = true
+                            scope.launch {
+                                if (dismissing) return@launch
+                                val v = sheetFraction.value
+                                if (expanded) {
+                                    if (v < 0.62f) {
+                                        expanded = false
+                                        sheetFraction.animateTo(0.45f, tween(300, easing = FastOutSlowInEasing))
+                                    } else {
+                                        sheetFraction.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+                                    }
+                                } else {
+                                    if (v > 0.72f) {
+                                        expanded = true
+                                        sheetFraction.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+                                    } else {
+                                        sheetFraction.animateTo(0.45f, tween(300, easing = FastOutSlowInEasing))
+                                    }
+                                }
                             }
                         },
-                        onDragCancel = { dragDy = 0f }
+                        onDragCancel = {
+                            scope.launch {
+                                sheetFraction.animateTo(if (expanded) 1f else 0.45f, tween(300, easing = FastOutSlowInEasing))
+                            }
+                        }
                     )
                 },
             color = Color(0xFF26282F),
