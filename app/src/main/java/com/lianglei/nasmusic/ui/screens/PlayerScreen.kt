@@ -226,7 +226,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                 val parsed = if (lrcFile.exists()) {
                     parseLrc(lrcFile.readText())
                 } else {
-                    val embedded = readEmbeddedLyrics(song) // 本地读文件标签区 / 飞牛 URL Range 读头尾
+                    val embedded = readEmbeddedLyricsCached(song, ctx) // 本地读标签区 / 飞牛 URL Range 读头尾，带磁盘缓存
                     if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
                 }
                 // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）
@@ -655,24 +655,48 @@ private fun KaraokeText(
 }
 
 /**
- * 读取歌曲内嵌歌词，统一返回 LRC 格式文本（行带 [mm:ss.cc] 时间戳）。
+ * 读取歌曲内嵌歌词（带磁盘缓存），统一返回 LRC 格式文本（行带 [mm:ss.cc] 时间戳）。
+ * 结果写入 cacheDir/lyrics/ 磁盘缓存，同一首歌重复进入播放页 / 重启 APP 直接命中缓存，
+ * 不再依赖网络读取 → 解决"有时有歌词、有时没有"的不稳定问题。
  * 本地文件（song.data 为路径）直接读文件头/尾标签区；
  * 飞牛 NAS（song.data 为流式 URL）用 HTTP Range 请求读头/尾 1MB。
- * 支持：
- *  - MP3/MP2（ID3v2.2/2.3/2.4）：USLT 帧（v2.2 为 ULT）、SYLT 同步歌词帧（v2.2 为 SLT）
- *  - FLAC：Vorbis Comment 的 LYRICS / UNSYNCEDLYRICS / SYNCEDLYRICS
- *  - M4A/MP4/AAC/M4B：iTunes 风格 ©lyr atom
- *  - OGG/OPUS：暂未支持（返回空）
- * 纯文本（无时间戳）歌词按行生成 4 秒间隔时间戳，保证面板可逐行显示。
+ * 支持：MP3(ID3v2.2/2.3/2.4 USLT/ULT+SYLT/SLT)、FLAC(Vorbis Comment LYRICS)、M4A(iTunes ©lyr)。
+ * 纯文本（无时间戳）歌词按行生成 4 秒间隔时间戳。
  */
+private suspend fun readEmbeddedLyricsCached(song: Song, ctx: android.content.Context): String {
+    // 磁盘缓存：同一首歌不重复请求
+    val cacheKey = (song.id.toString() + "_" + song.data).hashCode().toLong().let { java.lang.Long.toHexString(it) }
+    val cacheDir = File(ctx.cacheDir, "lyrics")
+    val cacheFile = File(cacheDir, "$cacheKey.txt")
+    if (cacheFile.exists()) {
+        val cached = cacheFile.readText()
+        if (cached.isNotEmpty()) return cached
+    }
+    val lyrics = readEmbeddedLyrics(song)
+    if (lyrics.isNotEmpty()) {
+        try {
+            if (!cacheDir.exists()) cacheDir.mkdirs()
+            cacheFile.writeText(lyrics)
+        } catch (e: Exception) {
+            com.lianglei.nasmusic.util.CrashLogger.e("lyrics cache write failed", e)
+        }
+    }
+    return lyrics
+}
+
+/** 读取歌曲内嵌歌词（无缓存版）。扩展名判定：本地取 song.data 真实路径；飞牛取 song.folder（相对路径含文件名）。
+ *  两者都不可用时靠文件魔数嗅探兜底（ID3/fLaC/ftyp），避免误判。 */
 private suspend fun readEmbeddedLyrics(song: Song): String {
     return try {
         val data = song.data
-        // 扩展名从 folder 取（本地为路径、飞牛为相对路径，均含真实文件名）；
-        // 绝不能从 song.data 取——飞牛端 data 是 "…/track/stream?guid=…"，substringAfterLast('.') 会取到
-        // IP/域名里带点后面的乱码，导致解析器永远走空分支
-        val ext = song.folder.substringAfterLast('.', "").lowercase()
-            .ifEmpty { data.substringAfterLast('.', "").lowercase() }
+        // 本地 data 是真实文件路径（扩展名可靠）；飞牛 data 是 "…/track/stream?guid=…"，
+        // 绝不能从 URL 取扩展名（substringAfterLast('.') 会取到 IP/域名带点后的乱码），改用 folder（含真实文件名）
+        val ext = if (data.startsWith("http")) {
+            song.folder.substringAfterLast('.', "").lowercase()
+        } else {
+            data.substringAfterLast('.', "").lowercase()
+        }
+        com.lianglei.nasmusic.util.CrashLogger.log("lyrics: ext='$ext' data=${if (data.startsWith("http")) "url" else "file"}")
         if (data.startsWith("http")) {
             // 飞牛：Range 读头部 1MB（MP3/FLAC 标签区在头部；M4A moov 若不在头部再试尾部 1MB）
             val head = com.lianglei.nasmusic.data.FnApi.fetchRange(data, 0L, 1024L * 1024 - 1) ?: return ""
@@ -684,7 +708,7 @@ private suspend fun readEmbeddedLyrics(song: Song): String {
             }
         } else {
             val file = File(data)
-            if (file.exists()) readEmbeddedLyricsFile(file) else ""
+            if (file.exists()) readEmbeddedLyricsFile(file, ext) else ""
         }
     } catch (e: Exception) {
         com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyrics failed", e)
@@ -692,13 +716,16 @@ private suspend fun readEmbeddedLyrics(song: Song): String {
     }
 }
 
-/** 按扩展名分发 bytes 解析 */
+/** 按扩展名分发 bytes 解析；扩展名无法识别时按文件魔数嗅探（ID3 / fLaC / ftyp[moov]）兜底 */
 private fun readEmbeddedLyricsBytes(bytes: ByteArray, ext: String): String = try {
-    when (ext) {
-        "mp3", "mp2", "mpa" -> readId3LyricsBytes(bytes)
-        "flac" -> readFlacLyricsBytes(bytes)
-        "m4a", "mp4", "aac", "m4b", "m4r" -> readM4aLyricsBytes(bytes)
-        "ogg", "opus", "oga" -> "" // OGG 容器歌词暂未支持
+    when {
+        ext == "mp3" || ext == "mp2" || ext == "mpa" -> readId3LyricsBytes(bytes)
+        ext == "flac" -> readFlacLyricsBytes(bytes)
+        ext == "m4a" || ext == "mp4" || ext == "aac" || ext == "m4b" || ext == "m4r" -> readM4aLyricsBytes(bytes)
+        ext == "ogg" || ext == "opus" || ext == "oga" -> "" // OGG 容器歌词暂未支持
+        bytes.size >= 3 && bytes[0] == 'I'.code.toByte() && bytes[1] == 'D'.code.toByte() && bytes[2] == '3'.code.toByte() -> readId3LyricsBytes(bytes)
+        bytes.size >= 4 && String(bytes, 0, 4, Charsets.ISO_8859_1) == "fLaC" -> readFlacLyricsBytes(bytes)
+        bytes.size >= 8 && String(bytes, 4, 4, Charsets.ISO_8859_1) == "ftyp" -> readM4aLyricsBytes(bytes)
         else -> ""
     }
 } catch (e: Exception) {
@@ -707,15 +734,24 @@ private fun readEmbeddedLyricsBytes(bytes: ByteArray, ext: String): String = try
 }
 
 /** 本地文件读取：MP3/FLAC 读头部标签区（2MB 足够）；M4A 头/尾各 2MB 兜底（moov 可能在尾部） */
-private fun readEmbeddedLyricsFile(file: File): String = try {
-    when (file.extension.lowercase()) {
+private fun readEmbeddedLyricsFile(file: File, ext: String): String = try {
+    when (ext) {
         "mp3", "mp2", "mpa" -> readId3LyricsBytes(readPrefix(file, 2 * 1024 * 1024))
         "flac" -> readFlacLyricsBytes(readPrefix(file, 2 * 1024 * 1024))
         "m4a", "mp4", "aac", "m4b", "m4r" -> {
             val head = readM4aLyricsBytes(readPrefix(file, 2 * 1024 * 1024))
             if (head.isNotEmpty()) head else readM4aLyricsBytes(readSuffix(file, 2 * 1024 * 1024))
         }
-        else -> ""
+        else -> {
+            // 扩展名未知时按魔数嗅探
+            val prefix = readPrefix(file, 2 * 1024 * 1024)
+            when {
+                prefix.size >= 3 && prefix[0] == 'I'.code.toByte() && prefix[1] == 'D'.code.toByte() && prefix[2] == '3'.code.toByte() -> readId3LyricsBytes(prefix)
+                prefix.size >= 4 && String(prefix, 0, 4, Charsets.ISO_8859_1) == "fLaC" -> readFlacLyricsBytes(prefix)
+                prefix.size >= 8 && String(prefix, 4, 4, Charsets.ISO_8859_1) == "ftyp" -> readM4aLyricsBytes(prefix)
+                else -> ""
+            }
+        }
     }
 } catch (e: Exception) {
     com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyricsFile failed", e)
