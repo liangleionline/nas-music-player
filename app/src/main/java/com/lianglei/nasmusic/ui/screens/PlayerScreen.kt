@@ -795,20 +795,34 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
         val cs = if (palette.isEmpty())
             listOf(Color(0xFF6A6A6E), Color(0xFF9A7A4B), Color(0xFF5E7A6A))
         else palette.take(3).map { lightenIfDark(it, 0.42f) }
-        // 全屏线性渐变（对径旋转、首尾同色无缝循环）：整屏被连续色带覆盖，
-        // 没有圆形烟团 → 几何上不存在"洞/斑"；phase 驱动色带方向极缓慢旋转形成流动感
+        // 3 主色线性插值 → 13 个平滑停靠点（首尾同色无缝循环，c0→c1→c2→c0）：
+        // 每段颜色差更小、过渡更细，配合大幅放大的渐变跨度 → 彩条（banding）弱化
+        val cols = ArrayList<Color>(13)
+        for (i in 0 until 13) {
+            val pos = i / 12f * 3f
+            val seg = pos.toInt()
+            val k = pos - seg
+            val s = (seg + 1) % 3
+            val c0 = cs[seg]
+            val c1 = cs[s]
+            cols.add(
+                Color(
+                    c0.red + (c1.red - c0.red) * k,
+                    c0.green + (c1.green - c0.green) * k,
+                    c0.blue + (c1.blue - c0.blue) * k
+                ).copy(alpha = 0.55f)
+            )
+        }
+        // 全屏线性渐变：跨度大幅放大（±1.6 倍对角线）→ 同一色带覆盖范围远大于屏幕，
+        // 屏幕只截取渐变的极小一段，颜色随位置变化极缓，肉眼看不到色阶断层；
+        // phase 驱动渐变方向极缓慢旋转形成流动感
         val ang = t * 0.05f
-        val dx = cos(ang) * cw * 0.42f
-        val dy = sin(ang) * ch * 0.42f
+        val R = maxOf(cw, ch) * 1.6f
+        val dx = cos(ang) * R
+        val dy = sin(ang) * R
         drawRect(
             brush = Brush.linearGradient(
-                colors = listOf(
-                    cs[0].copy(alpha = 0.62f),
-                    cs[1].copy(alpha = 0.45f),
-                    cs[2].copy(alpha = 0.38f),
-                    cs[1].copy(alpha = 0.45f),
-                    cs[0].copy(alpha = 0.62f)
-                ),
+                colors = cols,
                 start = Offset(cw * 0.5f - dx, ch * 0.5f - dy),
                 end = Offset(cw * 0.5f + dx, ch * 0.5f + dy)
             ),
