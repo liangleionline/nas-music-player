@@ -883,11 +883,16 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
     }
     // skipPartiallyExpanded=false：先弹出一半高度，内容上划时自动展开至全屏
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    // shouldDismissOnBackPress=false：禁用 ModalBottomSheet 独立窗口自带的返回键处理
+    // （material3 1.2.1 的窗口层返回处理在全屏状态下只 partialExpand() 收回半屏，且自动
+    // opt-in 预测性返回动画——这正是"返回键只收起一半"的根因）。禁用后返回事件穿透到
+    // Activity 的 OnBackPressedDispatcher，由下方 BackHandler 统一处理。
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = Color(0xFF26282F),
         contentColor = Color.White,
+        properties = ModalBottomSheetDefaults.properties(shouldDismissOnBackPress = false),
         dragHandle = { /* 默认把手即可 */ }
     ) {
         val it = info
@@ -914,9 +919,13 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
             }
         }
     }
-    // 返回键：直接关闭（不做 sheetState.hide() 收起动画——Android 15+/16 预测性返回的系统动画会与
-    // 应用收起动画叠加成"先收一半、再全收"的两段观感；直接 onDismiss 立即移除，一次返回即全部收起）
-    BackHandler { onDismiss() }
+    // 返回键：与点击弹窗外区域使用相同的收起方法（sheetState.hide() 一次到底 → 全部收起）。
+    // 窗口层返回处理已禁用（shouldDismissOnBackPress=false），此处是唯一返回处理者，
+    // 无论弹窗处于半屏还是全屏，一次返回直接收起并关闭。
+    val scope = rememberCoroutineScope()
+    BackHandler {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+    }
 }
 
 @Composable
