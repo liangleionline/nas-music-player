@@ -250,13 +250,26 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         }
     }
 
-    // 有歌词时保持屏幕常亮（听歌看歌词时防止屏幕熄灭/锁屏）；无歌词或离开播放页时恢复正常
+    // 有歌词时保持屏幕常亮（听歌看歌词时防止屏幕熄灭/锁屏）；无歌词或离开播放页时恢复正常。
+    // 双保险：①窗口 FLAG_KEEP_SCREEN_ON；②PowerManager WakeLock——部分 TV 盒子/ROM 固件
+    // 会在系统熄屏超时（如 5 分钟）时无视窗口 flag，WakeLock 直接阻止系统进入休眠。
     val keepAwake = lrcLines.isNotEmpty()
     DisposableEffect(keepAwake) {
         val activity = ctx.findActivity()
-        if (keepAwake) activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val powerManager = ctx.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+        val wakeLock = powerManager?.newWakeLock(
+            android.os.PowerManager.FULL_WAKE_LOCK,
+            "nas-music:lyrics"
+        )
+        if (keepAwake) {
+            activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            wakeLock?.acquire(12 * 60 * 60 * 1000L) // 12 小时上限保险，防极端异常泄漏
+        }
         onDispose {
-            if (keepAwake) activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (keepAwake) {
+                activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                if (wakeLock?.isHeld == true) wakeLock.release()
+            }
         }
     }
 
