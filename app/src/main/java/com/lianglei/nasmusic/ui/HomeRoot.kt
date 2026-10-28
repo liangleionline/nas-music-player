@@ -397,8 +397,10 @@ private fun HomeContent(
     val overlayCtx = LocalContext.current
     LaunchedEffect(showPlayer) {
         if (showPlayer) {
-            // 预热封面模糊背景：点歌瞬间先等封面就绪（最长 300ms）再启动滑入动画，
-            // 动画期间无图片解码/模糊/首绘竞争 → 首次弹出也不卡
+            // 预热封面：请求必须与 PlayerScreen 封面 AsyncImage 完全同 key（同 model、不指定
+            // size/transformations）→ 命中同一 Coil 内存缓存，动画期间 AsyncImage 零解码、零下载。
+            // 之前的 720px+blur 版本没有任何 UI 使用，是无效预热（key 不同，缓存白占）。
+            // 最多等 300ms 就绪（内网封面秒回 → 立即滑入）；超时则直接滑，封面稍后淡入显示。
             val song = PlayerManager.queue.value.getOrNull(PlayerManager.currentIndex.value)
             val model = song?.let {
                 if (it.coverId.isNotEmpty()) FnApi.coverUrl(it.coverId)
@@ -408,9 +410,7 @@ private fun HomeContent(
                 withTimeoutOrNull(300) {
                     withContext(Dispatchers.IO) {
                         overlayCtx.imageLoader.execute(
-                            ImageRequest.Builder(overlayCtx).data(model)
-                                .transformations(DownscaleBlurTransformation(5))
-                                .size(720).build()
+                            ImageRequest.Builder(overlayCtx).data(model).build()
                         )
                     }
                 }
@@ -436,7 +436,9 @@ private fun HomeContent(
     ) {
         PlayerScreen(
             onOpenQueue = { showQueueState.value = true },
-            backgroundRunning = playerSlide.value < 0.98f
+            // 滑入/滑出动画期间（playerSlide ≥ 0.05）暂停烟雾帧循环 → 动画纯 graphicsLayer 合成、
+            // 零竞争不掉帧；到位后（<0.05）烟雾恢复流动
+            backgroundRunning = playerSlide.value < 0.05f
         )
     }
     // 队列页全屏浮层：同上（常驻组合预热 + 条件拦截）
