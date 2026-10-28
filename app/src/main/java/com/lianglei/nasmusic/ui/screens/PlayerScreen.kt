@@ -180,8 +180,9 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val idx by PlayerManager.currentIndex.collectAsStateWithLifecycle()
     val playing by PlayerManager.isPlaying.collectAsStateWithLifecycle()
-    val pos by PlayerManager.positionMs.collectAsStateWithLifecycle()
-    val dur by PlayerManager.durationMs.collectAsStateWithLifecycle()
+    // 注意：pos/dur 不在顶层收集！播放进度每 500ms 更新一次，顶层 collect 会导致整屏重组
+    // （弱设备上滑入/运行都会掉帧）。pos/dur 下沉到 PlayerProgressRow（进度条）与
+    // LyricPanelContent（歌词面板）两个局部组件内部收集 → 每次 tick 只重组这两个小组件。
     val song = queue.getOrNull(idx)
 
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -281,24 +282,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         }
     }
 
-    // 当前播放到的歌词行（整行亮起用）
-    val activeLrcIndex = remember(lrcLines, pos) {
-        var active = -1
-        lrcLines.forEachIndexed { i, line ->
-            if (line.time <= pos) active = i
-        }
-        active
-    }
-
-    // 按时间戳分组（同 time 的 日文行+翻译行 为一组），供歌词面板分行渲染
-    val lyricGroups = remember(lrcLines) {
-        lrcLines.groupBy { it.time }.entries.sortedBy { it.key }.map { it.value }
-    }
-    var activeGroupIdx = -1
-    lyricGroups.forEachIndexed { i, g -> if (g.first().time <= pos) activeGroupIdx = i }
-    val activeGroup = lyricGroups.getOrNull(activeGroupIdx) ?: emptyList()
-    // 当前组的高亮行：优先含假名的日文行（卡拉OK高亮）；纯中文/纯英文歌词组取第一行
-    val activeJp = activeGroup.firstOrNull { l -> l.text.any { c -> isKana(c) } } ?: activeGroup.firstOrNull()
+    // 当前播放到的歌词行（整行亮起用）：由 LyricPanelContent 内部基于 pos 计算（局部重组）
 
     val coverModel = song?.let {
         if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
@@ -468,79 +452,15 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                         .graphicsLayer { translationX = slide.value + panelWidth + edgePx.roundToInt() },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (lrcLines.isEmpty()) {
-                        Text(stringResource(R.string.no_lyrics), color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
-                    } else {
-                        Column(
-                            Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            // 分组渲染：当前句(组)前 3 组 + 当前组 + 后 3 组；
-                            // 组内每行分行显示（日文原文 + 翻译各行独占一行，同 Salt 奥华子样式）
-                            val from = (activeGroupIdx - 3).coerceAtLeast(0)
-                            val to = (activeGroupIdx + 3).coerceAtMost(lyricGroups.size - 1)
-                            for (gi in from..to) {
-                                val g = lyricGroups[gi]
-                                for (li in g.indices) {
-                                    val line = g[li]
-                                    val isJp = line.text.any { c -> isKana(c) }
-                                    val isLastInGroup = li == g.lastIndex
-                                    // 字号统一 20sp，对齐设计图（所有歌词行同字号，仅亮度区分当前行）
-                                    if (gi == activeGroupIdx && line === activeJp) {
-                                        // 当前句：整行亮起（白色加粗）
-                                        Text(
-                                            line.text,
-                                            color = Color.White,
-                                            fontSize = 20.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    } else {
-                                        Text(
-                                            line.text,
-                                            color = Color.White.copy(alpha = if (gi == activeGroupIdx) 0.55f else 0.38f),
-                                            fontSize = 20.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                    // 间距：日文行后小间距（翻译紧跟），组末行正常间距（组与组分开）
-                                    Spacer(Modifier.height(if (!isLastInGroup && isJp) 6.dp else 27.dp))
-                                }
-                            }
-                        }
-                    }
-                    // 歌词来源标签（左下角，对齐设计图"词 EMBEDDED"）
-                    if (lyricSource.isNotEmpty() && lrcLines.isNotEmpty()) {
-                        Text(
-                            "词 $lyricSource",
-                            color = Color.White.copy(alpha = 0.45f),
-                            fontSize = 12.sp,
-                            modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 6.dp)
-                        )
-                    }
+                    // 歌词渲染独立组件：内部 collect positionMs → 播放进度只触发歌词面板局部重组，
+                    // 不再每 500ms 整屏重组（弱设备上滑入/运行都不掉帧）
+                    LyricPanelContent(lrcLines, lyricSource)
                 }
             }
             Spacer(Modifier.height(8.dp))
 
-            // Progress bar
-            Slider(
-                value = pos.toFloat().coerceIn(0f, dur.coerceAtLeast(1L).toFloat()),
-                onValueChange = { PlayerManager.seekTo(it.roundToLong()) },
-                valueRange = 0f..dur.coerceAtLeast(1L).toFloat(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color.White,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                )
-            )
-            Row(Modifier.fillMaxWidth()) {
-                Text(fmtTime(pos), color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
-                Spacer(Modifier.weight(1f))
-                Text(fmtTime(dur), color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
-            }
+            // Progress bar（独立组件：内部 collect pos/dur → 每 500ms 只重组进度条局部）
+            PlayerProgressRow()
             Spacer(Modifier.height(8.dp))
 
             // Play controls（对齐 Salt：上一曲/下一曲 48dp，播放 72dp）
@@ -1370,5 +1290,104 @@ private fun TrackInfoRow(label: String, value: String) {
     ) {
         Text(label, color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp, modifier = Modifier.width(76.dp))
         Text(value, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+    }
+}
+
+/**
+ * 进度条区（Slider + 时间文本）：内部 collect positionMs/durationMs。
+ * 播放进度每 500ms tick 更新一次，若在 PlayerScreen 顶层收集会导致整屏重组；
+ * 拆成独立组件后，每次 tick 只重组本组件（Slider + 两个时间文本），
+ * 封面/标题/背景/歌词面板不动 → 滑入动画与运行中都不掉帧。
+ */
+@Composable
+private fun PlayerProgressRow() {
+    val pos by PlayerManager.positionMs.collectAsStateWithLifecycle()
+    val dur by PlayerManager.durationMs.collectAsStateWithLifecycle()
+    Slider(
+        value = pos.toFloat().coerceIn(0f, dur.coerceAtLeast(1L).toFloat()),
+        onValueChange = { PlayerManager.seekTo(it.roundToLong()) },
+        valueRange = 0f..dur.coerceAtLeast(1L).toFloat(),
+        colors = SliderDefaults.colors(
+            thumbColor = Color.White,
+            activeTrackColor = Color.White,
+            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+        )
+    )
+    Row(Modifier.fillMaxWidth()) {
+        Text(fmtTime(pos), color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+        Spacer(Modifier.weight(1f))
+        Text(fmtTime(dur), color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+    }
+}
+
+/**
+ * 歌词面板内容：内部 collect positionMs 计算当前高亮行 → 播放进度只触发本面板局部重组。
+ * 渲染窗口 = 当前句(组)前 3 组 + 当前组 + 后 3 组；组内每行分行显示（日文原文 + 翻译各行独占一行）。
+ * 字号统一 20sp（对齐设计图），仅亮度区分当前行；左下角显示来源标签"词 EMBEDDED/LRC"。
+ */
+@Composable
+private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
+    val pos by PlayerManager.positionMs.collectAsStateWithLifecycle()
+    // 按时间戳分组（同 time 的 日文行+翻译行 为一组），供歌词面板分行渲染
+    val lyricGroups = remember(lrcLines) {
+        lrcLines.groupBy { it.time }.entries.sortedBy { it.key }.map { it.value }
+    }
+    var activeGroupIdx = -1
+    lyricGroups.forEachIndexed { i, g -> if (g.first().time <= pos) activeGroupIdx = i }
+    val activeGroup = lyricGroups.getOrNull(activeGroupIdx) ?: emptyList()
+    // 当前组的高亮行：优先含假名的日文行；纯中文/纯英文歌词组取第一行
+    val activeJp = activeGroup.firstOrNull { l -> l.text.any { c -> isKana(c) } } ?: activeGroup.firstOrNull()
+
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (lrcLines.isEmpty()) {
+            Text(stringResource(R.string.no_lyrics), color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
+        } else {
+            Column(
+                Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val from = (activeGroupIdx - 3).coerceAtLeast(0)
+                val to = (activeGroupIdx + 3).coerceAtMost(lyricGroups.size - 1)
+                for (gi in from..to) {
+                    val g = lyricGroups[gi]
+                    for (li in g.indices) {
+                        val line = g[li]
+                        val isJp = line.text.any { c -> isKana(c) }
+                        val isLastInGroup = li == g.lastIndex
+                        if (gi == activeGroupIdx && line === activeJp) {
+                            // 当前句：整行亮起（白色加粗）
+                            Text(
+                                line.text,
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            Text(
+                                line.text,
+                                color = Color.White.copy(alpha = if (gi == activeGroupIdx) 0.55f else 0.38f),
+                                fontSize = 20.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        // 间距：日文行后小间距（翻译紧跟），组末行正常间距（组与组分开）
+                        Spacer(Modifier.height(if (!isLastInGroup && isJp) 6.dp else 27.dp))
+                    }
+                }
+            }
+        }
+        // 歌词来源标签（左下角，对齐设计图"词 EMBEDDED"）
+        if (lyricSource.isNotEmpty() && lrcLines.isNotEmpty()) {
+            Text(
+                "词 $lyricSource",
+                color = Color.White.copy(alpha = 0.45f),
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 6.dp)
+            )
+        }
     }
 }
