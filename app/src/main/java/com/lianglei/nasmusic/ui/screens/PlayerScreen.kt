@@ -250,7 +250,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         }
     }
 
-    // Active lyric line + karaoke progress within the line
+    // 当前播放到的歌词行（整行亮起用）
     val activeLrcIndex = remember(lrcLines, pos) {
         var active = -1
         lrcLines.forEachIndexed { i, line ->
@@ -258,13 +258,6 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         }
         active
     }
-    val activeLrc = lrcLines.getOrNull(activeLrcIndex)
-    // 下一句起点：跳过同时间戳的翻译行（拆分后同一 time 有日文+翻译两行）
-    val nextLrcStart = lrcLines.firstOrNull { it.time > (activeLrc?.time ?: 0L) }?.time
-        ?: ((activeLrc?.time ?: 0L) + 4000L)
-    val lineProgress = if (activeLrc != null && nextLrcStart > activeLrc.time) {
-        ((pos - activeLrc.time).toFloat() / (nextLrcStart - activeLrc.time).toFloat()).coerceIn(0f, 1f)
-    } else 0f
 
     // 按时间戳分组（同 time 的 日文行+翻译行 为一组），供歌词面板分行渲染
     val lyricGroups = remember(lrcLines) {
@@ -463,14 +456,14 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                                     val isJp = line.text.any { c -> isKana(c) }
                                     val isLastInGroup = li == g.lastIndex
                                     if (gi == activeGroupIdx && line === activeJp) {
-                                        // 当前句的日文原文：卡拉OK高亮
-                                        KaraokeText(
-                                            text = line.text,
-                                            progress = lineProgress,
-                                            activeColor = Color.White,
-                                            dimColor = Color.White.copy(alpha = 0.6f),
+                                        // 当前句：整行亮起（白色加粗）
+                                        Text(
+                                            line.text,
+                                            color = Color.White,
                                             fontSize = 20.sp,
-                                            fontWeight = FontWeight.Medium
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     } else {
                                         Text(
@@ -629,38 +622,6 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     if (showTrackInfo && song != null) {
         TrackInfoSheet(song, ctx, onDismiss = { showTrackInfo = false })
     }
-}
-
-@Composable
-private fun KaraokeText(
-    text: String,
-    progress: Float,
-    activeColor: Color,
-    dimColor: Color,
-    fontSize: androidx.compose.ui.unit.TextUnit,
-    fontWeight: FontWeight
-) {
-    val smooth by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(durationMillis = 350),
-        label = "karaoke"
-    )
-    val total = text.length
-    val colored = (total * smooth).toInt().coerceIn(0, total)
-    val styled = remember(text, colored, activeColor, dimColor) {
-        buildAnnotatedString {
-            append(text)
-            addStyle(SpanStyle(color = dimColor), 0, total)
-            if (colored > 0) addStyle(SpanStyle(color = activeColor), 0, colored)
-        }
-    }
-    Text(
-        styled,
-        fontSize = fontSize,
-        fontWeight = fontWeight,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
 }
 
 /**
