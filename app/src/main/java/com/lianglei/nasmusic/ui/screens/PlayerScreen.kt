@@ -250,6 +250,16 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         }
     }
 
+    // 有歌词时保持屏幕常亮（听歌看歌词时防止屏幕熄灭/锁屏）；无歌词或离开播放页时恢复正常
+    val keepAwake = lrcLines.isNotEmpty()
+    DisposableEffect(keepAwake) {
+        val activity = ctx.findActivity()
+        if (keepAwake) activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            if (keepAwake) activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     // 当前播放到的歌词行（整行亮起用）
     val activeLrcIndex = remember(lrcLines, pos) {
         var active = -1
@@ -622,6 +632,16 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     if (showTrackInfo && song != null) {
         TrackInfoSheet(song, ctx, onDismiss = { showTrackInfo = false })
     }
+}
+
+/** 从任意 Context 向上查找宿主 Activity（用于设置 FLAG_KEEP_SCREEN_ON 等窗口标志） */
+private fun android.content.Context.findActivity(): android.app.Activity? {
+    var c: android.content.Context? = this
+    while (c is android.content.ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
 }
 
 /**
