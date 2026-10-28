@@ -26,6 +26,9 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -220,7 +223,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                 val parsed = if (lrcFile.exists()) {
                     parseLrc(lrcFile.readText())
                 } else if (file.exists()) {
-                    val embedded = readId3Uslt(file)
+                    val embedded = readEmbeddedLyrics(file)
                     if (embedded.isNotEmpty()) parseLrc(embedded) else emptyList()
                 } else emptyList()
                 // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）
@@ -648,57 +651,246 @@ private fun KaraokeText(
     )
 }
 
-private fun readId3Uslt(file: File): String {
-    return try {
-        file.inputStream().use { fis ->
-            val header = ByteArray(10)
-            if (fis.read(header) != 10) return ""
-            if (!(header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte() && header[2] == '3'.code.toByte())) return ""
-            val major = header[3].toInt() and 0xFF
-            val tagSize = ((header[6].toInt() and 0x7F) shl 21) or ((header[7].toInt() and 0x7F) shl 14) or ((header[8].toInt() and 0x7F) shl 7) or (header[9].toInt() and 0x7F)
-            val data = ByteArray(tagSize)
-            if (fis.read(data) != tagSize) return ""
-            var pos = 0
-            while (pos + 10 <= data.size) {
-                val frameId = String(data, pos, 4, Charsets.ISO_8859_1)
-                val frameSize = if (major == 4) {
-                    ((data[pos+4].toInt() and 0x7F) shl 21) or ((data[pos+5].toInt() and 0x7F) shl 14) or ((data[pos+6].toInt() and 0x7F) shl 7) or (data[pos+7].toInt() and 0x7F)
-                } else {
-                    ((data[pos+4].toInt() and 0xFF) shl 24) or ((data[pos+5].toInt() and 0xFF) shl 16) or ((data[pos+6].toInt() and 0xFF) shl 8) or (data[pos+7].toInt() and 0xFF)
-                }
-                if (frameSize <= 0 || pos + 10 + frameSize > data.size) break
-                if (frameId == "USLT") {
-                    val encoding = data[pos+10].toInt() and 0xFF
-                    var p = pos + 14 // skip encoding(1) + language(3)
-                    val nullLen = if (encoding == 1 || encoding == 2) 2 else 1
-                    while (p + nullLen <= pos + 10 + frameSize) {
-                        val isNull = if (nullLen == 2) data[p].toInt() == 0 && data[p+1].toInt() == 0 else data[p].toInt() == 0
-                        if (isNull) { p += nullLen; break }
-                        p += nullLen
-                    }
-                    val lyricsBytes = data.copyOfRange(p, pos + 10 + frameSize)
-                    val hexPreview = lyricsBytes.take(12).joinToString(" ") { "%02X".format(it) }
-                    com.lianglei.nasmusic.util.CrashLogger.log("USLT encoding=$encoding, first12hex=$hexPreview")
-                    val result: String = when {
-                        lyricsBytes.size >= 2 && lyricsBytes[0] == 0xFF.toByte() && lyricsBytes[1] == 0xFE.toByte() ->
-                            String(lyricsBytes, 2, lyricsBytes.size - 2, Charsets.UTF_16LE)
-                        lyricsBytes.size >= 2 && lyricsBytes[0] == 0xFE.toByte() && lyricsBytes[1] == 0xFF.toByte() ->
-                            String(lyricsBytes, 2, lyricsBytes.size - 2, Charsets.UTF_16BE)
-                        encoding == 1 -> String(lyricsBytes, Charsets.UTF_16)
-                        encoding == 2 -> String(lyricsBytes, Charsets.UTF_16BE)
-                        encoding == 3 -> String(lyricsBytes, Charsets.UTF_8)
-                        else -> String(lyricsBytes, Charsets.UTF_8)
-                    }
-                    com.lianglei.nasmusic.util.CrashLogger.log("USLT decoded: ${result.take(200)}")
-                    return result.trim()
-                }
-                pos += 10 + frameSize
-            }
-            ""
+/**
+ * 读取文件内嵌歌词，统一返回 LRC 格式文本（行带 [mm:ss.cc] 时间戳）。
+ * 支持：
+ *  - MP3/MP2（ID3v2.2/2.3/2.4）：USLT 帧（v2.2 为 ULT）、SYLT 同步歌词帧（v2.2 为 SLT）
+ *  - FLAC：Vorbis Comment 的 LYRICS / UNSYNCEDLYRICS / SYNCEDLYRICS
+ *  - M4A/MP4/AAC/M4B：iTunes 风格 ©lyr atom
+ *  - OGG/OPUS：暂未支持（返回空）
+ * 纯文本（无时间戳）歌词按行生成 4 秒间隔时间戳，保证面板可逐行显示。
+ */
+private fun readEmbeddedLyrics(file: File): String = try {
+    when (file.extension.lowercase()) {
+        "mp3", "mp2", "mpa" -> readId3Lyrics(file)
+        "flac" -> readFlacLyrics(file)
+        "m4a", "mp4", "aac", "m4b", "m4r" -> readM4aLyrics(file)
+        "ogg", "opus", "oga" -> "" // OGG 容器歌词暂未支持
+        else -> ""
+    }
+} catch (e: Exception) {
+    com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyrics failed", e)
+    ""
+}
+
+/** ID3 同步安全整数（28-bit） */
+private fun syncsafeInt(b: ByteArray, off: Int): Int =
+    ((b[off].toInt() and 0x7F) shl 21) or ((b[off + 1].toInt() and 0x7F) shl 14) or
+        ((b[off + 2].toInt() and 0x7F) shl 7) or (b[off + 3].toInt() and 0x7F)
+
+/** 32-bit 大端整数 */
+private fun be32Int(b: ByteArray, off: Int): Int =
+    ((b[off].toInt() and 0xFF) shl 24) or ((b[off + 1].toInt() and 0xFF) shl 16) or
+        ((b[off + 2].toInt() and 0xFF) shl 8) or (b[off + 3].toInt() and 0xFF)
+
+/** 32-bit 小端整数 */
+private fun le32Int(b: ByteArray, off: Int): Int =
+    (b[off].toInt() and 0xFF) or ((b[off + 1].toInt() and 0xFF) shl 8) or
+        ((b[off + 2].toInt() and 0xFF) shl 16) or ((b[off + 3].toInt() and 0xFF) shl 24)
+
+/**
+ * ID3 文本解码。encoding：0=ISO-8859-1，1=UTF-16(带BOM)，2=UTF-16BE，3=UTF-8。
+ * 带 BOM 时优先按 BOM 判断实际字节序。
+ */
+private fun id3Decode(b: ByteArray, start: Int, end: Int, encoding: Int): String {
+    if (start < 0 || end > b.size || start > end) return ""
+    val s = b.copyOfRange(start, end)
+    return when {
+        s.size >= 2 && s[0] == 0xFF.toByte() && s[1] == 0xFE.toByte() ->
+            String(s, 2, s.size - 2, Charsets.UTF_16LE)
+        s.size >= 2 && s[0] == 0xFE.toByte() && s[1] == 0xFF.toByte() ->
+            String(s, 2, s.size - 2, Charsets.UTF_16BE)
+        encoding == 0 -> String(s, Charsets.ISO_8859_1)
+        encoding == 1 -> String(s, Charsets.UTF_16)
+        encoding == 2 -> String(s, Charsets.UTF_16BE)
+        else -> String(s, Charsets.UTF_8)
+    }
+}
+
+/** 返回 ID3 帧内 null 结尾字符串（descriptor/歌词行）结束后的位置；找不到返回 -1 */
+private fun id3Terminator(b: ByteArray, start: Int, encoding: Int): Int {
+    val nulLen = if (encoding == 1 || encoding == 2) 2 else 1
+    var p = start
+    while (p + nulLen <= b.size) {
+        val isNull = if (nulLen == 2) b[p].toInt() == 0 && b[p + 1].toInt() == 0 else b[p].toInt() == 0
+        if (isNull) return p + nulLen
+        p += nulLen
+    }
+    return -1
+}
+
+/** 纯文本歌词 → 逐行 4 秒间隔的 LRC；已含时间戳的行原样保留 */
+private fun plainToLrc(text: String): String {
+    if (text.isBlank()) return ""
+    val timeTag = Regex("\\[\\d+:\\d+([.:]\\d+)?]")
+    val sb = StringBuilder()
+    var t = 0L
+    text.lines().forEach { raw ->
+        val line = raw.trim()
+        if (line.isEmpty()) return@forEach
+        if (timeTag.containsMatchIn(line)) sb.append(line).append('\n')
+        else {
+            sb.append(fmtLrcTime(t)).append(line).append('\n')
+            t += 4000L
         }
-    } catch (e: Exception) {
-        com.lianglei.nasmusic.util.CrashLogger.e("readId3Uslt failed", e)
-        ""
+    }
+    return sb.toString()
+}
+
+private fun fmtLrcTime(ms: Long): String {
+    val m = ms / 60000
+    val s = (ms % 60000) / 1000
+    val cs = (ms % 1000) / 10
+    return String.format(java.util.Locale.US, "[%02d:%02d.%02d]", m, s, cs)
+}
+
+/** 读取 MP3 的 ID3v2 内嵌歌词（USLT/ULT + SYLT/SLT），返回 LRC 文本 */
+private fun readId3Lyrics(file: File): String {
+    file.inputStream().use { fis ->
+        val header = ByteArray(10)
+        if (fis.read(header) != 10) return ""
+        if (header[0] != 'I'.code.toByte() || header[1] != 'D'.code.toByte() || header[2] != '3'.code.toByte()) return ""
+        val major = header[3].toInt() and 0xFF
+        val flags = header[5].toInt() and 0xFF
+        val tagSize = syncsafeInt(header, 6)
+        if (tagSize <= 0) return ""
+        val data = ByteArray(tagSize)
+        if (fis.read(data) != tagSize) return ""
+        var pos = 0
+        // 跳过 Extended header（v2.3：4 字节大端 size 不含自身；v2.4：4 字节 syncsafe size 含自身）
+        if (flags and 0x40 != 0 && pos + 10 <= data.size) {
+            val extSize = if (major >= 4) syncsafeInt(data, 0) else be32Int(data, 0)
+            if (extSize > 0) pos += if (major >= 4) extSize else 4 + extSize
+        }
+        val frameIdLen = if (major == 2) 3 else 4
+        val frameHeaderLen = if (major == 2) 6 else 10
+        var uslt = ""
+        val sylt = StringBuilder()
+        while (pos + frameHeaderLen <= data.size) {
+            val frameId = String(data, pos, frameIdLen, Charsets.ISO_8859_1)
+            val frameSize = if (major == 2) {
+                ((data[pos + 3].toInt() and 0xFF) shl 16) or ((data[pos + 4].toInt() and 0xFF) shl 8) or (data[pos + 5].toInt() and 0xFF)
+            } else if (major >= 4) syncsafeInt(data, pos + 4) else be32Int(data, pos + 4)
+            if (frameSize <= 0 || pos + frameHeaderLen + frameSize > data.size) break
+            val body = data.copyOfRange(pos + frameHeaderLen, pos + frameHeaderLen + frameSize)
+            val isUslt = if (major == 2) frameId == "ULT" else frameId == "USLT"
+            val isSylt = if (major == 2) frameId == "SLT" else frameId == "SYLT"
+            if (isUslt && body.size >= 5) {
+                val enc = body[0].toInt() and 0xFF
+                val descEnd = id3Terminator(body, 4, enc) // 跳过 encoding(1)+language(3)+descriptor
+                if (descEnd in 4..body.size) {
+                    val lyrics = id3Decode(body, descEnd, body.size, enc).trim()
+                    if (lyrics.isNotEmpty()) { uslt = lyrics; break }
+                }
+            } else if (isSylt && body.size >= 7) {
+                val enc = body[0].toInt() and 0xFF
+                var p = id3Terminator(body, 6, enc) // 跳过 encoding(1)+language(3)+format(1)+contentType(1)+descriptor
+                if (p < 0) p = 7
+                // 内容区：[text \0][time: 4 字节大端毫秒] 反复
+                while (p < body.size) {
+                    val textEnd = id3Terminator(body, p, enc)
+                    if (textEnd < 0 || textEnd > body.size) break
+                    val text = id3Decode(body, p, textEnd, enc).trim()
+                    if (text.isNotEmpty() && textEnd + 4 <= body.size) {
+                        sylt.append(fmtLrcTime(be32Int(body, textEnd).toLong() and 0xFFFFFFFFL)).append(text).append('\n')
+                    }
+                    p = textEnd + 4
+                }
+            }
+            pos += frameHeaderLen + frameSize
+        }
+        if (uslt.isNotEmpty()) return plainToLrc(uslt)
+        return plainToLrc(sylt.toString())
+    }
+}
+
+/** 读取 FLAC 的 Vorbis Comment 歌词（LYRICS/UNSYNCEDLYRICS/SYNCEDLYRICS），返回 LRC 文本 */
+private fun readFlacLyrics(file: File): String {
+    file.inputStream().use { fis ->
+        val magic = ByteArray(4)
+        if (fis.read(magic) != 4 || String(magic, Charsets.ISO_8859_1) != "fLaC") return ""
+        var lyrics = ""
+        while (true) {
+            val bh = ByteArray(4)
+            if (fis.read(bh) != 4) break
+            val type = bh[0].toInt() and 0x7F
+            val len = ((bh[1].toInt() and 0xFF) shl 16) or ((bh[2].toInt() and 0xFF) shl 8) or (bh[3].toInt() and 0xFF)
+            if (len <= 0 || len > 16 * 1024 * 1024) break
+            val payload = ByteArray(len)
+            if (fis.read(payload) != len) break
+            if (type == 4) { // VORBIS_COMMENT
+                var p = 0
+                if (p + 4 > payload.size) break
+                val vendorLen = le32Int(payload, p); p += 4
+                if (vendorLen < 0 || vendorLen > payload.size - p) break
+                p += vendorLen
+                if (p + 4 > payload.size) break
+                val count = le32Int(payload, p); p += 4
+                if (count < 0 || count > 1024) break
+                repeat(count) {
+                    if (p + 4 > payload.size) return@repeat
+                    val clen = le32Int(payload, p); p += 4
+                    if (clen < 0 || clen > payload.size - p) return@repeat
+                    val keyVal = String(payload, p, clen, Charsets.UTF_8)
+                    p += clen
+                    val idx = keyVal.indexOf('=')
+                    if (idx > 0) {
+                        val key = keyVal.substring(0, idx).uppercase()
+                        if ((key == "LYRICS" || key == "UNSYNCEDLYRICS" || key == "SYNCEDLYRICS") && lyrics.isEmpty()) {
+                            lyrics = keyVal.substring(idx + 1)
+                        }
+                    }
+                }
+                if (lyrics.isNotEmpty()) break
+            }
+            if (bh[0].toInt() and 0x80 != 0) break // last metadata block
+        }
+        return plainToLrc(lyrics)
+    }
+}
+
+/** 在 [start,end) 内查找指定类型 box，返回其 payload 区（起始、结束）；找不到返回 null */
+private fun findM4aBox(raf: java.io.RandomAccessFile, start: Long, end: Long, type: String): Pair<Long, Long>? {
+    var p = start
+    while (p + 8 <= end) {
+        raf.seek(p)
+        var size = raf.readInt().toLong() and 0xFFFFFFFFL
+        val typeBytes = ByteArray(4)
+        raf.readFully(typeBytes)
+        val t = String(typeBytes, Charsets.ISO_8859_1)
+        val headerLen = if (size == 1L) {
+            size = raf.readLong()
+            16L
+        } else 8L
+        val boxEnd = if (size == 0L) end else p + size
+        if (size != 0L && boxEnd > end) return null
+        if (t == type) return Pair(p + headerLen, boxEnd)
+        if (size == 0L) return null
+        p = boxEnd
+    }
+    return null
+}
+
+/** 读取 M4A/MP4 的 iTunes ©lyr 内嵌歌词，返回 LRC 文本 */
+private fun readM4aLyrics(file: File): String {
+    java.io.RandomAccessFile(file, "r").use { raf ->
+        val len = raf.length()
+        val moov = findM4aBox(raf, 0L, len, "moov") ?: return ""
+        val udta = findM4aBox(raf, moov.first, moov.second, "udta") ?: return ""
+        val meta = findM4aBox(raf, udta.first, udta.second, "meta") ?: return ""
+        // meta 是 fullbox：version/flags 占 4 字节，子 box 从 +4 开始
+        val ilst = findM4aBox(raf, meta.first + 4, meta.second, "ilst") ?: return ""
+        val lyr = findM4aBox(raf, ilst.first, ilst.second, "\u00A9lyr") ?: return ""
+        // ©lyr 的 payload 是 data box：[type(4)][locale(4)] + 文本
+        val data = findM4aBox(raf, lyr.first, lyr.second, "data")
+        val textStart = if (data != null) data.first + 8 else lyr.first + 8
+        val textEnd = if (data != null) data.second else lyr.second
+        if (textStart >= textEnd) return ""
+        val n = (textEnd - textStart).toInt().coerceAtMost(4 * 1024 * 1024)
+        val bytes = ByteArray(n)
+        raf.seek(textStart)
+        raf.readFully(bytes)
+        return plainToLrc(String(bytes, Charsets.UTF_8))
     }
 }
 
@@ -873,58 +1065,110 @@ private fun saturateColor(c: Color, factor: Float): Color {
     )
 }
 
-// ── 歌曲信息底部弹窗（v1.4.58）：先弹出一半高度，用户上划继续覆盖全屏 ──
-@OptIn(ExperimentalMaterial3Api::class)
+// ── 歌曲信息底部弹窗（v1.4.62 重写）：不再使用 material3 ModalBottomSheet ──
+// material3 1.2.1 的弹窗在独立窗口(ModalBottomSheetWindow)中组合，其返回键处理无法从外部定制：
+//   · shouldDismissOnBackPress=true（默认）：API33+ 注册 OnBackInvokedCallback，全屏状态下按返回只
+//     partialExpand() 收回半屏，再按一次才收起（"返回键只收一半"）；
+//   · false：窗口不处理返回，但焦点窗口会把返回事件吞掉，Activity 层 BackHandler 永远收不到（v1.4.61
+//     彻底失效）。
+// 故改为自实现面板：直接在页面组合内绘制（无独立窗口），返回键必然到达 Activity 的
+// OnBackPressedDispatcher，一次返回即平滑收起关闭；交互复刻原弹窗：半屏弹出 → 内容上滑展开全屏 →
+// 遮罩/返回键一次收起。
 @Composable
 private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: () -> Unit) {
     var info by remember { mutableStateOf<com.lianglei.nasmusic.data.TrackInfo?>(null) }
     LaunchedEffect(song.id) {
         info = com.lianglei.nasmusic.data.trackInfoOf(song, ctx)
     }
-    // skipPartiallyExpanded=false：先弹出一半高度，内容上划时自动展开至全屏
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    // shouldDismissOnBackPress=false：禁用 ModalBottomSheet 独立窗口自带的返回键处理
-    // （material3 1.2.1 的窗口层返回处理在全屏状态下只 partialExpand() 收回半屏，且自动
-    // opt-in 预测性返回动画——这正是"返回键只收起一半"的根因）。禁用后返回事件穿透到
-    // Activity 的 OnBackPressedDispatcher，由下方 BackHandler 统一处理。
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color(0xFF26282F),
-        contentColor = Color.White,
-        properties = ModalBottomSheetDefaults.properties(shouldDismissOnBackPress = false),
-        dragHandle = { /* 默认把手即可 */ }
-    ) {
-        val it = info
-        // 顶部留 24dp：标题与把手/边框之间保持充足间距
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 32.dp)) {
-            Text(stringResource(R.string.track_info_title), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
-            if (it == null) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.loading), color = Color.White.copy(alpha = 0.6f))
+    var expanded by remember { mutableStateOf(false) }
+    var dismissing by remember { mutableStateOf(false) }
+    val sheetFraction by animateFloatAsState(
+        targetValue = when { dismissing -> 0f; expanded -> 1f; else -> 0.45f },
+        animationSpec = tween(300),
+        label = "sheetFraction"
+    )
+    LaunchedEffect(sheetFraction) {
+        if (dismissing && sheetFraction <= 0.01f) onDismiss()
+    }
+    val scrollState = rememberScrollState()
+    // 滚动联动（复刻 ModalBottomSheet）：内容滚到顶后继续上拉 → 面板展开全屏；
+    // 全屏且内容滚到顶后下拉 → 面板收回半屏
+    val nestedScroll = remember(scrollState) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                val dy = available.y
+                if (!expanded && source == NestedScrollSource.Drag && dy < 0f && scrollState.value <= 0) {
+                    expanded = true
+                    return Offset(0f, dy)
                 }
-            } else {
-                TrackInfoRow(stringResource(R.string.info_label_title), it.title)
-                TrackInfoRow(stringResource(R.string.info_label_artist), it.artist)
-                TrackInfoRow(stringResource(R.string.info_label_album), it.album)
-                TrackInfoRow(stringResource(R.string.info_label_source), it.source)
-                TrackInfoRow(stringResource(R.string.info_label_playcount), it.playCount.toString())
-                TrackInfoRow(stringResource(R.string.info_label_duration), it.durationText)
-                TrackInfoRow(stringResource(R.string.info_label_bitrate), it.bitrateText)
-                TrackInfoRow(stringResource(R.string.info_label_samplerate), it.sampleRateText)
-                TrackInfoRow(stringResource(R.string.info_label_size), it.sizeText)
-                TrackInfoRow(stringResource(R.string.info_label_format), it.formatText)
-                TrackInfoRow(stringResource(R.string.info_label_dir), it.directory.ifEmpty { "—" })
+                return Offset.Zero
+            }
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val dy = available.y
+                if (expanded && source == NestedScrollSource.Drag && dy > 0f && scrollState.value <= 0) {
+                    expanded = false
+                    return Offset(0f, dy)
+                }
+                return Offset.Zero
             }
         }
     }
-    // 返回键：与点击弹窗外区域使用相同的收起方法（sheetState.hide() 一次到底 → 全部收起）。
-    // 窗口层返回处理已禁用（shouldDismissOnBackPress=false），此处是唯一返回处理者，
-    // 无论弹窗处于半屏还是全屏，一次返回直接收起并关闭。
-    val scope = rememberCoroutineScope()
-    BackHandler {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+    fun dismiss() { dismissing = true }
+    // 返回键：面板在页面组合内（无独立窗口），返回事件必然到达 Activity 的 OnBackPressedDispatcher，
+    // 一次返回直接平滑收起关闭（面板动画到 0 后触发 onDismiss）
+    BackHandler { dismiss() }
+    Box(Modifier.fillMaxSize()) {
+        // 遮罩：点击一次直接收起
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer {
+                    alpha = if (dismissing) sheetFraction * 0.45f
+                    else (0.30f + 0.15f * sheetFraction).coerceIn(0f, 0.5f)
+                }
+                .background(Color.Black)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { dismiss() }
+        )
+        // 面板：底部对齐，半屏 45% 屏高 → 全屏 100%
+        Surface(
+            Modifier.align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(sheetFraction)
+                .nestedScroll(nestedScroll)
+                .verticalScroll(scrollState),
+            color = Color(0xFF26282F),
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 32.dp)) {
+                val it = info
+                // 拖拽把手
+                Box(
+                    Modifier.align(Alignment.CenterHorizontally)
+                        .width(36.dp).height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White.copy(alpha = 0.3f))
+                )
+                Spacer(Modifier.height(18.dp))
+                Text(stringResource(R.string.track_info_title), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                if (it == null) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                        Text(stringResource(R.string.loading), color = Color.White.copy(alpha = 0.6f))
+                    }
+                } else {
+                    TrackInfoRow(stringResource(R.string.info_label_title), it.title)
+                    TrackInfoRow(stringResource(R.string.info_label_artist), it.artist)
+                    TrackInfoRow(stringResource(R.string.info_label_album), it.album)
+                    TrackInfoRow(stringResource(R.string.info_label_source), it.source)
+                    TrackInfoRow(stringResource(R.string.info_label_playcount), it.playCount.toString())
+                    TrackInfoRow(stringResource(R.string.info_label_duration), it.durationText)
+                    TrackInfoRow(stringResource(R.string.info_label_bitrate), it.bitrateText)
+                    TrackInfoRow(stringResource(R.string.info_label_samplerate), it.sampleRateText)
+                    TrackInfoRow(stringResource(R.string.info_label_size), it.sizeText)
+                    TrackInfoRow(stringResource(R.string.info_label_format), it.formatText)
+                    TrackInfoRow(stringResource(R.string.info_label_dir), it.directory.ifEmpty { "—" })
+                }
+            }
+        }
     }
 }
 
