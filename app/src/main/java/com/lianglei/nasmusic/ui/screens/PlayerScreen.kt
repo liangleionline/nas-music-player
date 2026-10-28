@@ -486,6 +486,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                                     val line = g[li]
                                     val isJp = line.text.any { c -> isKana(c) }
                                     val isLastInGroup = li == g.lastIndex
+                                    // 字号统一 20sp，对齐设计图（所有歌词行同字号，仅亮度区分当前行）
                                     if (gi == activeGroupIdx && line === activeJp) {
                                         // 当前句：整行亮起（白色加粗）
                                         Text(
@@ -500,7 +501,7 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                                         Text(
                                             line.text,
                                             color = Color.White.copy(alpha = if (gi == activeGroupIdx) 0.55f else 0.38f),
-                                            fontSize = if (isJp) 20.sp else 14.sp,
+                                            fontSize = 20.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
