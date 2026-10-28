@@ -1,5 +1,6 @@
 package com.lianglei.nasmusic.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -880,6 +881,7 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
     LaunchedEffect(song.id) {
         info = com.lianglei.nasmusic.data.trackInfoOf(song, ctx)
     }
+    val scope = rememberCoroutineScope()
     // skipPartiallyExpanded=false：先弹出一半高度，内容上划时自动展开至全屏
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ModalBottomSheet(
@@ -890,7 +892,8 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
         dragHandle = { /* 默认把手即可 */ }
     ) {
         val it = info
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
+        // 顶部留 10dp：标题与把手/边框之间保持间距
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 32.dp)) {
             Text(stringResource(R.string.track_info_title), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
             if (it == null) {
@@ -911,6 +914,10 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
                 TrackInfoRow(stringResource(R.string.info_label_dir), it.directory.ifEmpty { "—" })
             }
         }
+    }
+    // 返回键：无论弹窗处于半屏还是全屏，一次返回直接收起并关闭（避免先收回半屏、再按才关闭）
+    BackHandler {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
 }
 
