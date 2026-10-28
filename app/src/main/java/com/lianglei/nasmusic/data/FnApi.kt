@@ -120,29 +120,10 @@ object FnApi {
             val arr = data.optJSONArray("list") ?: break
             for (i in 0 until arr.length()) {
                 val t = arr.getJSONObject(i)
-                val guid = t.getString("guid")
-                val title = t.optString("title", "Unknown")
-                val artist = t.optJSONArray("artists")?.let { a ->
-                    if (a.length() > 0) a.getJSONObject(0).optString("name", "") else ""
-                } ?: ""
-                val album = t.optJSONObject("album")?.optString("name", "") ?: ""
-                val duration = t.optLong("duration", 0)
-                val coverId = t.optString("coverId", "")
-                val path = extractTrackPath(t)
-                if (i == 0) FnLogger.log("track path probe: path='$path' (fallback=${if (path.isEmpty()) "YES" else "no"}) keys=${t.keys().asSequence().toList().joinToString(",")}")
-                list.add(Song(
-                    id = guid.hashCode().toLong(),
-                    title = title,
-                    artist = artist,
-                    album = album,
-                    albumId = coverId.hashCode().toLong(),
-                    duration = duration,
-                    data = "$baseUrl/track/stream?guid=$guid",
-                    folder = if (path.isNotEmpty()) path else "飞牛NAS",
-                    isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
-                    coverId = coverId
-                ))
-                if (i % 20 == 0) onProgress("已加载 ${list.size} 首: $title - $artist")
+                if (i == 0) FnLogger.log("track path probe: path='${extractTrackPath(t)}' keys=${t.keys().asSequence().toList().joinToString(",")}")
+                val s = parseTrack(t)
+                list.add(s)
+                if (i % 20 == 0) onProgress("已加载 ${list.size} 首: ${s.title} - ${s.artist}")
             }
             val total = data.optInt("total", 0)
             onProgress("第 $page 页完成，共 ${list.size}/$total 首")
@@ -152,6 +133,31 @@ object FnApi {
         onProgress("歌曲加载完成，共 ${list.size} 首")
         FnLogger.log("Fetched ${list.size} tracks total")
         list
+    }
+
+    /** 解析单个 track JSON → Song（fetchAllTracks / fetchPlaylistTracks 共用，字段口径一致） */
+    private fun parseTrack(t: JSONObject): Song {
+        val guid = t.getString("guid")
+        val title = t.optString("title", "Unknown")
+        val artist = t.optJSONArray("artists")?.let { a ->
+            if (a.length() > 0) a.getJSONObject(0).optString("name", "") else ""
+        } ?: ""
+        val album = t.optJSONObject("album")?.optString("name", "") ?: ""
+        val duration = t.optLong("duration", 0)
+        val coverId = t.optString("coverId", "")
+        val path = extractTrackPath(t)
+        return Song(
+            id = guid.hashCode().toLong(),
+            title = title,
+            artist = artist,
+            album = album,
+            albumId = coverId.hashCode().toLong(),
+            duration = duration,
+            data = "$baseUrl/track/stream?guid=$guid",
+            folder = if (path.isNotEmpty()) path else "飞牛NAS",
+            isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
+            coverId = coverId
+        )
     }
 
     /** 探测 track 对象里的文件路径字段（feature/fn-folder-browser 分支）。
@@ -244,28 +250,7 @@ object FnApi {
             val data = json.optJSONObject("data") ?: break
             val arr = data.optJSONArray("list") ?: break
             for (i in 0 until arr.length()) {
-                val t = arr.getJSONObject(i)
-                val guid = t.getString("guid")
-                val title = t.optString("title", "Unknown")
-                val artist = t.optJSONArray("artists")?.let { a ->
-                    if (a.length() > 0) a.getJSONObject(0).optString("name", "") else ""
-                } ?: ""
-                val album = t.optJSONObject("album")?.optString("name", "") ?: ""
-                val duration = t.optLong("duration", 0)
-                val coverId = t.optString("coverId", "")
-                val path = extractTrackPath(t)
-                list.add(Song(
-                    id = guid.hashCode().toLong(),
-                    title = title,
-                    artist = artist,
-                    album = album,
-                    albumId = coverId.hashCode().toLong(),
-                    duration = duration,
-                    data = "$baseUrl/track/stream?guid=$guid",
-                    folder = if (path.isNotEmpty()) path else "飞牛NAS",
-                    isHighQuality = t.optJSONObject("audioSpec")?.optString("code", "")?.contains("flac", true) == true,
-                    coverId = coverId
-                ))
+                list.add(parseTrack(arr.getJSONObject(i)))
             }
             val total = data.optInt("total", 0)
             if (list.size >= total || arr.length() == 0) break

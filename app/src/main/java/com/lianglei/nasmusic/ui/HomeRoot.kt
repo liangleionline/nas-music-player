@@ -41,8 +41,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
-import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.imageLoader
 import coil.request.ImageRequest
 import com.lianglei.nasmusic.data.FnApi
 import com.lianglei.nasmusic.data.MusicSource
@@ -405,7 +405,7 @@ private fun HomeContent(
             if (model != null) {
                 withTimeoutOrNull(300) {
                     withContext(Dispatchers.IO) {
-                        ImageLoader(overlayCtx).execute(
+                        overlayCtx.imageLoader.execute(
                             ImageRequest.Builder(overlayCtx).data(model)
                                 .transformations(DownscaleBlurTransformation(5))
                                 .size(720).build()

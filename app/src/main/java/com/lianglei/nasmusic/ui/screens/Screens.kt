@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.lianglei.nasmusic.BuildConfig
 import com.lianglei.nasmusic.data.MusicRepository
 import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.player.PlayerManager
@@ -383,7 +384,6 @@ fun PlaylistScreen(
     playlists: List<com.lianglei.nasmusic.data.FnApi.FnPlaylist>,
     onOpenPlaylist: (String) -> Unit = {}
 ) {
-    com.lianglei.nasmusic.util.CrashLogger.log("PlaylistScreen rendered, playlists=${playlists.size}")
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         if (playlists.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -694,7 +694,7 @@ fun AboutScreen() {
     Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
         Text("NAS Music Player", fontWeight = FontWeight.Bold, fontSize = 22.sp)
         Spacer(Modifier.height(4.dp))
-        Text("Version 1.4.43", color = Color.Gray, fontSize = 13.sp)
+        Text("Version ${BuildConfig.VERSION_NAME}", color = Color.Gray, fontSize = 13.sp)
         Spacer(Modifier.height(20.dp))
 
         Text("关于本程序", fontWeight = FontWeight.Bold, fontSize = 16.sp)

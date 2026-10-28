@@ -23,22 +23,3 @@ data class Song(
             )
         }
 }
-
-data class Album(
-    val albumId: Long,
-    val title: String,
-    val artist: String,
-    val songCount: Int,
-    val year: Int
-)
-
-data class Artist(
-    val name: String,
-    val songCount: Int
-)
-
-data class Folder(
-    val name: String,
-    val path: String,
-    val songCount: Int
-)
