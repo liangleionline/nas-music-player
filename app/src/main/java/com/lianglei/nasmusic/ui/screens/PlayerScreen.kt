@@ -881,7 +881,6 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
     LaunchedEffect(song.id) {
         info = com.lianglei.nasmusic.data.trackInfoOf(song, ctx)
     }
-    val scope = rememberCoroutineScope()
     // skipPartiallyExpanded=false：先弹出一半高度，内容上划时自动展开至全屏
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ModalBottomSheet(
@@ -892,8 +891,8 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
         dragHandle = { /* 默认把手即可 */ }
     ) {
         val it = info
-        // 顶部留 10dp：标题与把手/边框之间保持间距
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 32.dp)) {
+        // 顶部留 24dp：标题与把手/边框之间保持充足间距
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 32.dp)) {
             Text(stringResource(R.string.track_info_title), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
             if (it == null) {
@@ -915,10 +914,9 @@ private fun TrackInfoSheet(song: Song, ctx: android.content.Context, onDismiss: 
             }
         }
     }
-    // 返回键：无论弹窗处于半屏还是全屏，一次返回直接收起并关闭（避免先收回半屏、再按才关闭）
-    BackHandler {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
-    }
+    // 返回键：直接关闭（不做 sheetState.hide() 收起动画——Android 15+/16 预测性返回的系统动画会与
+    // 应用收起动画叠加成"先收一半、再全收"的两段观感；直接 onDismiss 立即移除，一次返回即全部收起）
+    BackHandler { onDismiss() }
 }
 
 @Composable
