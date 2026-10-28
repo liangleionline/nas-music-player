@@ -766,9 +766,12 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
 }
 
 /**
- * 迷幻烟雾背景：多个大径向渐变烟团，各自以不同频率极缓慢正弦漂移 + 呼吸，
- * blendMode=Plus 叠加（亮色烟雾感），颜色取自封面主色 + 固定白色烟团（灰蒙蒙效果）。
- * 渐变采用"环形三停"（中心 alpha=0、0.30r 处最浓、向外淡出）→ 中心不再出现亮点；
+ * 迷幻烟雾背景：6 个超大径向渐变烟团，圆心全部固定在屏幕外
+ * （左/右/上/下/右上/左下），以不同频率极缓慢漂移 + 呼吸，
+ * blendMode=Plus 叠加（亮色烟雾感），颜色取自封面主色（统一提亮至最低亮度 0.45）
+ * + 固定白色烟团（灰蒙蒙效果）。
+ * 渐变采用"环形三停"（中心 alpha=0、0.32r 处最浓、向外淡出），
+ * 核心亮区物理上位于屏幕外 → 屏幕内只有从四边渗入的羽化光雾，彻底杜绝暗斑/黑洞。
  * phase 由真实帧时间差值驱动（帧率无关），running=false 时暂停（播放页隐藏零消耗），
  * 收起再弹出时从当前相位续走，不跳变。
  */
@@ -788,33 +791,41 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
     }
     Canvas(Modifier.fillMaxSize()) {
         val t = phase.value
-        // 烟团与中央圆统一做"暗色提亮"：暗封面（深棕/黑主色）在 BlendMode.Plus 下不发光，
-        // 会在深底上形成黑洞感；提亮到最低亮度后保留色相，变成真正发光的烟雾
-        val base = if (palette.isEmpty()) listOf(Color(0xFF3A3A3E), Color(0xFF8B5A2B))
-        else palette.map { lightenIfDark(it, 0.30f) }
-        val centerCol = lightenIfDark(centerFill, 0.34f)
+        // 调色板统一提亮到最低亮度 0.45：任何封面（含深棕/黑）都不会产生"暗色烟团"，
+        // Plus 叠加下只有发光色，不存在黑洞源头
+        val base = if (palette.isEmpty()) listOf(Color(0xFF5A5A5E), Color(0xFF9A6A3B))
+        else palette.map { lightenIfDark(it, 0.45f) }
         val cw = size.width
         val ch = size.height
         val cx0 = cw * 0.5f
         val cy0 = ch * 0.5f
-        // 6 团：主色循环 + 1 团白色（灰蒙蒙烟雾）；
-        // 圆心约束在屏幕外围环形轨道（距屏中心 0.38w~0.56w 缓慢呼吸），
-        // 靠近中央时 sin 到达极值点自动反向 → 烟团中心永不进入屏幕中央区
-        repeat(6) { i ->
-            val c = if (i == 5) Color.White.copy(alpha = 0.32f) else base[i % base.size]
-            // 各团角速度不同、奇偶团方向相反（避免同向绕圈机械化）；一圈约 7~15 分钟
-            val dir = if (i % 2 == 0) 1f else -1f
-            val theta = t * (0.25f + 0.06f * i) * dir + i * 1.0472f
-            val rr = cw * (0.47f + 0.09f * sin(t * 0.9f + i * 1.9f))
-            val cx = cx0 + rr * cos(theta)
-            val cy = cy0 + rr * 0.95f * sin(theta)
-            // 大烟团：半径 0.30~0.46 倍屏高（直径最大 ~0.92 屏高），弥散覆盖大半屏
-            val r = ch * (0.38f + 0.08f * sin(t * 0.4f + i * 1.3f))
-            val peak = if (i == 5) 0.28f else 0.26f
+        // 烟团圆心全部固定在屏幕外（左/右/上/下/右上/左下 六个方位）：
+        // 径向渐变的核心亮区（0.32r 内 alpha 峰值）物理上不可能出现在屏幕内，
+        // 屏幕里只有从四边渗入的大半径羽化光雾 → 彻底杜绝暗斑/黑洞
+        val anchors = listOf(
+            Offset(-cw * 0.16f, ch * 0.30f),   // 左
+            Offset(cw * 1.16f, ch * 0.70f),    // 右
+            Offset(cw * 0.30f, -ch * 0.18f),   // 上
+            Offset(cw * 0.70f, ch * 1.18f),    // 下
+            Offset(cw * 1.12f, -ch * 0.14f),   // 右上
+            Offset(-cw * 0.12f, ch * 1.14f)    // 左下
+        )
+        anchors.forEachIndexed { i, a ->
+            val c = if (i == 5) Color.White.copy(alpha = 0.35f) else base[i % base.size]
+            // 沿屏幕边缘缓慢漂移（drift 在 ±1 之间），漂移量远小于圆心到屏幕的距离，
+            // 圆心始终保持屏外；左右团沿纵向漂、上下团沿横向漂
+            val drift = sin(t * 0.5f + i * 1.9f)
+            val driftY = sin(t * 0.7f + i * 2.6f) * ch * 0.10f
+            val driftX = sin(t * 0.6f + i * 0.9f) * cw * 0.06f
+            val cx = if (a.x < cx0) a.x + driftX else a.x - driftX
+            val cy = a.y + driftY
+            // 大半径：0.62~0.72 屏高，羽化边缘覆盖大半屏，光从四边渗入
+            val r = ch * (0.62f + 0.10f * sin(t * 0.35f + i * 1.3f))
+            val peak = if (i == 5) 0.30f else 0.26f
             drawCircle(
                 brush = Brush.radialGradient(
                     0.0f to c.copy(alpha = 0.0f),
-                    0.30f to c.copy(alpha = peak),
+                    0.32f to c.copy(alpha = peak),
                     1.0f to c.copy(alpha = 0.0f),
                     center = Offset(cx, cy),
                     radius = r
@@ -824,13 +835,14 @@ fun SmokeBackground(palette: List<Color>, running: Boolean, centerFill: Color = 
                 blendMode = BlendMode.Plus
             )
         }
-        // 中央实心羽化圆（提亮后的封面主色）：直接盖住多团尾巴在中央的叠加残留，
-        // 光斑根除；中央底色 = 封面主色（与封面颜色直接呼应），边缘羽化无硬边
+        // 中央柔和光：提亮后的主色、低透明度渐变（非实心、非暗色）——
+        // 只是给中央一点封面色氛围，亮度始终高于底色，不会形成暗区
+        val centerCol = lightenIfDark(centerFill, 0.50f)
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(
-                    centerCol,
-                    centerCol.copy(alpha = 0.88f),
+                    centerCol.copy(alpha = 0.22f),
+                    centerCol.copy(alpha = 0.08f),
                     centerCol.copy(alpha = 0f)
                 ),
                 center = Offset(cx0, cy0),
