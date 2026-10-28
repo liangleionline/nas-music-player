@@ -43,6 +43,18 @@ data class TrackInfo(
 }
 
 /**
+ * 飞牛目录完整化：Song.folder 存的是 relPathOf 后的相对路径（如 "周杰伦/夜曲.mp3"）。
+ * - 单级目录（最常见，如 "周杰伦/夜曲.mp3"）→ 拼上 NAS 音乐库根，显示完整目录 /Resources/Media/Music/周杰伦
+ * - 多级相对目录 → 原样显示相对完整目录
+ * - 已含多级 / 绝对路径 → 去掉文件名即可
+ */
+private fun fnFullDirOf(folder: String): String = when {
+    folder.isEmpty() || folder == "飞牛NAS" -> ""
+    folder.contains('/') -> folder.substringBeforeLast('/')
+    else -> "/Resources/Media/Music/$folder"
+}
+
+/**
  * 组装歌曲信息。
  * 飞牛端字段在拉取曲目时已解析进 Song（year/bitrate/sampleRate/fileSize/format 均来自 audioSpec）；
  * 本地端比特率/采样率用 MediaMetadataRetriever 懒读（首次打开信息弹窗时才读，避免扫描卡顿）。
@@ -64,7 +76,7 @@ suspend fun trackInfoOf(song: Song, context: Context): TrackInfo = withContext(D
             sampleRateHz = song.sampleRate,
             fileSizeBytes = song.fileSize,
             format = song.format,
-            directory = song.folder.substringBeforeLast('/')
+            directory = fnFullDirOf(song.folder)
         )
     } else {
         var bitrate = song.bitrate
