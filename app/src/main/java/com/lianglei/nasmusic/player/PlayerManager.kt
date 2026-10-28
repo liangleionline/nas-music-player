@@ -2,12 +2,20 @@ package com.lianglei.nasmusic.player
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.lianglei.nasmusic.data.Song
+import com.lianglei.nasmusic.data.StatsStore
+import com.lianglei.nasmusic.util.CrashLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * Process-wide observable player state. The Activity wires the MediaController
@@ -40,6 +48,18 @@ object PlayerManager {
     private val _playMode = MutableStateFlow(PlayMode.REPEAT_ALL)
     val playMode: StateFlow<PlayMode> = _playMode.asStateFlow()
 
+    // ── 播放计数（统计页数据源）：同一首歌累计播放满 15 秒计一次 ──
+    private var playedMsInTrack = 0L
+    private var countedTrackId = -1L
+
+    // ── NAS 断线自动重连 + 失败重试：最多自动重试 5 次，仍失败弹出询问 ──
+    private const val MAX_RETRIES = 5
+    private var retryCount = 0
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val _retryPrompt = MutableStateFlow(false)
+    /** true = 自动重试 5 次已耗尽，等待用户在弹窗里选择"继续重试"或"切回本地" */
+    val retryPrompt: StateFlow<Boolean> = _retryPrompt.asStateFlow()
+
     fun bind(controller: MediaController) {
         // 换绑前移除旧监听，避免重复绑定累积
         this.controller?.removeListener(playerListener)
@@ -50,11 +70,13 @@ object PlayerManager {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
             val idx = controller?.currentMediaItemIndex ?: return
-            com.lianglei.nasmusic.util.CrashLogger.log("onMediaItemTransition: idx=$idx, reason=$reason, title=${_queue.value.getOrNull(idx)?.title}")
+            CrashLogger.log("onMediaItemTransition: idx=$idx, reason=$reason, title=${_queue.value.getOrNull(idx)?.title}")
             if (controller?.mediaItemCount ?: 0 > 0) {
                 _currentIndex.value = idx
                 _durationMs.value = controller?.duration?.coerceAtLeast(0) ?: 0
             }
+            // 切歌后重新累计播放时长（同曲循环不触发 transition，靠 countedTrackId 防重复计数）
+            playedMsInTrack = 0L
         }
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
@@ -69,6 +91,49 @@ object PlayerManager {
             _positionMs.value = c.currentPosition
             _durationMs.value = c.duration.coerceAtLeast(0)
         }
+        override fun onPlayerError(error: PlaybackException) {
+            CrashLogger.e("onPlayerError: code=${error.errorCodeName} msg=${error.message}", error)
+            val c = controller ?: return
+            val cur = _currentIndex.value
+            val song = _queue.value.getOrNull(cur)
+            val isNas = song?.data?.startsWith("http://") == true ||
+                    song?.data?.startsWith("https://") == true
+            if (isNas && retryCount < MAX_RETRIES) {
+                retryCount++
+                val n = retryCount
+                CrashLogger.log("NAS playback failed, auto-retry $n/$MAX_RETRIES (title=${song?.title})")
+                scope.launch {
+                    delay(1500)
+                    if (c.playbackState == Player.STATE_IDLE) c.prepare()
+                    c.play()
+                }
+            } else {
+                // 本地错误或 5 次自动重试已耗尽 → 弹窗询问用户
+                retryCount = 0
+                _retryPrompt.value = true
+                CrashLogger.log("Playback failed (${if (isNas) "retries exhausted" else "local source"}), prompting user")
+            }
+        }
+    }
+
+    /** 弹窗选择"继续重试"：重置计数并立即重试一次 */
+    fun retryNow() {
+        _retryPrompt.value = false
+        retryCount = 0
+        val c = controller ?: return
+        CrashLogger.log("User chose to retry")
+        scope.launch {
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            c.play()
+        }
+    }
+
+    /** 弹窗选择"切回本地"：停止 NAS 播放，自动切换到本地音源 */
+    fun switchToLocalAfterFailure() {
+        _retryPrompt.value = false
+        retryCount = 0
+        CrashLogger.log("User chose to switch back to local source")
+        com.lianglei.nasmusic.data.SourceManager.switchTo(com.lianglei.nasmusic.data.MusicSource.LOCAL)
     }
 
     /** Activity.onStop 时调用：释放引用，避免对已释放 controller 操作导致按钮失灵/进度归零 */
@@ -243,8 +308,21 @@ object PlayerManager {
         // Sync current index in case onMediaItemTransition was missed
         // Only sync if controller actually has items (avoids resetting to 0 on rebind when service was killed)
         if (c.mediaItemCount > 0 && c.currentMediaItemIndex != _currentIndex.value) {
-            com.lianglei.nasmusic.util.CrashLogger.log("tick: index sync ${_currentIndex.value} -> ${c.currentMediaItemIndex}")
+            CrashLogger.log("tick: index sync ${_currentIndex.value} -> ${c.currentMediaItemIndex}")
             _currentIndex.value = c.currentMediaItemIndex
+        }
+        // 播放计数：同一首歌累计播放满 15 秒计一次（统计页"按播放次数"数据源）
+        if (c.isPlaying) {
+            val idx = _currentIndex.value
+            val song = _queue.value.getOrNull(idx)
+            if (song != null) {
+                playedMsInTrack += 500
+                if (playedMsInTrack >= 15000L && countedTrackId != song.id) {
+                    countedTrackId = song.id
+                    StatsStore.recordPlay(song.id)
+                    CrashLogger.log("Play recorded: id=${song.id} title=${song.title} total=${StatsStore.playCount(song.id)}")
+                }
+            }
         }
     }
 }

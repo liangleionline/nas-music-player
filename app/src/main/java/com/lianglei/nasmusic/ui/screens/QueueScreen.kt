@@ -16,7 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.lianglei.nasmusic.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,8 +70,8 @@ fun QueueScreen(onClose: () -> Unit = {}) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("${idx + 1} / ${queue.size}", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, modifier = Modifier.weight(1f))
-            Text("播放队列", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("清除", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp,
+            Text(stringResource(R.string.queue_title), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(stringResource(R.string.clear), color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp,
                 modifier = Modifier.weight(1f).clickable { PlayerManager.clearQueue() },
                 textAlign = TextAlign.End)
         }

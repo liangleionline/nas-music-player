@@ -1,8 +1,6 @@
 package com.lianglei.nasmusic.data
 
-import android.content.ContentUris
 import android.content.Context
-import android.net.Uri
 import android.provider.MediaStore
 import com.lianglei.nasmusic.util.CrashLogger
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +30,9 @@ class MusicRepository(private val ctx: Context) {
                 MediaStore.Audio.Media.ALBUM_ID,
                 MediaStore.Audio.Media.DURATION,
                 MediaStore.Audio.Media.DATA,
-                MediaStore.MediaColumns.MIME_TYPE
+                MediaStore.MediaColumns.MIME_TYPE,
+                MediaStore.Audio.Media.YEAR,
+                MediaStore.Audio.Media.SIZE
             )
             val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 5000"
             val sortOrder = MediaStore.Audio.Media.DEFAULT_SORT_ORDER
@@ -46,6 +46,8 @@ class MusicRepository(private val ctx: Context) {
                     val duration = c.getLong(5)
                     val data = c.getString(6) ?: ""
                     val mime = c.getString(7) ?: ""
+                    val year = c.getInt(8)
+                    val size = c.getLong(9)
                     // Convert SAF URIs to path fragments for matching
                     fun safePath(uri: String): String {
                         // Extract path from content://...tree/primary%3AFoo%2FBar → Foo/Bar
@@ -72,7 +74,14 @@ class MusicRepository(private val ctx: Context) {
                             mime.startsWith("audio/wav") ||
                             mime.contains("ape") ||
                             mime.contains("alac")
-                    list.add(Song(id, title, artist, album, albumId, duration, data, folder, hq))
+                    list.add(
+                        Song(
+                            id = id, title = title, artist = artist, album = album, albumId = albumId,
+                            duration = duration, data = data, folder = folder, isHighQuality = hq,
+                            year = year, fileSize = size,
+                            format = mime.substringAfter('/', "").uppercase()
+                        )
+                    )
                 }
             }
             CrashLogger.log("MediaStore scan returned ${list.size} songs (allowed=$allowedFolders)")

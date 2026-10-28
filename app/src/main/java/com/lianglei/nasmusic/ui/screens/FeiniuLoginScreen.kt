@@ -11,6 +11,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import com.lianglei.nasmusic.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -49,7 +51,7 @@ fun FeiniuLoginScreen(
 
     fun doLogin() {
         if (host.isBlank() || username.isBlank() || password.isBlank()) {
-            errorMsg = "请填写完整信息"
+            errorMsg = context.getString(R.string.fn_please_fill)
             return
         }
         focusManager.clearFocus()
@@ -58,9 +60,9 @@ fun FeiniuLoginScreen(
         loading = true
         errorMsg = ""
         logLines.clear()
-        logLines.add("正在连接服务器 ${host.trim()} ...")
+        logLines.add(context.getString(R.string.fn_connecting, host.trim()))
         scope.launch {
-            logLines.add("正在验证用户名和密码...")
+            logLines.add(context.getString(R.string.fn_verifying))
             val result = FnApi.login(host.trim(), username.trim(), password)
             if (result.isSuccess) {
                 // Save to history
@@ -68,7 +70,7 @@ fun FeiniuLoginScreen(
                 history = (listOf(entry) + history.filter { it != entry }).take(5)
                 prefs.edit().putStringSet("history", history.toSet()).apply()
 
-                logLines.add("登录成功，正在获取音乐库...")
+                logLines.add(context.getString(R.string.fn_success_fetching))
                 CrashLogger.log("Feiniu login UI success, fetching tracks...")
                 SourceManager.setFnConnected(host.trim(), username.trim())
                 SourceManager.switchTo(MusicSource.FEINIU)
@@ -76,14 +78,14 @@ fun FeiniuLoginScreen(
                     logLines.add(msg)
                     scope.launch { logScroll.animateScrollTo(logScroll.maxValue) }
                 }
-                logLines.add("完成！共加载 ${SourceManager.songs.value.size} 首歌曲")
+                logLines.add(context.getString(R.string.fn_done, SourceManager.songs.value.size))
                 loading = false
-                Toast.makeText(context, "连接成功，已加载 ${SourceManager.songs.value.size} 首", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.fn_loaded_toast, SourceManager.songs.value.size), Toast.LENGTH_LONG).show()
                 onSuccess()
             } else {
                 loading = false
-                val msg = result.exceptionOrNull()?.message ?: "连接失败"
-                logLines.add("登录失败: $msg")
+                val msg = result.exceptionOrNull()?.message ?: context.getString(R.string.fn_failed)
+                logLines.add(context.getString(R.string.fn_login_failed, msg))
                 CrashLogger.e("Feiniu login UI failed: $msg")
                 errorMsg = msg
             }
@@ -98,14 +100,14 @@ fun FeiniuLoginScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
-            Text("连接飞牛 NAS", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text(stringResource(R.string.fn_title), fontWeight = FontWeight.Bold, fontSize = 20.sp)
         }
 
         Spacer(Modifier.height(24.dp))
 
         // History entries
         if (history.isNotEmpty()) {
-            Text("历史连接", color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(R.string.fn_history), color = Color.Gray, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
             history.forEach { entry ->
                 val parts = entry.split("|")
@@ -135,8 +137,8 @@ fun FeiniuLoginScreen(
         OutlinedTextField(
             value = host,
             onValueChange = { host = it },
-            label = { Text("NAS 地址") },
-            placeholder = { Text("如 https://nas.example.com:244") },
+            label = { Text(stringResource(R.string.fn_addr_label)) },
+            placeholder = { Text(stringResource(R.string.fn_addr_placeholder)) },
             leadingIcon = { Icon(Icons.Filled.Dns, null) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -146,7 +148,7 @@ fun FeiniuLoginScreen(
         OutlinedTextField(
             value = username,
             onValueChange = { username = it },
-            label = { Text("用户名") },
+            label = { Text(stringResource(R.string.fn_user_label)) },
             leadingIcon = { Icon(Icons.Filled.Person, null) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -156,7 +158,7 @@ fun FeiniuLoginScreen(
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("密码") },
+            label = { Text(stringResource(R.string.fn_pwd_label)) },
             leadingIcon = { Icon(Icons.Filled.Lock, null) },
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
@@ -178,7 +180,7 @@ fun FeiniuLoginScreen(
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
             } else {
-                Text("连接", fontSize = 16.sp)
+                Text(stringResource(R.string.fn_connect_btn), fontSize = 16.sp)
             }
         }
 
@@ -202,8 +204,7 @@ fun FeiniuLoginScreen(
 
         Spacer(Modifier.height(24.dp))
         Text(
-            "默认端口 5666，API 路径 /music/api/v1\n" +
-                "请确保手机与 NAS 在同一局域网，或已配置外网访问",
+            stringResource(R.string.fn_hint),
             color = Color.Gray,
             fontSize = 12.sp
         )
