@@ -18,6 +18,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.lifecycle.lifecycleScope
+import com.lianglei.nasmusic.player.PlayerManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.lianglei.nasmusic.ui.screens.PlayerScreen
@@ -41,6 +46,7 @@ import com.lianglei.nasmusic.ui.theme.NasMusicTheme
  * 队列页浮层从 HomeRoot 迁移至此（v1.4.82 恢复滑入动画）。
  */
 class PlayerActivity : ComponentActivity() {
+    private var ticker: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,7 +69,6 @@ class PlayerActivity : ComponentActivity() {
                 }
                 Box(Modifier.fillMaxSize()) {
                     PlayerScreen(onOpenQueue = { showQueue = true })
-
                     // 队列页全屏浮层（迁移自 HomeRoot；v1.4.82 恢复滑入动画）
                     val queueSlide = remember { Animatable(1f) }
                     val queueIntercept = remember { derivedStateOf { queueSlide.value < 0.98f } }
@@ -88,5 +93,20 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // 进度 ticker：播放页是独立 Activity，MainActivity 退到后台会取消它的 ticker，
+    // 必须由本页自己驱动 positionMs → 进度条/歌词才能在停留时持续滚动（v1.4.84 修复）。
+    // 与 MainActivity 相同的 500ms 节律，controller 为空时 tick() 内部直接返回。
+    override fun onStart() {
+        super.onStart()
+        ticker = lifecycleScope.launch {
+            while (true) { delay(500); PlayerManager.tick() }
+        }
+    }
+
+    override fun onStop() {
+        ticker?.cancel()
+        super.onStop()
     }
 }

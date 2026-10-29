@@ -292,16 +292,20 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     // 从封面提取多个主色（KMeans，缩小位图 IO 线程执行），作为底色 + 烟雾动画调色板
     // 复用 App 级全局 ImageLoader（App 实现 ImageLoaderFactory），不每屏新建实例
     val bgLoader = ctx.imageLoader
-    val palette by produceState<List<Color>>(initialValue = emptyList(), coverModel) {
+    // key 同时含 coverModel 与 song?.id：无封面歌曲（本地 albumId=0 / NAS coverId 为空）的
+    // coverModel 可能是同一兜底 URL → key 不变会永远不重跑；加入 song id 保证每首歌独立提色
+    val palette by produceState<List<Color>>(initialValue = emptyList(), coverModel, song?.id) {
         value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val result = bgLoader.execute(
                     ImageRequest.Builder(ctx).data(coverModel).size(160).build()
                 )
                 val bmp = (result.drawable as? BitmapDrawable)?.bitmap
-                if (bmp != null) dominantColors(bmp, 4).map { saturateColor(it, 1.5f) } else emptyList()
+                val colors = if (bmp != null) dominantColors(bmp, 4).map { saturateColor(it, 1.5f) } else emptyList()
+                // 无封面 / 提色失败 → 用歌曲 id 哈希生成稳定且互不相同的主题色，避免所有歌同一个默认色
+                if (colors.isNotEmpty()) colors else fallbackColors(song)
             } catch (e: Exception) {
-                emptyList()
+                fallbackColors(song)
             }
         }
     }
@@ -991,6 +995,22 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
         val c = centers[ci]
         Color(c[0] / 255f, c[1] / 255f, c[2] / 255f)
     }
+}
+
+/**
+ * 无封面 / 提色失败时的兜底配色（v1.4.83）：
+ * 用歌曲 id 哈希生成稳定且互不相同的主题色（主色 + 色相偏移变体），
+ * 避免本地无专辑封面（albumId=0）或 NAS 无封面的歌曲全部显示同一个默认深灰。
+ */
+fun fallbackColors(song: Song?): List<Color> {
+    val h = (song?.id?.hashCode() ?: 0).let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
+    val hue = h % 360f
+    return listOf(
+        Color.hsl(hue, 0.62f, 0.55f),
+        Color.hsl((hue + 40) % 360, 0.5f, 0.47f),
+        Color.hsl((hue + 170) % 360, 0.42f, 0.40f),
+        Color.hsl((hue + 230) % 360, 0.55f, 0.50f)
+    )
 }
 
 /**

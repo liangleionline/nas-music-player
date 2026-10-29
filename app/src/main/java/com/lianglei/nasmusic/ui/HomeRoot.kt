@@ -69,7 +69,7 @@ private val systemEntries = listOf(
     DrawerEntry(R.string.about, Icons.Filled.Info, Color(0xFF1E88E5), "about"),
 )
 
-private val DRAWER_WIDTH = 224.dp
+private val DRAWER_WIDTH = 200.dp
 
 /**
  * 主入口（v1.4.15 重构：改用 Google 官方 DrawerLayout）。
@@ -412,9 +412,9 @@ private fun DrawerPanel(
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("NAS Music", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
-            // NAS 状态卡：当前音源 + 一键切换/进入
+            // NAS 状态卡：当前音源 + 一键切换/进入（贴合内容宽度，右侧不留大块空白）
             Card(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                Modifier.wrapContentWidth().padding(horizontal = 12.dp, vertical = 12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF4FC))
             ) {
                 Column(Modifier.padding(12.dp)) {
