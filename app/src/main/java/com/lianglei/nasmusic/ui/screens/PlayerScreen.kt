@@ -1118,19 +1118,29 @@ fun SmokeBackdrop(palette: List<Color>, running: Boolean, centerFill: Color = Co
     }
 }
 
-/** 压暗到指定最大亮度（0~1），保证白字可读 */
+/** 压暗到指定最大亮度（0~1），保证白字可读；分量钳制 [0,1] 防止浮点/放大越界 */
 private fun darkenToLuminance(c: Color, maxLum: Float): Color {
     val lum = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
     val f = if (lum > maxLum) maxLum / lum else 1f
-    return Color(c.red * f, c.green * f, c.blue * f)
+    return Color(
+        (c.red * f).coerceIn(0f, 1f),
+        (c.green * f).coerceIn(0f, 1f),
+        (c.blue * f).coerceIn(0f, 1f)
+    )
 }
 
-/** 暗色提亮：低于 minLum 时按比例提升 RGB（保留色相），让暗封面的烟雾团也能"发光"而非黑洞 */
+/** 暗色提亮：低于 minLum 时按比例提升 RGB（保留色相），让暗封面的烟雾团也能"发光"而非黑洞。
+ *  注意：亮度比例放大只保证加权平均亮度达标，纯色分量（如暗蓝的 blue）可能被放大超过 1.0
+ *  → 必须逐分量钳制 [0,1]，否则 Color() 构造抛 IllegalArgumentException（v1.4.85 修复）。 */
 private fun lightenIfDark(c: Color, minLum: Float): Color {
     val lum = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
     if (lum >= minLum) return c
     val f = minLum / lum
-    return Color(c.red * f, c.green * f, c.blue * f)
+    return Color(
+        (c.red * f).coerceIn(0f, 1f),
+        (c.green * f).coerceIn(0f, 1f),
+        (c.blue * f).coerceIn(0f, 1f)
+    )
 }
 
 /** HSV 饱和度增强：让烟雾颜色更鲜明、可分辨（红就是红、黄就是黄），避免多团叠加后被冲灰 */
