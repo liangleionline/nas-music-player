@@ -1,12 +1,10 @@
 package com.lianglei.nasmusic.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -18,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -42,21 +39,15 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
+import com.lianglei.nasmusic.PlayerActivity
 import com.lianglei.nasmusic.R
 import coil.compose.AsyncImage
-import coil.imageLoader
-import coil.request.ImageRequest
-import com.lianglei.nasmusic.data.FnApi
 import com.lianglei.nasmusic.data.MusicSource
 import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.SourceManager
 import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.ui.screens.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 data class DrawerEntry(val labelRes: Int, val icon: ImageVector, val tint: Color, val route: String)
 
@@ -98,15 +89,11 @@ fun HomeRoot() {
     val context = LocalContext.current
     val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
 
-    val showPlayerState = remember { mutableStateOf(false) }
-    val showQueueState = remember { mutableStateOf(false) }
     val searchTriggerState = remember { mutableStateOf(false) }
     val drawerOpenState = remember { mutableStateOf(false) }
     var drawerLayoutRef by remember { mutableStateOf<DrawerLayout?>(null) }
     var lastBackPress by remember { mutableStateOf(0L) }
 
-    val showPlayer by showPlayerState
-    val showQueue by showQueueState
     val drawerOpen by drawerOpenState
 
     val currentSource by SourceManager.current.collectAsStateWithLifecycle()
@@ -129,23 +116,8 @@ fun HomeRoot() {
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
     val rootRoutes = setOf("songs", "albums", "artists", "folders", "playlists")
 
-    // 播放器/队列页打开时锁定抽屉，禁止边缘手势误触
-    LaunchedEffect(showPlayer, showQueue) {
-        drawerLayoutRef?.setDrawerLockMode(
-            if (showPlayer || showQueue) DrawerLayout.LOCK_MODE_LOCKED_CLOSED
-            else DrawerLayout.LOCK_MODE_UNLOCKED
-        )
-    }
-    LaunchedEffect(showPlayer) {
-        val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
-        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !showPlayer
-    }
-
     BackHandler(enabled = drawerOpen) { drawerLayoutRef?.closeDrawer(GravityCompat.START) }
-    BackHandler(enabled = showPlayer || showQueue) {
-        if (showQueue) showQueueState.value = false else showPlayerState.value = false
-    }
-    BackHandler(enabled = !showPlayer && !showQueue && currentRoute in rootRoutes) {
+    BackHandler(enabled = currentRoute in rootRoutes) {
         val now = System.currentTimeMillis()
         if (now - lastBackPress < 2000) {
             (context as? android.app.Activity)?.finish()
@@ -174,8 +146,6 @@ fun HomeRoot() {
                         setContent {
                             HomeContent(
                                 nav = nav,
-                                showPlayerState = showPlayerState,
-                                showQueueState = showQueueState,
                                 searchTriggerState = searchTriggerState,
                                 drawerOpenState = drawerOpenState,
                                 onOpenDrawer = { openDrawer(GravityCompat.START) },
@@ -210,17 +180,14 @@ fun HomeRoot() {
 @Composable
 private fun HomeContent(
     nav: NavHostController,
-    showPlayerState: MutableState<Boolean>,
-    showQueueState: MutableState<Boolean>,
     searchTriggerState: MutableState<Boolean>,
     drawerOpenState: MutableState<Boolean>,
     onOpenDrawer: () -> Unit,
     onCloseDrawer: () -> Unit
 ) {
+    val context = LocalContext.current
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
-    val showPlayer by showPlayerState
-    val showQueue by showQueueState
     val drawerOpen by drawerOpenState
     val searchTrigger by searchTriggerState
 
@@ -233,6 +200,16 @@ private fun HomeContent(
     val buffering by PlayerManager.buffering.collectAsStateWithLifecycle()
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val current = queue.getOrNull(currentIndex)
+
+    // 打开播放页：独立 Activity + 系统窗口动画（v1.4.81）。
+    // 播放由 PlayerService（前台服务）承载，Activity 切换不影响播放。
+    fun openPlayer(showQueue: Boolean = false) {
+        context.startActivity(
+            android.content.Intent(context, PlayerActivity::class.java)
+                .apply { if (showQueue) putExtra("showQueue", true) }
+        )
+        (context as? android.app.Activity)?.overridePendingTransition(R.anim.slide_in_bottom, 0)
+    }
 
     val isDetail = currentRoute?.startsWith("artist/") == true ||
             currentRoute?.startsWith("album/") == true ||
@@ -305,13 +282,13 @@ private fun HomeContent(
             )
         },
         bottomBar = {
-            // 迷你播放栏始终显示：播放页/队列页全屏浮层会覆盖它
+            // 迷你播放栏始终显示；点击打开播放页（独立 Activity），队列按钮直接进队列页
             MiniPlayer(
                 song = current,
                 isPlaying = isPlaying,
                 buffering = buffering,
-                onClick = { showPlayerState.value = true },
-                onQueue = { showQueueState.value = true }
+                onClick = { openPlayer() },
+                onQueue = { openPlayer(showQueue = true) }
             )
         }
     ) { pad ->
@@ -329,7 +306,7 @@ private fun HomeContent(
                     popEnterTransition = { slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(300)) },
                     popExitTransition = { slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) }
                 ) {
-                    composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true } }
+                    composable("songs") { SongListScreen(songs, loading, searchTrigger) { idx -> PlayerManager.playQueue(songs, idx); openPlayer() } }
                     composable("albums") { AlbumGridScreen(songs, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") }) }
                     composable("artists") { ArtistListScreen(songs, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) }) }
                     composable("folders") {
@@ -338,7 +315,7 @@ private fun HomeContent(
                                 songs = songs,
                                 currentPath = "",
                                 onOpenFolder = { path -> if (path.isNotBlank()) nav.navigate("fbrowse/" + java.net.URLEncoder.encode(path, "UTF-8").replace("+", "%20")) },
-                                onPlay = { list, idx -> PlayerManager.playQueue(list, idx); showPlayerState.value = true }
+                                onPlay = { list, idx -> PlayerManager.playQueue(list, idx); openPlayer() }
                             )
                         } else {
                             FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
@@ -348,20 +325,20 @@ private fun HomeContent(
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
                     composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
-                    composable("stats") { StatsScreen(songs, onBack = { nav.popBackStack() }, onPlay = { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }) }
+                    composable("stats") { StatsScreen(songs, onBack = { nav.popBackStack() }, onPlay = { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }) }
                     composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }) }
                     composable("about") { AboutScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
-                        ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
+                        ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
                     }
                     composable("album/{albumId}") { backStackEntry ->
                         val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
-                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
+                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
                     }
                     composable("folder/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
-                        FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx); showPlayerState.value = true }
+                        FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }
                     }
                     composable("fbrowse/{path}") { backStackEntry ->
                         val path = backStackEntry.arguments?.getString("path") ?: ""
@@ -369,7 +346,7 @@ private fun HomeContent(
                             songs = songs,
                             currentPath = path,
                             onOpenFolder = { p -> if (p.isNotBlank()) nav.navigate("fbrowse/" + java.net.URLEncoder.encode(p, "UTF-8").replace("+", "%20")) },
-                            onPlay = { list, idx -> PlayerManager.playQueue(list, idx); showPlayerState.value = true }
+                            onPlay = { list, idx -> PlayerManager.playQueue(list, idx); openPlayer() }
                         )
                     }
                     composable("playlist/{guid}") { backStackEntry ->
@@ -383,91 +360,11 @@ private fun HomeContent(
                             }
                         }
                         val plName = playlists.find { it.guid == guid }?.name ?: stringResource(R.string.default_playlist)
-                        PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx); showPlayerState.value = true }
+                        PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx); openPlayer() }
                     }
                 }
             }
         }
-    }
-
-    // 播放页全屏浮层：常驻组合（预热）——首次进入无组合开销，动画只改 graphicsLayer
-    // 矩阵（GPU 合成、内容零重绘、零重组合 → 不掉帧）。隐藏时（slide=1）条件关闭
-    // 拦截，不挡下层触摸；动画期间/显示时拦截点击穿透。
-    val playerSlide = remember { Animatable(1f) }
-    val overlayCtx = LocalContext.current
-    // 关键优化：拦截开关/烟雾开关必须是"布尔结果"的 derivedStateOf —— 动画期间 Animatable.value
-    // 每帧变化，若在组合阶段直接读 value 做条件判断，HomeRoot 会整棵子树每帧重组（这才是掉帧元凶）。
-    // derivedStateOf 只在该布尔翻转时通知组合，动画全程（值单调趋近目标、布尔不变）组合零重组；
-    // graphicsLayer 块内的 value 读取是绘制阶段快照读，只重绘不重组，天然无此问题。
-    val playerIntercept = remember { derivedStateOf { playerSlide.value < 0.98f } }
-    val playerBgRunning = remember { derivedStateOf { playerSlide.value < 0.05f } }
-    LaunchedEffect(showPlayer) {
-        if (showPlayer) {
-            // 预热封面：请求必须与 PlayerScreen 封面 AsyncImage 完全同 key（同 model、不指定
-            // size/transformations）→ 命中同一 Coil 内存缓存，动画期间 AsyncImage 零解码、零下载。
-            // 之前的 720px+blur 版本没有任何 UI 使用，是无效预热（key 不同，缓存白占）。
-            // 最多等 300ms 就绪（内网封面秒回 → 立即滑入）；超时则直接滑，封面稍后显示。
-            val song = PlayerManager.queue.value.getOrNull(PlayerManager.currentIndex.value)
-            val model = song?.let {
-                if (it.coverId.isNotEmpty()) FnApi.coverUrl(it.coverId)
-                else "content://media/external/audio/albumart/${it.albumId}"
-            }
-            if (model != null) {
-                withTimeoutOrNull(300) {
-                    withContext(Dispatchers.IO) {
-                        overlayCtx.imageLoader.execute(
-                            ImageRequest.Builder(overlayCtx).data(model).build()
-                        )
-                    }
-                }
-            }
-            delay(50)  // 首绘稳定后再滑
-            playerSlide.animateTo(0f, tween(320))
-        } else {
-            playerSlide.animateTo(1f, tween(320))
-        }
-    }
-    Box(
-        Modifier.fillMaxSize().graphicsLayer {
-            // 只做平移合成：删掉全屏 alpha 逐帧混合（TV 盒子 Mali GPU 上 alpha 合成代价 ~5-10 倍，
-            // 是滑入不丝滑的主因之一）；纯 translationY 图层移动最省
-            translationY = playerSlide.value * size.height
-        }.then(
-            if (playerIntercept.value)
-                Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { }
-            else Modifier
-        )
-    ) {
-        PlayerScreen(
-            onOpenQueue = { showQueueState.value = true },
-            // 滑入/滑出动画期间暂停烟雾帧循环 → 动画纯 graphicsLayer 平移、零竞争；
-            // 到位后（<0.05）烟雾恢复流动。derivedStateOf 包装，动画期间不触发重组
-            backgroundRunning = playerBgRunning.value
-        )
-    }
-    // 队列页全屏浮层：同上（常驻组合预热 + 条件拦截）
-    val queueSlide = remember { Animatable(1f) }
-    val queueIntercept = remember { derivedStateOf { queueSlide.value < 0.98f } }
-    LaunchedEffect(showQueue) {
-        if (showQueue) queueSlide.animateTo(0f, tween(280))
-        else queueSlide.animateTo(1f, tween(280))
-    }
-    Box(
-        Modifier.fillMaxSize().graphicsLayer {
-            translationY = queueSlide.value * size.height
-        }.then(
-            if (queueIntercept.value)
-                Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { }
-            else Modifier
-        )
-    ) {
-        QueueScreen(onClose = { showQueueState.value = false })
     }
 
     // NAS 断线自动重连耗尽后的询问弹窗（v1.4.58）：

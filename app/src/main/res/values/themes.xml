@@ -3,4 +3,11 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!-- 播放页独立 Activity 主题（v1.4.81）：深色窗口背景，系统窗口动画期间不闪白 -->
+    <style name="Theme.NasMusic.Player" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">#FF14151A</item>
+    </style>
 </resources>

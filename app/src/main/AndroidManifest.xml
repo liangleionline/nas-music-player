@@ -31,6 +31,13 @@
             </intent-filter>
         </activity>
 
+        <!-- 播放页独立 Activity（v1.4.81）：系统窗口动画弹出/收起，规避 Compose 浮层动画卡顿 -->
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.NasMusic.Player" />
+
         <service
             android:name=".player.PlayerService"
             android:exported="true"

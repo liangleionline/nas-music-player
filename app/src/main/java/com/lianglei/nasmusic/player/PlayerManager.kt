@@ -51,6 +51,8 @@ object PlayerManager {
     // ── 播放计数（统计页数据源）：同一首歌累计播放满 15 秒计一次 ──
     private var playedMsInTrack = 0L
     private var countedTrackId = -1L
+    // tick 节流计数：每 60 次（约 30s）持久化一次播放位置
+    private var tickCount = 0
 
     // ── NAS 断线自动重连 + 失败重试：最多自动重试 5 次，仍失败弹出询问 ──
     private const val MAX_RETRIES = 5
@@ -77,6 +79,8 @@ object PlayerManager {
             }
             // 切歌后重新累计播放时长（同曲循环不触发 transition，靠 countedTrackId 防重复计数）
             playedMsInTrack = 0L
+            // 换歌即保存播放进度（v1.4.82）：下次启动从这里继续播放列表
+            saveState()
         }
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
@@ -154,6 +158,8 @@ object PlayerManager {
         c.prepare()
         applyModeToController()
         c.play()
+        // 点歌即保存（v1.4.82）：下次启动从这首歌继续
+        saveState()
     }
 
     private fun mediaItemOf(s: Song): MediaItem = MediaItem.Builder()
@@ -272,7 +278,10 @@ object PlayerManager {
     fun saveState() {
         val p = prefs ?: return
         val c = controller ?: return
+        // 保存完整队列（songId 列表）：下次启动按 id 重建队列，精确恢复到当时正在播的列表
+        val ids = org.json.JSONArray(_queue.value.map { it.id.toString() }).toString()
         p.edit()
+            .putString("queueIds", ids)
             .putInt("index", c.currentMediaItemIndex)
             .putLong("position", c.currentPosition)
             .putString("source", com.lianglei.nasmusic.data.SourceManager.current.value.name)
@@ -281,13 +290,33 @@ object PlayerManager {
 
     fun restoreState(songs: List<Song>) {
         val p = prefs ?: return
-        val idx = p.getInt("index", -1)
-        val pos = p.getLong("position", 0L)
         val src = p.getString("source", "")
-        if (idx >= 0 && idx < songs.size && src == com.lianglei.nasmusic.data.SourceManager.current.value.name) {
-            com.lianglei.nasmusic.util.CrashLogger.log("Restoring playback: idx=$idx, pos=$pos")
-            playQueueSilent(songs, idx, pos)
+        if (src != com.lianglei.nasmusic.data.SourceManager.current.value.name) return
+        var idx = p.getInt("index", -1)
+        val pos = p.getLong("position", 0L)
+        val savedIds = p.getString("queueIds", "")?.takeIf { it.isNotBlank() }
+        val restored: List<Song> = if (savedIds != null) {
+            val ids = mutableListOf<String>()
+            try {
+                val arr = org.json.JSONArray(savedIds)
+                for (i in 0 until arr.length()) ids.add(arr.getString(i))
+            } catch (t: Throwable) {
+                com.lianglei.nasmusic.util.CrashLogger.e("restore queueIds parse failed", t)
+            }
+            if (ids.isEmpty()) emptyList()
+            else {
+                // 按 songId 从当前曲库重建队列：仍在库里的保留，已删除的歌自动跳过
+                val byId = songs.associateBy { it.id.toString() }
+                ids.mapNotNull { byId[it] }
+            }
+        } else {
+            // 旧版本格式（无 queueIds）：退回"全曲库 + index"
+            songs
         }
+        if (restored.isEmpty()) return
+        idx = if (idx in restored.indices) idx else 0
+        com.lianglei.nasmusic.util.CrashLogger.log("Restoring playback: queue=${restored.size}, idx=$idx, pos=$pos")
+        playQueueSilent(restored, idx, pos)
     }
 
     private fun playQueueSilent(songs: List<Song>, startIndex: Int, position: Long) {
@@ -311,6 +340,9 @@ object PlayerManager {
             CrashLogger.log("tick: index sync ${_currentIndex.value} -> ${c.currentMediaItemIndex}")
             _currentIndex.value = c.currentMediaItemIndex
         }
+        // 每 ~30s 持久化一次当前播放位置（进程被杀时最多丢失 30s 进度）
+        tickCount++
+        if (tickCount % 60 == 0) saveState()
         // 播放计数：同一首歌累计播放满 15 秒计一次（统计页"按播放次数"数据源）
         if (c.isPlaying) {
             val idx = _currentIndex.value
