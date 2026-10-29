@@ -11,13 +11,16 @@ android {
         applicationId = "com.lianglei.nasmusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 162
-        versionName = "1.4.82"
+        versionCode = 164
+        versionName = "1.4.84"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // v1.4.84 瘦身：R8 混淆 + 资源压缩；用 debug 签名保证可直接安装（与既有发布体验一致）
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
