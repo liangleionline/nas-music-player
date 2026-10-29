@@ -9,6 +9,8 @@ import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.lianglei.nasmusic.MainActivity
@@ -37,6 +39,12 @@ class PlayerService : MediaSessionService() {
         )
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
             .setDataSourceFactory(dataSourceFactory)
+            // v1.4.86: NAS 慢盘场景下 Media3 默认指数退避（3s→9s→27s…）会让用户干等近 1 分钟。
+            // 改为固定 2s 快速重试 + 更多重试次数：首次中断/超时后能尽快续上，而不是越等越久。
+            .setLoadErrorHandlingPolicy(object : DefaultLoadErrorHandlingPolicy() {
+                override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorInfo): Long = 2_000L
+                override fun getMinimumLoadableRetryCount(dataType: Int): Int = 10
+            })
 
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
