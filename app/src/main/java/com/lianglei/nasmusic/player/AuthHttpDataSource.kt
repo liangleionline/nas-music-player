@@ -15,9 +15,10 @@ import com.lianglei.nasmusic.util.CrashLogger
 @UnstableApi
 class AuthHttpDataSourceFactory : DataSource.Factory {
     private val delegate = DefaultHttpDataSource.Factory()
-        // v1.4.86: NAS 慢盘首次读流可能超过 15s，超时放宽避免频繁中断重试
-        .setConnectTimeoutMs(30_000)
-        .setReadTimeoutMs(30_000)
+        // v1.4.87: NAS 首次响应慢时 30s 会让播放页长时间停在"等待"，期间进程被系统回收（ANR/回收）。
+        // 缩短为 connect 10s / read 20s：更快失败 → 配合固定 2s 重试策略尽快续上，而非干等。
+        .setConnectTimeoutMs(10_000)
+        .setReadTimeoutMs(20_000)
         .setAllowCrossProtocolRedirects(true)
         .setUserAgent("NasMusic/0.5")
 
