@@ -151,6 +151,13 @@ object PlayerManager {
             com.lianglei.nasmusic.util.CrashLogger.e("playQueue called but controller is null")
             return
         }
+        // v1.4.86 幂等：同一首歌再次点击时不重建队列。
+        // 重建 setMediaItems 会中断正在进行的流加载 → Media3 进入退避重试 → 表现为"半天拉不到流"。
+        if (_queue.value == songs && _currentIndex.value == startIndex) {
+            com.lianglei.nasmusic.util.CrashLogger.log("playQueue: same queue+index, skip rebuild")
+            if (c.playbackState != Player.STATE_READY) { c.prepare(); c.play() } else if (!c.isPlaying) { c.play() }
+            return
+        }
         _queue.value = songs
         com.lianglei.nasmusic.util.CrashLogger.log("playQueue: ${songs.size} songs, start=$startIndex, title=${songs.getOrNull(startIndex)?.title}, uri=${songs.getOrNull(startIndex)?.mediaUri}")
         val items = songs.map { mediaItemOf(it) }
