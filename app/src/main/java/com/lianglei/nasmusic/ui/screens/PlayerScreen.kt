@@ -179,10 +179,10 @@ fun splitLrcLine(text: String): Pair<String, String?> {
 fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true) {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val idx by PlayerManager.currentIndex.collectAsStateWithLifecycle()
-    val playing by PlayerManager.isPlaying.collectAsStateWithLifecycle()
-    // 注意：pos/dur 不在顶层收集！播放进度每 500ms 更新一次，顶层 collect 会导致整屏重组
-    // （弱设备上滑入/运行都会掉帧）。pos/dur 下沉到 PlayerProgressRow（进度条）与
-    // LyricPanelContent（歌词面板）两个局部组件内部收集 → 每次 tick 只重组这两个小组件。
+    // 注意：pos/dur/playing 不在顶层收集！pos/dur 每 500ms 更新、playing 在播放开始瞬间变化，
+    // 顶层 collect 会导致整屏重组（弱设备上滑入/运行都会掉帧）。
+    // pos/dur 下沉到 PlayerProgressRow（进度条）与 LyricPanelContent（歌词面板），
+    // playing 下沉到 PlayerControlsRow（播放三键）→ 每次变化只重组对应小组件。
     val song = queue.getOrNull(idx)
 
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -454,18 +454,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
             Spacer(Modifier.height(8.dp))
 
             // Play controls（对齐 Salt：上一曲/下一曲 48dp，播放 72dp）
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { PlayerManager.prev() }) {
-                    Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
-                }
-                IconButton(onClick = { PlayerManager.togglePlayPause() }) {
-                    Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
-                        tint = Color.White, modifier = Modifier.size(72.dp))
-                }
-                IconButton(onClick = { PlayerManager.next() }) {
-                    Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp))
-                }
-            }
+            // 独立组件内部 collect playing：播放开始/暂停瞬间只重组本行，不整屏重组
+            PlayerControlsRow()
             Spacer(Modifier.height(12.dp))
 
             // Bottom action row - 5 items evenly weighted so center aligns with play button（对齐 Salt：图标 32dp，细线 Outlined 风格）
@@ -594,7 +584,7 @@ private fun android.content.Context.findActivity(): android.app.Activity? {
  * 支持：MP3(ID3v2.2/2.3/2.4 USLT/ULT+SYLT/SLT)、FLAC(Vorbis Comment LYRICS)、M4A(iTunes ©lyr)。
  * 纯文本（无时间戳）歌词按行生成 4 秒间隔时间戳。
  */
-private suspend fun readEmbeddedLyricsCached(song: Song, ctx: android.content.Context): String {
+internal suspend fun readEmbeddedLyricsCached(song: Song, ctx: android.content.Context): String {
     // 磁盘缓存：同一首歌不重复请求
     val cacheKey = (song.id.toString() + "_" + song.data).hashCode().toLong().let { java.lang.Long.toHexString(it) }
     val cacheDir = File(ctx.cacheDir, "lyrics")
@@ -1016,6 +1006,9 @@ fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
 fun SmokeBackdrop(palette: List<Color>, running: Boolean, centerFill: Color = Color(0xFF2A2A2E)) {
     val phase = remember { Animatable(0f) }
     LaunchedEffect(running) {
+        // 正式版（v1.4.82 恢复）：30fps 帧循环。诊断结论（v1.4.79）：卡顿与动画无关，
+        // 根因是 Compose 浮层每帧重合成 → 已改用独立 Activity 系统窗口动画。
+        // 帧循环只驱动 graphicsLayer 合成变换（rotationZ/scale），Canvas 内容不重绘。
         if (!running) return@LaunchedEffect
         var last = withFrameNanos { it }
         var frame = 0
@@ -1394,6 +1387,27 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
                 fontSize = 12.sp,
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 6.dp)
             )
+        }
+    }
+}
+
+/**
+ * 播放控制三键（上一曲/播放暂停/下一曲）：内部 collect isPlaying。
+ * 播放开始/暂停瞬间 isPlaying 变化只触发本行重组，不整屏重组（滑入动画期间播放启动也不卡）。
+ */
+@Composable
+private fun PlayerControlsRow() {
+    val playing by PlayerManager.isPlaying.collectAsStateWithLifecycle()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { PlayerManager.prev() }) {
+            Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
+        }
+        IconButton(onClick = { PlayerManager.togglePlayPause() }) {
+            Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
+                tint = Color.White, modifier = Modifier.size(72.dp))
+        }
+        IconButton(onClick = { PlayerManager.next() }) {
+            Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp))
         }
     }
 }
