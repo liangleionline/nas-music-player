@@ -31,6 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import com.lianglei.nasmusic.BuildConfig
 import com.lianglei.nasmusic.data.MusicRepository
 import com.lianglei.nasmusic.data.Song
@@ -688,6 +692,42 @@ fun SettingsScreen(onBack: () -> Unit) {
             ) {
                 Text(if (clearing) stringResource(R.string.clearing) else stringResource(R.string.clear_cache), fontSize = 13.sp)
             }
+        }
+
+        // 后台播放保护：跳转系统电池/后台限制设置（v1.4.88，三星等系统会冻结后台进程导致播放被退出）
+        Row(
+            Modifier.fillMaxWidth().clickable { openBatterySettings(context) }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.BatteryFull, null, tint = Color(0xFF1F6FEB), modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.bg_protect_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(stringResource(R.string.bg_protect_desc), color = Color.Gray, fontSize = 12.sp)
+            }
+            Icon(Icons.Filled.KeyboardArrowRight, null, tint = Color.Gray)
+        }
+    }
+}
+
+/** 打开系统「电池 / 后台限制」设置页：优先直达本应用电池设置，失败降级到应用详情页 */
+private fun openBatterySettings(context: Context) {
+    val pkg = context.packageName
+    try {
+        // 带包名参数的电池优化页（AOSP Settings$AppBatteryUsageActivity，One UI 显示单应用电池设置，含「不受限制/优化/限制」）
+        context.startActivity(
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                .putExtra("android.intent.extra.PACKAGE_NAME", pkg)
+        )
+    } catch (e: Exception) {
+        try {
+            // 兜底：应用详情页（内含「电池」入口）
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
+            )
+        } catch (ignored: Exception) {
         }
     }
 }
