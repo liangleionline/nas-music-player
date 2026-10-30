@@ -147,6 +147,8 @@
     <string name="cache_usage">当前已使用 %1$s（上限约 200MB，自动缓存最近听过的歌，二次播放秒开）</string>
     <string name="clearing">清理中…</string>
     <string name="clear_cache">清空缓存</string>
+    <string name="bg_protect_title">后台播放保护</string>
+    <string name="bg_protect_desc">若后台播放被系统退出，点击前往电池设置开启「不受限制」</string>
 
     <!-- 统计页 -->
     <string name="stats_no_record">还没有播放记录，去听首歌吧</string>
