@@ -2,7 +2,6 @@ package com.lianglei.nasmusic.data
 
 import android.content.Context
 import android.provider.MediaStore
-import com.lianglei.nasmusic.util.CrashLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -12,7 +11,6 @@ class MusicRepository(private val ctx: Context) {
     suspend fun loadSongs(allowedFolders: Set<String> = emptySet(), blockedFolders: Set<String> = emptySet()): List<Song> = withContext(Dispatchers.IO) {
         // If no custom folders configured, show empty list
         if (allowedFolders.isEmpty()) {
-            CrashLogger.log("No custom folders configured, returning empty list")
             return@withContext emptyList()
         }
         val list = mutableListOf<Song>()
@@ -84,9 +82,7 @@ class MusicRepository(private val ctx: Context) {
                     )
                 }
             }
-            CrashLogger.log("MediaStore scan returned ${list.size} songs (allowed=$allowedFolders)")
         } catch (t: Throwable) {
-            CrashLogger.e("MediaStore scan failed", t)
         }
         list
     }

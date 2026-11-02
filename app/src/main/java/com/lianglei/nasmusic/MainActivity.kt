@@ -17,7 +17,6 @@ import com.lianglei.nasmusic.player.PlayerManager
 import com.lianglei.nasmusic.player.PlayerService
 import com.lianglei.nasmusic.ui.HomeRoot
 import com.lianglei.nasmusic.ui.theme.NasMusicTheme
-import com.lianglei.nasmusic.util.CrashLogger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,11 +28,10 @@ class MainActivity : ComponentActivity() {
 
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { CrashLogger.log("permission result: $it") }
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        CrashLogger.log("MainActivity onCreate")
         // True edge-to-edge
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
@@ -49,7 +47,7 @@ class MainActivity : ComponentActivity() {
                     window.decorView.setSystemGestureExclusionRects(
                         listOf(android.graphics.Rect(0, 0, edge, window.decorView.height))
                     )
-                } catch (t: Throwable) { CrashLogger.e("gesture exclusion failed", t) }
+                } catch (t: Throwable) { }
             }
         }
         requestPermissionsIfNeeded()
@@ -63,11 +61,11 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) perms.add(android.Manifest.permission.POST_NOTIFICATIONS)
         permLauncher.launch(perms.toTypedArray())
 
-        // All-files access (for folder scanning + Download log writes)
+        // All-files access (for folder scanning)
         if (Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
             try {
                 startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-            } catch (t: Throwable) { CrashLogger.e("all-files intent failed", t) }
+            } catch (t: Throwable) { }
         }
     }
 
@@ -86,7 +84,6 @@ class MainActivity : ComponentActivity() {
                     PlayerManager.bind(controllerFuture.get())
                     bound = true
                 } catch (t: Throwable) {
-                    CrashLogger.e("media controller bind failed", t)
                 }
             }, mainExecutor)
         }

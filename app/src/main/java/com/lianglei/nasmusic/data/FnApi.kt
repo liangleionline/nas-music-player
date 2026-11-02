@@ -1,6 +1,5 @@
 package com.lianglei.nasmusic.data
 
-import com.lianglei.nasmusic.util.FnLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -55,17 +54,13 @@ object FnApi {
             val uri = URI(withScheme)
             Triple(uri.scheme ?: "http", uri.host ?: trimmed, if (uri.port > 0) uri.port else DEFAULT_PORT)
         } catch (e: Exception) {
-            FnLogger.error("Failed to parse host: $input", e)
             Triple("http", trimmed, DEFAULT_PORT)
         }
         baseUrl = "$scheme://$parsedHost:$port$API_PATH"
-        FnLogger.log("Configured baseUrl=$baseUrl (input=$input)")
     }
 
     suspend fun login(hostInput: String, username: String, password: String): Result<String> = withContext(Dispatchers.IO) {
         configure(hostInput)
-        FnLogger.log("=== login attempt ===")
-        FnLogger.log("hostInput=$hostInput, username=$username, baseUrl=$baseUrl")
         try {
             val deviceId = UUID.randomUUID().toString()
             val bodyObj = JSONObject().apply {
@@ -75,7 +70,6 @@ object FnApi {
             }
             val bodyStr = bodyObj.toString()
             val url = "$baseUrl/user/password-login"
-            FnLogger.request("POST", url, bodyStr, null)
 
             val mediaType = "application/json".toMediaType()
             val req = Request.Builder()
@@ -84,43 +78,35 @@ object FnApi {
                 .build()
             client.newCall(req).execute().use { resp ->
                 val text = resp.body?.string() ?: ""
-                FnLogger.response(resp.code, text)
                 val json = JSONObject(text)
                 if (json.optInt("code", -1) == 0) {
                     val data = json.getJSONObject("data")
                     token = data.getString("userToken")
-                    FnLogger.log("Login OK, token=${token.take(12)}...")
                     Result.success(token)
                 } else {
                     val msg = json.optString("msg", "unknown error")
-                    FnLogger.error("Login failed: code=${json.optInt("code")} msg=$msg")
                     Result.failure(Exception("登录失败: $msg"))
                 }
             }
         } catch (e: Exception) {
-            FnLogger.error("Login exception", e)
             Result.failure(e)
         }
     }
 
     suspend fun fetchAllTracks(onProgress: (String) -> Unit = {}): List<Song> = withContext(Dispatchers.IO) {
-        FnLogger.log("=== fetchAllTracks (app 1.4.50 build 131) ===")
         onProgress("开始连接飞牛音乐服务器...")
         val list = mutableListOf<Song>()
         var page = 1
         while (true) {
             val url = "$baseUrl/track/list?page=$page&size=100&sort=createdAt,desc"
             onProgress("正在获取第 $page 页歌曲列表...")
-            FnLogger.request("GET", url, null, token)
             val resp = httpGet(url)
-            FnLogger.response(if (resp.isNotEmpty()) 200 else 0, resp)
             val json = JSONObject(resp)
             if (json.optInt("code", -1) != 0) break
             val data = json.optJSONObject("data") ?: break
             val arr = data.optJSONArray("list") ?: break
             for (i in 0 until arr.length()) {
                 val t = arr.getJSONObject(i)
-                if (i == 0) FnLogger.log("track path probe: path='${extractTrackPath(t)}' keys=${t.keys().asSequence().toList().joinToString(",")}")
                 val s = parseTrack(t)
                 list.add(s)
                 if (i % 20 == 0) onProgress("已加载 ${list.size} 首: ${s.title} - ${s.artist}")
@@ -131,7 +117,6 @@ object FnApi {
             page++
         }
         onProgress("歌曲加载完成，共 ${list.size} 首")
-        FnLogger.log("Fetched ${list.size} tracks total")
         list
     }
 
@@ -189,7 +174,6 @@ object FnApi {
             if (v is String) {
                 val s = v.trim()
                 if (s.contains("/") && !s.startsWith("http") && !s.startsWith("ftp") && s.length in 5..500) {
-                    FnLogger.log("track path probe: matched key='$k' value='$s'")
                     return relPathOf(s)
                 }
             }
@@ -202,7 +186,6 @@ object FnApi {
             if (hostless.isNotEmpty()) {
                 val pathPart = hostless.substringAfter("/", "")
                 if (pathPart.isNotEmpty()) {
-                    FnLogger.log("track path probe: derived from url '$url' -> '/$pathPart'")
                     return "/$pathPart"
                 }
             }
@@ -220,11 +203,8 @@ object FnApi {
     data class FnPlaylist(val guid: String, val name: String, val coverId: String, val trackCount: Int)
 
     suspend fun fetchPlaylists(): List<FnPlaylist> = withContext(Dispatchers.IO) {
-        FnLogger.log("=== fetchPlaylists ===")
         val url = "$baseUrl/playlist/list?page=1&size=100"
-        FnLogger.request("GET", url, null, token)
         val resp = httpGet(url)
-        FnLogger.response(if (resp.isNotEmpty()) 200 else 0, resp)
         val json = JSONObject(resp)
         if (json.optInt("code", -1) != 0) return@withContext emptyList()
         val arr = json.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
@@ -238,21 +218,17 @@ object FnApi {
                 trackCount = p.optInt("trackCount", 0)
             ))
         }
-        FnLogger.log("Fetched ${result.size} playlists")
         result
     }
 
     fun coverUrl(coverId: String): String = "$baseUrl/static/cover?coverId=$coverId"
 
     suspend fun fetchPlaylistTracks(playlistGuid: String): List<Song> = withContext(Dispatchers.IO) {
-        FnLogger.log("=== fetchPlaylistTracks: $playlistGuid ===")
         val list = mutableListOf<Song>()
         var page = 1
         while (true) {
             val url = "$baseUrl/track/playlist-detail/list?playlistGUID=$playlistGuid&page=$page&size=100&sort=trackAddedAt,desc"
-            FnLogger.request("GET", url, null, token)
             val resp = httpGet(url)
-            FnLogger.response(if (resp.isNotEmpty()) 200 else 0, resp)
             val json = JSONObject(resp)
             if (json.optInt("code", -1) != 0) break
             val data = json.optJSONObject("data") ?: break
@@ -264,7 +240,6 @@ object FnApi {
             if (list.size >= total || arr.length() == 0) break
             page++
         }
-        FnLogger.log("Playlist tracks fetched: ${list.size}")
         list
     }
 
@@ -304,14 +279,12 @@ object FnApi {
                     client.newCall(req).execute().use { resp ->
                         val code = resp.code
                         val body = if (resp.isSuccessful && resp.body != null) readLimited(resp.body!!, 4L * 1024 * 1024) else null
-                        FnLogger.log("fetchRange attempt=${attempt + 1} code=$code req='$range' bytes=${body?.size ?: 0}")
                         body
                     }
                 }
                 if (bytes != null) return bytes
             } catch (e: Exception) {
                 last = e
-                FnLogger.error("fetchRange attempt=${attempt + 1} failed", e)
             }
         }
         // 兜底：Range 不被支持（如 416）时退化为普通 GET，同样限读前 4MB（ID3/FLAC 标签区在头部）
@@ -323,15 +296,12 @@ object FnApi {
                 client.newCall(req).execute().use { resp ->
                     val code = resp.code
                     val b = if (resp.isSuccessful && resp.body != null) readLimited(resp.body!!, 4L * 1024 * 1024) else null
-                    FnLogger.log("fetchRange fallback GET code=$code bytes=${b?.size ?: 0}")
                     b
                 }
             }
             if (bytes != null) return bytes
         } catch (e: Exception) {
-            FnLogger.error("fetchRange fallback GET failed", e)
         }
-        FnLogger.error("fetchRange giving up ($start-$end)", last ?: Exception("no body"))
         return null
     }
 }
@@ -348,6 +318,5 @@ private fun readLimited(body: okhttp3.ResponseBody, max: Long): ByteArray? = try
     }
     buf.readByteArray()
 } catch (e: Exception) {
-    FnLogger.error("readLimited failed (max=$max)", e)
     null
 }

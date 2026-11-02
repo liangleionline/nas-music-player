@@ -603,7 +603,6 @@ internal suspend fun readEmbeddedLyricsCached(song: Song, ctx: android.content.C
             if (!cacheDir.exists()) cacheDir.mkdirs()
             cacheFile.writeText(lyrics)
         } catch (e: Exception) {
-            com.lianglei.nasmusic.util.CrashLogger.e("lyrics cache write failed", e)
         }
     }
     return lyrics
@@ -621,23 +620,18 @@ private suspend fun readEmbeddedLyrics(song: Song): String {
         } else {
             data.substringAfterLast('.', "").lowercase()
         }
-        com.lianglei.nasmusic.util.CrashLogger.log("lyrics: ext='$ext' data=${if (data.startsWith("http")) "url" else "file"}")
         if (data.startsWith("http")) {
             // 飞牛：Range 读头部 1MB（MP3/FLAC 标签区在头部；M4A moov 若不在头部再试尾部 1MB）
             val head = com.lianglei.nasmusic.data.FnApi.fetchRange(data, 0L, 1024L * 1024 - 1) ?: run {
-                com.lianglei.nasmusic.util.CrashLogger.log("lyrics: head fetch failed")
                 return ""
             }
             val fromHead = readEmbeddedLyricsBytes(head, ext)
-            com.lianglei.nasmusic.util.CrashLogger.log("lyrics: head bytes=${head.size} parsed=${fromHead.length}")
             if (fromHead.isNotEmpty()) fromHead
             else {
                 val tail = com.lianglei.nasmusic.data.FnApi.fetchRange(data, -1024L * 1024, -1) ?: run {
-                    com.lianglei.nasmusic.util.CrashLogger.log("lyrics: tail fetch failed")
                     return ""
                 }
                 val fromTail = readEmbeddedLyricsBytes(tail, ext)
-                com.lianglei.nasmusic.util.CrashLogger.log("lyrics: tail bytes=${tail.size} parsed=${fromTail.length}")
                 fromTail
             }
         } else {
@@ -645,7 +639,6 @@ private suspend fun readEmbeddedLyrics(song: Song): String {
             if (file.exists()) readEmbeddedLyricsFile(file, ext) else ""
         }
     } catch (e: Exception) {
-        com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyrics failed", e)
         ""
     }
 }
@@ -663,7 +656,6 @@ private fun readEmbeddedLyricsBytes(bytes: ByteArray, ext: String): String = try
         else -> ""
     }
 } catch (e: Exception) {
-    com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyricsBytes failed", e)
     ""
 }
 
@@ -688,7 +680,6 @@ private fun readEmbeddedLyricsFile(file: File, ext: String): String = try {
         }
     }
 } catch (e: Exception) {
-    com.lianglei.nasmusic.util.CrashLogger.e("readEmbeddedLyricsFile failed", e)
     ""
 }
 

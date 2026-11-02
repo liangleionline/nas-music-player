@@ -14,7 +14,6 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.lianglei.nasmusic.MainActivity
-import com.lianglei.nasmusic.util.CrashLogger
 
 class PlayerService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
@@ -22,7 +21,6 @@ class PlayerService : MediaSessionService() {
     @UnstableApi
     override fun onCreate() {
         super.onCreate()
-        CrashLogger.log("PlayerService onCreate")
 
         // content:// for local MediaStore, http(s) for Feiniu stream (auth injected per-request).
         // 外包一层 Media3 CacheDataSource（SimpleCache LRU，上限约 20 首）：
@@ -60,7 +58,6 @@ class PlayerService : MediaSessionService() {
 
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                CrashLogger.e("Player error: ${error.errorCodeName}", error)
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 val stateName = when (playbackState) {
@@ -70,7 +67,6 @@ class PlayerService : MediaSessionService() {
                     androidx.media3.common.Player.STATE_ENDED -> "ENDED"
                     else -> "UNKNOWN($playbackState)"
                 }
-                CrashLogger.log("Playback state: $stateName")
             }
         })
 

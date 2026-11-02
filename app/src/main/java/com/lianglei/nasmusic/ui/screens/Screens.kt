@@ -270,7 +270,6 @@ fun FolderBrowserScreen(
             && com.lianglei.nasmusic.data.SourceManager.fnConnected.value
             && !com.lianglei.nasmusic.data.SourceManager.loading.value) {
             autoRefreshed = true
-            com.lianglei.nasmusic.util.CrashLogger.log("FolderBrowser: no paths in cached songs, force refresh Feiniu")
             com.lianglei.nasmusic.data.SourceManager.refreshFeiniuForce()
         }
     }
