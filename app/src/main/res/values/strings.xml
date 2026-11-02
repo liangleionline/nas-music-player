@@ -123,7 +123,7 @@
     <string name="sort_dur_long">时长（长→短）</string>
     <string name="internal_storage">内部存储</string>
     <string name="dir_count">%1$d 目录 · %2$d 首</string>
-    <string name="no_dir_structure">未检测到目录结构：服务器未返回歌曲路径，已按全部歌曲平铺显示。\n已尝试自动刷新数据；若刷新后仍如此，请将 /sdcard/Download/fn-nas.log 发回排查（含 track path probe 记录）。</string>
+    <string name="no_dir_structure">未检测到目录结构：服务器未返回歌曲路径，已按全部歌曲平铺显示。\n已尝试自动刷新数据；若刷新后仍如此，请检查 NAS 端媒体库配置。</string>
     <string name="no_playlists">暂无歌单</string>
     <string name="reload_from_server">从飞牛服务器重新加载</string>
 

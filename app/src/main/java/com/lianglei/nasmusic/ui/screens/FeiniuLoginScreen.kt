@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.sp
 import com.lianglei.nasmusic.data.FnApi
 import com.lianglei.nasmusic.data.MusicSource
 import com.lianglei.nasmusic.data.SourceManager
-import com.lianglei.nasmusic.util.CrashLogger
 import kotlinx.coroutines.launch
 
 @Composable
@@ -71,7 +70,6 @@ fun FeiniuLoginScreen(
                 prefs.edit().putStringSet("history", history.toSet()).apply()
 
                 logLines.add(context.getString(R.string.fn_success_fetching))
-                CrashLogger.log("Feiniu login UI success, fetching tracks...")
                 SourceManager.setFnConnected(host.trim(), username.trim())
                 SourceManager.switchTo(MusicSource.FEINIU)
                 SourceManager.refreshFeiniuForce { msg ->
@@ -86,7 +84,6 @@ fun FeiniuLoginScreen(
                 loading = false
                 val msg = result.exceptionOrNull()?.message ?: context.getString(R.string.fn_failed)
                 logLines.add(context.getString(R.string.fn_login_failed, msg))
-                CrashLogger.e("Feiniu login UI failed: $msg")
                 errorMsg = msg
             }
         }

@@ -1,7 +1,6 @@
 package com.lianglei.nasmusic.data
 
 import android.content.Context
-import com.lianglei.nasmusic.util.CrashLogger
 import org.json.JSONObject
 
 /**
@@ -29,7 +28,7 @@ object StatsStore {
                 val k = it.next()
                 counts[k.toLong()] = o.optInt(k, 0)
             }
-        } catch (t: Throwable) { CrashLogger.e("StatsStore.load failed", t) }
+        } catch (t: Throwable) { }
     }
 
     private fun save() {
@@ -37,7 +36,7 @@ object StatsStore {
             val o = JSONObject()
             counts.forEach { (k, v) -> o.put(k.toString(), v) }
             prefs?.edit()?.putString(KEY_COUNTS, o.toString())?.apply()
-        } catch (t: Throwable) { CrashLogger.e("StatsStore.save failed", t) }
+        } catch (t: Throwable) { }
     }
 
     fun recordPlay(songId: Long) {

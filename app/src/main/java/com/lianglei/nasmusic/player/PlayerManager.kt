@@ -7,7 +7,6 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.StatsStore
-import com.lianglei.nasmusic.util.CrashLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -72,7 +71,6 @@ object PlayerManager {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
             val idx = controller?.currentMediaItemIndex ?: return
-            CrashLogger.log("onMediaItemTransition: idx=$idx, reason=$reason, title=${_queue.value.getOrNull(idx)?.title}")
             if (controller?.mediaItemCount ?: 0 > 0) {
                 _currentIndex.value = idx
                 _durationMs.value = controller?.duration?.coerceAtLeast(0) ?: 0
@@ -96,7 +94,6 @@ object PlayerManager {
             _durationMs.value = c.duration.coerceAtLeast(0)
         }
         override fun onPlayerError(error: PlaybackException) {
-            CrashLogger.e("onPlayerError: code=${error.errorCodeName} msg=${error.message}", error)
             val c = controller ?: return
             val cur = _currentIndex.value
             val song = _queue.value.getOrNull(cur)
@@ -105,7 +102,6 @@ object PlayerManager {
             if (isNas && retryCount < MAX_RETRIES) {
                 retryCount++
                 val n = retryCount
-                CrashLogger.log("NAS playback failed, auto-retry $n/$MAX_RETRIES (title=${song?.title})")
                 scope.launch {
                     delay(1500)
                     if (c.playbackState == Player.STATE_IDLE) c.prepare()
@@ -115,7 +111,6 @@ object PlayerManager {
                 // 本地错误或 5 次自动重试已耗尽 → 弹窗询问用户
                 retryCount = 0
                 _retryPrompt.value = true
-                CrashLogger.log("Playback failed (${if (isNas) "retries exhausted" else "local source"}), prompting user")
             }
         }
     }
@@ -125,7 +120,6 @@ object PlayerManager {
         _retryPrompt.value = false
         retryCount = 0
         val c = controller ?: return
-        CrashLogger.log("User chose to retry")
         scope.launch {
             if (c.playbackState == Player.STATE_IDLE) c.prepare()
             c.play()
@@ -136,7 +130,6 @@ object PlayerManager {
     fun switchToLocalAfterFailure() {
         _retryPrompt.value = false
         retryCount = 0
-        CrashLogger.log("User chose to switch back to local source")
         com.lianglei.nasmusic.data.SourceManager.switchTo(com.lianglei.nasmusic.data.MusicSource.LOCAL)
     }
 
@@ -148,7 +141,6 @@ object PlayerManager {
 
     fun playQueue(songs: List<Song>, startIndex: Int) {
         val c = controller ?: run {
-            com.lianglei.nasmusic.util.CrashLogger.e("playQueue called but controller is null")
             return
         }
         // v1.4.87 幂等（轻量）：只按 size + 起始曲目 id 判断，避免 12309 首歌全列表 equals 比较。
@@ -156,12 +148,10 @@ object PlayerManager {
         val sameQueue = cur.size == songs.size &&
                 songs.isNotEmpty() && cur.firstOrNull()?.id == songs.first().id
         if (sameQueue && _currentIndex.value == startIndex) {
-            com.lianglei.nasmusic.util.CrashLogger.log("playQueue: same queue+index, skip rebuild")
             if (c.playbackState != Player.STATE_READY) { c.prepare(); c.play() } else if (!c.isPlaying) { c.play() }
             return
         }
         _queue.value = songs
-        com.lianglei.nasmusic.util.CrashLogger.log("playQueue: ${songs.size} songs, start=$startIndex, title=${songs.getOrNull(startIndex)?.title}, uri=${songs.getOrNull(startIndex)?.mediaUri}")
         val items = songs.map { mediaItemOf(it) }
         c.setMediaItems(items, startIndex, 0L)
         c.prepare()
@@ -310,7 +300,6 @@ object PlayerManager {
                 val arr = org.json.JSONArray(savedIds)
                 for (i in 0 until arr.length()) ids.add(arr.getString(i))
             } catch (t: Throwable) {
-                com.lianglei.nasmusic.util.CrashLogger.e("restore queueIds parse failed", t)
             }
             if (ids.isEmpty()) emptyList()
             else {
@@ -324,7 +313,6 @@ object PlayerManager {
         }
         if (restored.isEmpty()) return
         idx = if (idx in restored.indices) idx else 0
-        com.lianglei.nasmusic.util.CrashLogger.log("Restoring playback: queue=${restored.size}, idx=$idx, pos=$pos")
         playQueueSilent(restored, idx, pos)
     }
 
@@ -346,7 +334,6 @@ object PlayerManager {
         // Sync current index in case onMediaItemTransition was missed
         // Only sync if controller actually has items (avoids resetting to 0 on rebind when service was killed)
         if (c.mediaItemCount > 0 && c.currentMediaItemIndex != _currentIndex.value) {
-            CrashLogger.log("tick: index sync ${_currentIndex.value} -> ${c.currentMediaItemIndex}")
             _currentIndex.value = c.currentMediaItemIndex
         }
         // 每 ~30s 持久化一次当前播放位置（进程被杀时最多丢失 30s 进度）
@@ -361,7 +348,6 @@ object PlayerManager {
                 if (playedMsInTrack >= 15000L && countedTrackId != song.id) {
                     countedTrackId = song.id
                     StatsStore.recordPlay(song.id)
-                    CrashLogger.log("Play recorded: id=${song.id} title=${song.title} total=${StatsStore.playCount(song.id)}")
                 }
             }
         }
