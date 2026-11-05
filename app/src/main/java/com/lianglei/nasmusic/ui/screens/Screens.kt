@@ -59,6 +59,12 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
         if (!searchTrigger) searchQuery = ""
     }
 
+    // 搜索展开时按返回键先退出搜索框并清空关键字，而不是直接触发"再按一次退出"
+    androidx.activity.compose.BackHandler(enabled = searching) {
+        searching = false
+        searchQuery = ""
+    }
+
     val sorted = remember(songs, sortMode) {
         when (sortMode) {
             0 -> songs
