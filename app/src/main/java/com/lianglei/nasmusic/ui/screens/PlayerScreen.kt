@@ -1427,16 +1427,16 @@ private fun PlayerControlsRow() {
             Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
         }
         when {
-            buffering -> IconButton(onClick = { }) {
+            buffering -> IconButton(onClick = { }, modifier = Modifier.size(72.dp)) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(72.dp).padding(20.dp),
+                    modifier = Modifier.size(36.dp),
                     color = Color.White,
                     strokeWidth = 3.dp
                 )
             }
-            retryPrompt -> IconButton(onClick = { PlayerManager.retryNow() }) {
+            retryPrompt -> IconButton(onClick = { PlayerManager.retryNow() }, modifier = Modifier.size(72.dp)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White,
-                    modifier = Modifier.size(72.dp).padding(16.dp))
+                    modifier = Modifier.size(36.dp))
             }
             else -> IconButton(onClick = { PlayerManager.togglePlayPause() }) {
                 Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
