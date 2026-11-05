@@ -1413,19 +1413,35 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
 }
 
 /**
- * 播放控制三键（上一曲/播放暂停/下一曲）：内部 collect isPlaying。
- * 播放开始/暂停瞬间 isPlaying 变化只触发本行重组，不整屏重组（滑入动画期间播放启动也不卡）。
+ * 播放控制三键（上一曲/播放暂停/下一曲）：内部 collect isPlaying / buffering / retryPrompt。
+ * 中央按钮三态：缓冲中转圈动画 → 加载失败静止转圈图标（点击重试）→ 正常播放/暂停。
+ * 播放开始/暂停瞬间状态变化只触发本行重组，不整屏重组（滑入动画期间播放启动也不卡）。
  */
 @Composable
 private fun PlayerControlsRow() {
     val playing by PlayerManager.isPlaying.collectAsStateWithLifecycle()
+    val buffering by PlayerManager.buffering.collectAsStateWithLifecycle()
+    val retryPrompt by PlayerManager.retryPrompt.collectAsStateWithLifecycle()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { PlayerManager.prev() }) {
             Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
         }
-        IconButton(onClick = { PlayerManager.togglePlayPause() }) {
-            Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
-                tint = Color.White, modifier = Modifier.size(72.dp))
+        when {
+            buffering -> IconButton(onClick = { }) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(72.dp).padding(20.dp),
+                    color = Color.White,
+                    strokeWidth = 3.dp
+                )
+            }
+            retryPrompt -> IconButton(onClick = { PlayerManager.retryNow() }) {
+                Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White,
+                    modifier = Modifier.size(72.dp).padding(16.dp))
+            }
+            else -> IconButton(onClick = { PlayerManager.togglePlayPause() }) {
+                Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
+                    tint = Color.White, modifier = Modifier.size(72.dp))
+            }
         }
         IconButton(onClick = { PlayerManager.next() }) {
             Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp))
