@@ -46,7 +46,7 @@ private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$al
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean = false, onPlay: (Int) -> Unit) {
+fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean = false, onPlay: (List<Song>, Int) -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(0) }
@@ -107,7 +107,7 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
         LazyColumn(Modifier.fillMaxSize()) {
             items(filtered, key = { it.id }) { s ->
                 Row(
-                    Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(filtered.indexOf(s)) }
+                    Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(filtered, filtered.indexOf(s)) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
