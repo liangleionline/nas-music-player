@@ -47,9 +47,11 @@ object PlayerManager {
     private val _playMode = MutableStateFlow(PlayMode.REPEAT_ALL)
     val playMode: StateFlow<PlayMode> = _playMode.asStateFlow()
 
-    // ── 播放计数（统计页数据源）：同一首歌累计播放满 15 秒计一次 ──
+    // ── 播放计数（统计页数据源）：每"一轮"播放满 15 秒计一次 ──
+    // 一轮 = 从头开始播放这首歌直到它结束/重播；单曲循环每循环一圈就是新的一轮，
+    // 因此循环 3 圈各满 15 秒 = 计 3 次（旧实现用 countedTrackId 只允许同一首歌整场计一次，循环不多算）
     private var playedMsInTrack = 0L
-    private var countedTrackId = -1L
+    private var countedInThisPlay = false
     // tick 节流计数：每 60 次（约 30s）持久化一次播放位置
     private var tickCount = 0
 
@@ -75,8 +77,9 @@ object PlayerManager {
                 _currentIndex.value = idx
                 _durationMs.value = controller?.duration?.coerceAtLeast(0) ?: 0
             }
-            // 切歌后重新累计播放时长（同曲循环不触发 transition，靠 countedTrackId 防重复计数）
+            // 切歌后重新累计播放时长；计数器按"轮"归零，换歌即新一轮
             playedMsInTrack = 0L
+            countedInThisPlay = false
             // 换歌即保存播放进度（v1.4.82）：下次启动从这里继续播放列表
             saveState()
         }
@@ -92,6 +95,13 @@ object PlayerManager {
             val c = controller ?: return
             _positionMs.value = c.currentPosition
             _durationMs.value = c.duration.coerceAtLeast(0)
+            // 同一首歌播放位置大幅回退 = 这一轮播完了（单曲循环/列表循环重头播，或用户拖回开头），
+            // 视为新的一轮：清空累计时长与"本轮已计"标记，下一轮满 15 秒再计一次
+            if (oldPos.mediaItemIndex == newPos.mediaItemIndex &&
+                newPos.positionMs + 5000L < oldPos.positionMs) {
+                playedMsInTrack = 0L
+                countedInThisPlay = false
+            }
         }
         override fun onPlayerError(error: PlaybackException) {
             val c = controller ?: return
@@ -339,14 +349,14 @@ object PlayerManager {
         // 每 ~30s 持久化一次当前播放位置（进程被杀时最多丢失 30s 进度）
         tickCount++
         if (tickCount % 60 == 0) saveState()
-        // 播放计数：同一首歌累计播放满 15 秒计一次（统计页"按播放次数"数据源）
+        // 播放计数：本轮播放满 15 秒计一次（统计页"按播放次数"数据源）；单曲循环每圈各计一次
         if (c.isPlaying) {
             val idx = _currentIndex.value
             val song = _queue.value.getOrNull(idx)
             if (song != null) {
                 playedMsInTrack += 500
-                if (playedMsInTrack >= 15000L && countedTrackId != song.id) {
-                    countedTrackId = song.id
+                if (playedMsInTrack >= 15000L && !countedInThisPlay) {
+                    countedInThisPlay = true
                     StatsStore.recordPlay(song.id)
                 }
             }
