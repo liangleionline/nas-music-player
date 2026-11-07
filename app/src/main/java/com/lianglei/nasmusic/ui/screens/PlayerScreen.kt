@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -1358,13 +1359,14 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
     // 当前组的高亮行：优先含假名的日文行；纯中文/纯英文歌词组取第一行
     val activeJp = activeGroup.firstOrNull { l -> l.text.any { c -> isKana(c) } } ?: activeGroup.firstOrNull()
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    // clipToBounds：歌词自动换行后内容可能高于面板，超出部分裁掉，避免压到下方进度条/控制键
+    Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
         if (lrcLines.isEmpty()) {
             Text(stringResource(R.string.no_lyrics), color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
         } else {
             Column(
-                Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.Center
             ) {
                 val from = (activeGroupIdx - 3).coerceAtLeast(0)
@@ -1376,22 +1378,22 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
                         val isJp = line.text.any { c -> isKana(c) }
                         val isLastInGroup = li == g.lastIndex
                         if (gi == activeGroupIdx && line === activeJp) {
-                            // 当前句：整行亮起（白色加粗）
+                            // 当前句：整行亮起（白色加粗）；过长自动换行，不截断
                             Text(
                                 line.text,
                                 color = Color.White,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = Int.MAX_VALUE,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         } else {
                             Text(
                                 line.text,
                                 color = Color.White.copy(alpha = if (gi == activeGroupIdx) 0.55f else 0.38f),
                                 fontSize = 20.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = Int.MAX_VALUE,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                         // 间距：日文行后小间距（翻译紧跟），组末行正常间距（组与组分开）
