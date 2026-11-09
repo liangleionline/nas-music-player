@@ -225,6 +225,18 @@ object PlayerManager {
         return if (existed >= 0) 2 else 1
     }
 
+    /**
+     * 歌曲页左上角"随机播放"按钮（v1.4.98）：切到随机模式，并从 [songs] 里随机挑一首立刻起播。
+     * 队列仍是用户当前看到的完整列表，所以后续"下一首"在列表内随机跳。
+     */
+    fun shufflePlay(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val c = controller ?: return
+        _playMode.value = PlayMode.SHUFFLE
+        applyModeToController()
+        playQueue(songs, kotlin.random.Random.nextInt(songs.size))
+    }
+
     fun togglePlayPause() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else {

@@ -44,13 +44,126 @@ import kotlinx.coroutines.withContext
 
 private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$albumId"
 
+/** 歌曲列表排序项（歌曲页 / 文件夹内歌曲列表共用），下标即排序模式。每一项都支持正序与倒序。 */
+val SongSortLabels = listOf(
+    R.string.sort_added,
+    R.string.sort_by_title,
+    R.string.sort_by_artist,
+    R.string.sort_by_album,
+    R.string.sort_by_duration
+)
+
+/**
+ * 歌曲排序：index 与 [SongSortLabels] 一一对应。
+ * 0 = 添加时间（库里的原始顺序，服务端/媒体库按入库先后返回），desc 时改为最新的排在最前。
+ */
+fun sortSongs(songs: List<Song>, mode: Int, desc: Boolean): List<Song> {
+    val base = when (mode) {
+        1 -> songs.sortedBy { it.title.lowercase() }
+        2 -> songs.sortedBy { it.artist.lowercase() }
+        3 -> songs.sortedBy { it.album.lowercase() }
+        4 -> songs.sortedBy { it.duration }
+        else -> songs
+    }
+    return if (desc) base.reversed() else base
+}
+
+/** 专辑排序项：添加时间 / 名称 / 发行年份 / 歌曲数量 */
+val AlbumSortLabels = listOf(
+    R.string.sort_added,
+    R.string.sort_by_name,
+    R.string.sort_by_year,
+    R.string.sort_by_count
+)
+
+/**
+ * 专辑分组排序。分组值 = (albumId, 该专辑全部歌曲)。
+ * 年份未知（year <= 0）的专辑无论正序还是倒序都排在末尾，避免"未知年份"抢占列表头部。
+ */
+fun sortAlbums(
+    albums: List<Pair<Long, List<Song>>>,
+    mode: Int,
+    desc: Boolean
+): List<Pair<Long, List<Song>>> {
+    fun yearOf(g: List<Song>) = g.firstOrNull { it.year > 0 }?.year ?: 0
+    fun nameOf(g: List<Song>) = (g.firstOrNull()?.album ?: "").lowercase()
+    return when (mode) {
+        0 -> if (desc) albums.reversed() else albums
+        1 -> albums.sortedBy { nameOf(it.second) }.let { if (desc) it.reversed() else it }
+        2 -> {
+            val known = albums.filter { yearOf(it.second) > 0 }.sortedBy { yearOf(it.second) }
+            val unknown = albums.filter { yearOf(it.second) <= 0 }
+            if (desc) known.reversed() + unknown else known + unknown
+        }
+        3 -> albums.sortedBy { it.second.size }.let { if (desc) it.reversed() else it }
+        else -> albums
+    }
+}
+
+/** 艺术家排序项：名称 / 歌曲数量 */
+val ArtistSortLabels = listOf(R.string.sort_by_name, R.string.sort_by_count)
+
+/**
+ * 通用排序底部弹层：与歌曲页同一套交互。
+ * 点未选中的项 → 切到该排序项（保持当前方向）；点已选中的项 → 切换正序 / 倒序。
+ */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean = false, onPlay: (List<Song>, Int) -> Unit) {
+fun SortOptionsSheet(
+    options: List<Int>,
+    selected: Int,
+    descending: Boolean,
+    onChoose: (index: Int, desc: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(Modifier.padding(20.dp).padding(bottom = 24.dp)) {
+            Text(stringResource(R.string.sort_title), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.sort_dir_hint), color = Color.Gray, fontSize = 12.sp)
+            Spacer(Modifier.height(12.dp))
+            options.forEachIndexed { idx, labelRes ->
+                val active = selected == idx
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        onChoose(idx, if (active) !descending else descending)
+                    }.padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(labelRes),
+                        fontSize = 15.sp,
+                        color = if (active) MaterialTheme.colorScheme.primary else Color.Black
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (active) {
+                        Icon(
+                            if (descending) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
+                            contentDescription = stringResource(R.string.sort_title),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun SongListScreen(
+    songs: List<Song>,
+    loading: Boolean,
+    searchTrigger: Boolean = false,
+    onPlay: (List<Song>, Int) -> Unit,
+    onShuffle: (List<Song>) -> Unit = {}
+) {
     var searchQuery by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(0) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var sortDesc by remember { mutableStateOf(false) }
     var showSortSheet by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -65,18 +178,8 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
         searchQuery = ""
     }
 
-    val sorted = remember(songs, sortMode) {
-        when (sortMode) {
-            0 -> songs
-            1 -> songs.sortedBy { it.title }
-            2 -> songs.sortedBy { it.artist }
-            3 -> songs.sortedBy { it.album }
-            4 -> songs.sortedBy { it.duration }
-            5 -> songs.sortedByDescending { it.duration }
-            else -> songs
-        }
-    }
-    val filtered = remember(sorted, searchQuery) {
+    val filtered = remember(songs, sortMode, sortDesc, searchQuery) {
+        val sorted = sortSongs(songs, sortMode, sortDesc)
         if (searchQuery.isBlank()) sorted
         else sorted.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
@@ -86,12 +189,23 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Shuffle, null, tint = Color.Gray)
-            Spacer(Modifier.width(12.dp))
+            // 左上角随机播放：点击即从当前列表（含搜索过滤后的结果）随机起播，并切到随机模式
+            Box(
+                Modifier.size(32.dp).clickable { onShuffle(filtered) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Shuffle,
+                    stringResource(R.string.shuffle),
+                    tint = Color.Gray,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(8.dp))
             Text("${filtered.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { showSortSheet = true }) {
-                Icon(Icons.Filled.Sort, null, tint = Color.Gray)
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
             }
         }
         if (searching) {
@@ -156,73 +270,123 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
     }
 
     if (showSortSheet) {
-        ModalBottomSheet(onDismissRequest = { showSortSheet = false }, sheetState = sheetState) {
-            Column(Modifier.padding(20.dp).padding(bottom = 24.dp)) {
-                Text(stringResource(R.string.sort_title), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Spacer(Modifier.height(16.dp))
-                val options = listOf(
-                    stringResource(R.string.sort_custom),
-                    stringResource(R.string.sort_by_title),
-                    stringResource(R.string.sort_by_artist),
-                    stringResource(R.string.sort_by_album),
-                    stringResource(R.string.sort_dur_short),
-                    stringResource(R.string.sort_dur_long)
-                )
-                options.forEachIndexed { idx, label ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable {
-                            sortMode = idx
-                            showSortSheet = false
-                        }.padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(label, fontSize = 15.sp, color = if (sortMode == idx) MaterialTheme.colorScheme.primary else Color.Black)
-                    }
-                }
-            }
-        }
+        SortOptionsSheet(
+            options = SongSortLabels,
+            selected = sortMode,
+            descending = sortDesc,
+            onChoose = { idx, desc ->
+                sortMode = idx
+                sortDesc = desc
+                showSortSheet = false
+            },
+            onDismiss = { showSortSheet = false }
+        )
     }
 }
 
 @Composable
 fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
-    LazyVerticalGrid(columns = GridCells.Fixed(2), contentPadding = PaddingValues(12.dp)) {
-        items(songs.groupBy { it.albumId }.entries.toList()) { (albumId, group) ->
-            // 合并后组内各曲目封面可能不同，取第一个非空封面作为专辑封面
-            val coverId = group.firstOrNull { it.coverId.isNotEmpty() }?.coverId ?: ""
-            Column(Modifier.padding(8.dp).suppressClickOnRightSwipe { onOpenAlbum(albumId) }) {
-                AsyncImage(
-                    model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(group.first().album, maxLines = 1, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+    var sortMode by remember { mutableStateOf(0) }
+    var sortDesc by remember { mutableStateOf(false) }
+    var showSortSheet by remember { mutableStateOf(false) }
+    val albums = remember(songs, sortMode, sortDesc) {
+        sortAlbums(songs.groupBy { it.albumId }.entries.map { it.key to it.value }, sortMode, sortDesc)
+    }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${albums.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { showSortSheet = true }) {
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
             }
         }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            contentPadding = PaddingValues(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            items(albums) { (albumId, group) ->
+                // 合并后组内各曲目封面可能不同，取第一个非空封面作为专辑封面
+                val coverId = group.firstOrNull { it.coverId.isNotEmpty() }?.coverId ?: ""
+                Column(Modifier.padding(8.dp).suppressClickOnRightSwipe { onOpenAlbum(albumId) }) {
+                    AsyncImage(
+                        model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(group.first().album, maxLines = 1, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+    if (showSortSheet) {
+        SortOptionsSheet(
+            options = AlbumSortLabels,
+            selected = sortMode,
+            descending = sortDesc,
+            onChoose = { idx, desc ->
+                sortMode = idx
+                sortDesc = desc
+                showSortSheet = false
+            },
+            onDismiss = { showSortSheet = false }
+        )
     }
 }
 
 @Composable
 fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
-    val groups = songs.groupBy { it.artist }.entries.filter { it.key.isNotBlank() }.sortedBy { it.key }
-    LazyColumn {
-        items(groups) { (artist, group) ->
-            val coverId = group.first().coverId
-            Row(Modifier.fillMaxWidth().padding(16.dp).suppressClickOnRightSwipe { onOpenArtist(artist) }, verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(group.first().albumId),
-                    contentDescription = null,
-                    modifier = Modifier.size(52.dp).clip(CircleShape)
-                )
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text(artist, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+    var sortMode by remember { mutableStateOf(0) } // 0 = 名称，1 = 歌曲数量
+    var sortDesc by remember { mutableStateOf(false) }
+    var showSortSheet by remember { mutableStateOf(false) }
+    val groups = remember(songs, sortMode, sortDesc) {
+        val base = songs.groupBy { it.artist }.entries.filter { it.key.isNotBlank() }
+        val sorted = when (sortMode) {
+            1 -> base.sortedBy { it.value.size }
+            else -> base.sortedBy { it.key.lowercase() }
+        }
+        if (sortDesc) sorted.reversed() else sorted
+    }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${groups.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { showSortSheet = true }) {
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
+            }
+        }
+        LazyColumn(Modifier.weight(1f)) {
+            items(groups) { (artist, group) ->
+                val coverId = group.firstOrNull { it.coverId.isNotEmpty() }?.coverId ?: ""
+                Row(Modifier.fillMaxWidth().padding(16.dp).suppressClickOnRightSwipe { onOpenArtist(artist) }, verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(group.first().albumId),
+                        contentDescription = null,
+                        modifier = Modifier.size(52.dp).clip(CircleShape)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(artist, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                        Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+                    }
                 }
             }
         }
+    }
+    if (showSortSheet) {
+        SortOptionsSheet(
+            options = ArtistSortLabels,
+            selected = sortMode,
+            descending = sortDesc,
+            onChoose = { idx, desc ->
+                sortMode = idx
+                sortDesc = desc
+                showSortSheet = false
+            },
+            onDismiss = { showSortSheet = false }
+        )
     }
 }
 
@@ -302,19 +466,29 @@ fun FolderBrowserScreen(
         }
         map.entries.sortedBy { it.key }.map { it.value }
     }
-    // 当前目录下的歌曲
-    val curSongs = remember(songs, currentPath) {
+    // 当前目录下的歌曲（复用歌曲页排序）
+    var sortMode by remember { mutableStateOf(0) }
+    var sortDesc by remember { mutableStateOf(false) }
+    var showSortSheet by remember { mutableStateOf(false) }
+    val rawSongs = remember(songs, currentPath) {
         songs.filter { dirSegsOf(it.folder) == currentSegs }
+    }
+    val curSongs = remember(rawSongs, sortMode, sortDesc) {
+        sortSongs(rawSongs, sortMode, sortDesc)
     }
     Column(Modifier.fillMaxSize()) {
         // 路径面包屑
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (currentSegs.isEmpty()) stringResource(R.string.folder) else currentSegs.joinToString(" / "),
-                fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2
+                fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2,
+                modifier = Modifier.weight(1f, fill = false)
             )
             Spacer(Modifier.weight(1f))
             Text(stringResource(R.string.dir_count, children.size, curSongs.size), color = Color.Gray, fontSize = 12.sp)
+            IconButton(onClick = { showSortSheet = true }, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray, modifier = Modifier.size(22.dp))
+            }
         }
         LazyColumn(Modifier.fillMaxSize()) {
             // 子目录
@@ -395,6 +569,19 @@ fun FolderBrowserScreen(
                 }
             }
         }
+    }
+    if (showSortSheet) {
+        SortOptionsSheet(
+            options = SongSortLabels,
+            selected = sortMode,
+            descending = sortDesc,
+            onChoose = { idx, desc ->
+                sortMode = idx
+                sortDesc = desc
+                showSortSheet = false
+            },
+            onDismiss = { showSortSheet = false }
+        )
     }
 }
 

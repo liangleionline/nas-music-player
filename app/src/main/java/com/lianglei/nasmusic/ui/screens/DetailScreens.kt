@@ -264,16 +264,26 @@ private fun fmtDuration(ms: Long): String {
     return String.format(java.util.Locale.US, "%02d:%02d", s / 60, s % 60)
 }
 
-/** Folder detail page: songs in this folder, same list layout. */
+/** Folder detail page: songs in this folder, same list layout + same sorting as the songs page. */
 @Composable
 fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> Unit) {
+    var sortMode by remember { mutableStateOf(0) }
+    var sortDesc by remember { mutableStateOf(false) }
+    var showSortSheet by remember { mutableStateOf(false) }
     val folderSongs = remember(songs, folderName) { songs.filter { it.folder == folderName } }
+    val shown = remember(folderSongs, sortMode, sortDesc) { sortSongs(folderSongs, sortMode, sortDesc) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize()) {
-        SongListHeader(folderSongs.size)
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${shown.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { showSortSheet = true }) {
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
+            }
+        }
         LazyColumn(Modifier.weight(1f)) {
-            items(folderSongs.size) { i ->
-                val s = folderSongs[i]
+            items(shown.size) { i ->
+                val s = shown[i]
                 SongRow(
                     s,
                     onClick = { onPlay(songs.indexOf(s)) },
@@ -281,6 +291,19 @@ fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> U
                 )
             }
         }
+    }
+    if (showSortSheet) {
+        SortOptionsSheet(
+            options = SongSortLabels,
+            selected = sortMode,
+            descending = sortDesc,
+            onChoose = { idx, desc ->
+                sortMode = idx
+                sortDesc = desc
+                showSortSheet = false
+            },
+            onDismiss = { showSortSheet = false }
+        )
     }
 }
 
