@@ -477,17 +477,18 @@ fun FolderBrowserScreen(
         sortSongs(rawSongs, sortMode, sortDesc)
     }
     Column(Modifier.fillMaxSize()) {
-        // 路径面包屑
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        // 路径面包屑 + 排序按钮：与歌曲/专辑/艺术家页统一——16dp 内边距的标题行 +
+        // 右侧标准 IconButton（默认 48dp 点击区、24dp 图标），图标右缩进与其它页面完全一致
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (currentSegs.isEmpty()) stringResource(R.string.folder) else currentSegs.joinToString(" / "),
                 fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2,
-                modifier = Modifier.weight(1f, fill = false)
+                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.dir_count, children.size, curSongs.size), color = Color.Gray, fontSize = 12.sp)
-            IconButton(onClick = { showSortSheet = true }, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray, modifier = Modifier.size(22.dp))
+            IconButton(onClick = { showSortSheet = true }) {
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
             }
         }
         LazyColumn(Modifier.fillMaxSize()) {
