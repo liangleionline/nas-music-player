@@ -28,3 +28,16 @@ data class Song(
             )
         }
 }
+
+/**
+ * 专辑身份键（专辑列表/专辑详情/艺术家详情的分组依据）。
+ *
+ * 飞牛同一张专辑里不同曲目可能各自带自己的封面（coverId 不同），若用封面 ID 哈希当专辑 ID，
+ * 一张专辑会被按曲目/艺术家拆成多个专辑卡片。因此改为按**专辑名**归并（去首尾空格 + 忽略大小写），
+ * 让"按专辑查看"回到"一张专辑 = 该专辑里的所有歌"的语义。
+ * 专辑名为空（无专辑归属的单曲）时退回封面 ID 哈希，避免所有无名曲目挤成一张专辑。
+ */
+fun albumKeyOf(album: String, coverId: String): Long {
+    val key = album.trim().lowercase()
+    return if (key.isNotEmpty()) key.hashCode().toLong() else coverId.hashCode().toLong()
+}
