@@ -126,6 +126,10 @@
     <string name="sort_by_count">歌曲数量</string>
     <string name="sort_dir_hint">点击已选中的项可切换正序 / 倒序</string>
     <string name="shuffle">随机播放</string>
+    <string name="play_mode_sequential">播放模式：顺序播放</string>
+    <string name="play_mode_repeat_all">播放模式：列表循环</string>
+    <string name="play_mode_repeat_one">播放模式：单曲循环</string>
+    <string name="play_mode_shuffle">播放模式：随机播放</string>
     <string name="sort_dur_short">时长（短→长）</string>
     <string name="sort_dur_long">时长（长→短）</string>
     <string name="internal_storage">内部存储</string>

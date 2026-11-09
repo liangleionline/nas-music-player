@@ -331,20 +331,20 @@ private fun HomeContent(
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
                     composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
-                    composable("stats") { StatsScreen(songs, onBack = { nav.popBackStack() }, onPlay = { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }) }
+                    composable("stats") { StatsScreen(songs, onBack = { nav.popBackStack() }, onPlay = { list, idx -> PlayerManager.playQueue(list, idx); openPlayer() }) }
                     composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }) }
                     composable("about") { AboutScreen() }
                     composable("artist/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
-                        ArtistDetailScreen(name, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
+                        ArtistDetailScreen(name, songs, onPlay = { list, idx -> PlayerManager.playQueue(list, idx); openPlayer() }, onOpenAlbum = { albumId -> nav.navigate("album/$albumId") })
                     }
                     composable("album/{albumId}") { backStackEntry ->
                         val albumId = backStackEntry.arguments?.getString("albumId")?.toLongOrNull() ?: 0L
-                        AlbumDetailScreen(albumId, songs, onPlay = { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
+                        AlbumDetailScreen(albumId, songs, onPlay = { list, idx -> PlayerManager.playQueue(list, idx); openPlayer() }, onOpenArtist = { name -> if (name.isNotBlank()) nav.navigate("artist/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
                     }
                     composable("folder/{name}") { backStackEntry ->
                         val name = backStackEntry.arguments?.getString("name") ?: ""
-                        FolderDetailScreen(name, songs) { idx -> PlayerManager.playQueue(songs, idx); openPlayer() }
+                        FolderDetailScreen(name, songs) { list, idx -> PlayerManager.playQueue(list, idx); openPlayer() }
                     }
                     composable("fbrowse/{path}") { backStackEntry ->
                         val path = backStackEntry.arguments?.getString("path") ?: ""

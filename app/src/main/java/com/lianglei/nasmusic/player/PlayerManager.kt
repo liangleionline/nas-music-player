@@ -68,6 +68,9 @@ object PlayerManager {
         this.controller?.removeListener(playerListener)
         this.controller = controller
         controller.addListener(playerListener)
+        // v1.5.2：重新绑定后必须把 mode 下发给底层，否则 Activity 重建/回前台时
+        // 底层可能还留着上一次的 shuffle 状态，导致"显示顺序播放、实际随机跳歌"
+        applyModeToController()
     }
 
     private val playerListener = object : Player.Listener {
@@ -85,6 +88,14 @@ object PlayerManager {
         }
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
+        }
+        // v1.5.2：底层 shuffle 被外部改动时以底层为准回写 UI，保证"界面显示的模式"永远是真的
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            if (shuffleModeEnabled && _playMode.value != PlayMode.SHUFFLE) {
+                _playMode.value = PlayMode.SHUFFLE
+            } else if (!shuffleModeEnabled && _playMode.value == PlayMode.SHUFFLE) {
+                _playMode.value = PlayMode.REPEAT_ALL
+            }
         }
         override fun onPlaybackStateChanged(playbackState: Int) {
             _buffering.value = playbackState == Player.STATE_BUFFERING
@@ -158,6 +169,8 @@ object PlayerManager {
         val sameQueue = cur.size == songs.size &&
                 songs.isNotEmpty() && cur.firstOrNull()?.id == songs.first().id
         if (sameQueue && _currentIndex.value == startIndex) {
+            // v1.5.2：快捷分支也要下发模式，避免底层 shuffle 与界面显示不一致
+            applyModeToController()
             if (c.playbackState != Player.STATE_READY) { c.prepare(); c.play() } else if (!c.isPlaying) { c.play() }
             return
         }
@@ -233,6 +246,7 @@ object PlayerManager {
         if (songs.isEmpty()) return
         val c = controller ?: return
         _playMode.value = PlayMode.SHUFFLE
+        persistMode()
         applyModeToController()
         playQueue(songs, kotlin.random.Random.nextInt(songs.size))
     }
@@ -258,7 +272,23 @@ object PlayerManager {
             PlayMode.REPEAT_ONE -> PlayMode.SHUFFLE
             PlayMode.SHUFFLE -> PlayMode.SEQUENTIAL
         }
+        persistMode()
         applyModeToController()
+        // v1.5.2：切模式后给一句文字反馈，"顺序播放"和"列表循环"图标区别不明显，避免误读
+        appCtx?.let { ctx ->
+            val msg = when (_playMode.value) {
+                PlayMode.SEQUENTIAL -> com.lianglei.nasmusic.R.string.play_mode_sequential
+                PlayMode.REPEAT_ALL -> com.lianglei.nasmusic.R.string.play_mode_repeat_all
+                PlayMode.REPEAT_ONE -> com.lianglei.nasmusic.R.string.play_mode_repeat_one
+                PlayMode.SHUFFLE -> com.lianglei.nasmusic.R.string.play_mode_shuffle
+            }
+            android.widget.Toast.makeText(ctx, ctx.getString(msg), android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 播放模式持久化：下次启动沿用上次的模式，界面显示与实际行为始终一致 */
+    private fun persistMode() {
+        prefs?.edit()?.putString("playMode", _playMode.value.name)?.apply()
     }
 
     private fun applyModeToController() {
@@ -292,8 +322,13 @@ object PlayerManager {
     }
 
     private var prefs: android.content.SharedPreferences? = null
+    private var appCtx: android.content.Context? = null
     fun init(ctx: android.content.Context) {
+        appCtx = ctx.applicationContext
         prefs = ctx.getSharedPreferences("player_state", android.content.Context.MODE_PRIVATE)
+        // 恢复上次的播放模式（默认列表循环），避免重启后模式"回到默认但底层另有状态"
+        val saved = prefs?.getString("playMode", PlayMode.REPEAT_ALL.name)
+        _playMode.value = runCatching { PlayMode.valueOf(saved!!) }.getOrDefault(PlayMode.REPEAT_ALL)
     }
 
     fun saveState() {

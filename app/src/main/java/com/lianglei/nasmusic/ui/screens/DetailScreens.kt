@@ -81,7 +81,7 @@ fun SongListHeader(count: Int) {
 
 /** Artist detail page: circular avatar + artist name + songs + albums by this artist. */
 @Composable
-fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> Unit, onOpenAlbum: (Long) -> Unit = {}) {
+fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (List<Song>, Int) -> Unit, onOpenAlbum: (Long) -> Unit = {}) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val artistSongs = remember(songs, artistName) { songs.filter { it.artist == artistName } }
     val artistAlbums = remember(artistSongs) { artistSongs.groupBy { it.albumId }.entries }
@@ -110,7 +110,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
             val s = artistSongs[i]
             SongRow(
                 s,
-                onClick = { onPlay(songs.indexOf(s)) },
+                onClick = { onPlay(artistSongs, i) },
                 onAddNext = { addNextWithToast(s, ctx) }
             )
         }
@@ -142,7 +142,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
 
 /** Album detail page: cover + title/artist/sample rate + stats + songs + participating artists. */
 @Composable
-fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, onOpenArtist: (String) -> Unit = {}) {
+fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int) -> Unit, onOpenArtist: (String) -> Unit = {}) {
     val albumSongs = remember(songs, albumId) { songs.filter { it.albumId == albumId } }
     val totalMs = remember(albumSongs) { albumSongs.sumOf { it.duration } }
     val first = albumSongs.firstOrNull()
@@ -198,7 +198,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
         item { Divider(Modifier.padding(horizontal = 20.dp)) }
         items(albumSongs.size) { i ->
             Row(
-                Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(songs.indexOf(albumSongs[i])) }
+                Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(albumSongs, i) }
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -266,7 +266,7 @@ private fun fmtDuration(ms: Long): String {
 
 /** Folder detail page: songs in this folder, same list layout + same sorting as the songs page. */
 @Composable
-fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> Unit) {
+fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (List<Song>, Int) -> Unit) {
     // 与文件夹浏览页共用同一份排序偏好（都是"文件夹里的歌曲列表"）
     val sort = rememberSortState(com.lianglei.nasmusic.data.SortPrefs.FOLDERS)
     var showSortSheet by remember { mutableStateOf(false) }
@@ -286,7 +286,7 @@ fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> U
                 val s = shown[i]
                 SongRow(
                     s,
-                    onClick = { onPlay(songs.indexOf(s)) },
+                    onClick = { onPlay(shown, i) },
                     onAddNext = { addNextWithToast(s, ctx) }
                 )
             }
