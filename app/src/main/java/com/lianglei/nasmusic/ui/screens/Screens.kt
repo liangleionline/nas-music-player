@@ -188,7 +188,8 @@ fun SongListScreen(songs: List<Song>, loading: Boolean, searchTrigger: Boolean =
 fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
     LazyVerticalGrid(columns = GridCells.Fixed(2), contentPadding = PaddingValues(12.dp)) {
         items(songs.groupBy { it.albumId }.entries.toList()) { (albumId, group) ->
-            val coverId = group.first().coverId
+            // 合并后组内各曲目封面可能不同，取第一个非空封面作为专辑封面
+            val coverId = group.firstOrNull { it.coverId.isNotEmpty() }?.coverId ?: ""
             Column(Modifier.padding(8.dp).suppressClickOnRightSwipe { onOpenAlbum(albumId) }) {
                 AsyncImage(
                     model = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId),

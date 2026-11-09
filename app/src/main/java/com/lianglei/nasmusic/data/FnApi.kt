@@ -139,7 +139,7 @@ object FnApi {
             title = title,
             artist = artist,
             album = album,
-            albumId = coverId.hashCode().toLong(),
+            albumId = albumKeyOf(album, coverId),
             duration = duration,
             data = "$baseUrl/track/stream?guid=$guid",
             folder = if (path.isNotEmpty()) path else "飞牛NAS",

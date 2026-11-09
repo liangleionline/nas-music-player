@@ -119,7 +119,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (Int) -> U
         }
         items(artistAlbums.size) { i ->
             val (albumId, group) = artistAlbums.elementAt(i)
-            val albumCoverId = group.firstOrNull()?.coverId ?: ""
+            val albumCoverId = group.firstOrNull { it.coverId.isNotEmpty() }?.coverId ?: ""
             val albumCover = if (albumCoverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(albumCoverId) else artUri(albumId)
             Row(
                 Modifier.fillMaxWidth().suppressClickOnRightSwipe { onOpenAlbum(albumId) }
@@ -147,7 +147,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (Int) -> Unit, o
     val totalMs = remember(albumSongs) { albumSongs.sumOf { it.duration } }
     val first = albumSongs.firstOrNull()
     val artists = remember(albumSongs) { albumSongs.groupBy { it.artist }.entries }
-    val coverId = first?.coverId ?: ""
+    val coverId = albumSongs.firstOrNull { it.coverId.isNotEmpty() }?.coverId ?: ""
     val coverModel = if (coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(coverId) else artUri(albumId)
     // 采样率：飞牛端 audioSpec.sampleRate 已在拉取时解析；本地端首次进入用 MediaMetadataRetriever 懒读
     var sampleRate by remember(albumSongs) { mutableStateOf(first?.sampleRate ?: 0) }

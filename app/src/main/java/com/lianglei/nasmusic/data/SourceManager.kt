@@ -124,10 +124,14 @@ object SourceManager {
             val list = mutableListOf<Song>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val albumName = o.optString("album")
+                val coverIdStr = o.optString("coverId")
                 list.add(Song(
                     id = o.optLong("id"), title = o.optString("title"),
-                    artist = o.optString("artist"), album = o.optString("album"),
-                    albumId = o.optLong("albumId"),
+                    artist = o.optString("artist"), album = albumName,
+                    // 重算专辑身份：旧缓存里存的是"封面 ID 哈希"，会让同一张专辑按曲目拆开；
+                    // 按专辑名重算后，升级后无需重新扫库也能立刻合并
+                    albumId = albumKeyOf(albumName, coverIdStr),
                     duration = o.optLong("duration"),
                     data = o.optString("data"), folder = o.optString("folder"),
                     isHighQuality = o.optBoolean("isHighQuality"),
