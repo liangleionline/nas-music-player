@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +51,10 @@ import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.painter.Painter
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.lianglei.nasmusic.data.Song
@@ -230,9 +235,11 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         }
     }
 
-    var lrcLines by remember(song?.id) { mutableStateOf(emptyList<LrcLine>()) }
+    // v1.5.3 切歌不跳：歌词状态不再按 song.id 重置（原来切歌瞬间会先清空成"暂无歌词"再填新歌词，
+    // 歌词面板因此整块消失又出现）。现在保留上一首的歌词，等新歌词解析完成再整体替换。
+    var lrcLines by remember { mutableStateOf(emptyList<LrcLine>()) }
     // 歌词来源标签（对齐设计图左下角"词 EMBEDDED"）：EMBEDDED=内嵌标签 / LRC=同目录 .lrc 文件
-    var lyricSource by remember(song?.id) { mutableStateOf("") }
+    var lyricSource by remember { mutableStateOf("") }
     LaunchedEffect(song?.id) {
         if (song == null) { lrcLines = emptyList(); lyricSource = ""; return@LaunchedEffect }
         lrcLines = withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -311,17 +318,25 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         }
     }
     val coverBase = palette.firstOrNull()?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
+    // v1.5.3 切歌不跳：底色与烟雾配色做 400ms 过渡。
+    // 原来 palette 一到就直接换色（外加封面重新加载），整页像"跳"了一下；平滑过渡后切歌只看到滤镜渐变。
+    val animatedBase by animateColorAsState(coverBase, tween(400), label = "playerBase")
+    val smokePalette = listOf(
+        animateColorAsState(palette.getOrNull(0) ?: Color(0xFF6A6A6E), tween(400), label = "smoke0").value,
+        animateColorAsState(palette.getOrNull(1) ?: Color(0xFF9A7A4B), tween(400), label = "smoke1").value,
+        animateColorAsState(palette.getOrNull(2) ?: Color(0xFF5E7A6A), tween(400), label = "smoke2").value
+    )
 
     // 根容器拦截已上移到 HomeRoot 浮层（条件拦截：显示时拦截、隐藏时不拦截），
     // 内部 Slider/IconButton 等子节点不受影响，正常响应。
     Box(
-        Modifier.fillMaxSize().background(coverBase)
+        Modifier.fillMaxSize().background(animatedBase)
     ) {
         // 背景（烟雾渐变 + 中央光晕 + 垂直暗化遮罩）合并为单层 Canvas：
         // 内容只静态绘制一次，动画只改 graphicsLayer 的旋转/缩放合成变换（零像素重绘），
         // 且全屏绘制层从 4 层压到 1 层（消除 overdraw）→ TV 盒子弱 GPU 也不掉帧。
         // running=false（播放页隐藏）时帧循环暂停，零消耗。
-        SmokeBackdrop(palette = palette, running = backgroundRunning, centerFill = coverBase)
+        SmokeBackdrop(palette = smokePalette, running = backgroundRunning, centerFill = animatedBase)
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp)) {
             // 顶部信息栏：标题（静态单行省略，避免跑马灯裁剪错乱）+ 歌手 + 投屏图标
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -431,11 +446,14 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
             ) {
                 // 封面面板：slide=0 原位；左滑时向左平移出屏（无边框，直接显示封面图）
                 // 位移用 graphicsLayer（GPU 合成），不用 offset{}（每帧重新布局更耗、易抖动）
-                AsyncImage(
-                    model = song?.let {
-                        if (it.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(it.coverId)
-                        else "content://media/external/audio/albumart/${it.albumId}"
-                    },
+                // v1.5.3 切歌不跳：新封面要从 NAS 下载，加载期间保持上一张封面不动，
+                // 原实现会先变空白再弹出新图，视觉上就是"跳一下"。
+                val coverPainter = rememberAsyncImagePainter(model = coverModel)
+                var lastCoverPainter by remember { mutableStateOf<Painter?>(null) }
+                val coverLoaded = coverPainter.state is AsyncImagePainter.State.Success
+                if (coverLoaded) lastCoverPainter = coverPainter
+                Image(
+                    painter = if (coverLoaded) coverPainter else (lastCoverPainter ?: coverPainter),
                     contentDescription = null,
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f)
                         .graphicsLayer { translationX = slide.value }
