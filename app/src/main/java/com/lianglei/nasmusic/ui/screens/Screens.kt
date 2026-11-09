@@ -972,7 +972,7 @@ private fun formatBytes(b: Long): String = when {
 
 /** 统计页：按播放次数从高到低排列歌曲列表（v1.4.58） */
 @Composable
-fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (Int) -> Unit) {
+fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (List<Song>, Int) -> Unit) {
     // 进入页面时从 StatsStore 读取播放次数并降序排序
     var stats by remember { mutableStateOf(emptyList<Pair<Song, Int>>()) }
     LaunchedEffect(songs) {
@@ -981,6 +981,8 @@ fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (Int) -> Unit) {
             .map { it to (counts[it.id] ?: 0) }
             .sortedByDescending { it.second }
     }
+    // 统计页当前展示的歌曲顺序（按播放次数），点歌时整份传下去，保证"下一首"就是列表里的下一首
+    val shownSongs = remember(stats) { stats.map { it.first } }
     Column(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
@@ -1007,7 +1009,7 @@ fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (Int) -> Unit) {
                 items(stats.size) { i ->
                     val (s, count) = stats[i]
                     Row(
-                        Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(songs.indexOf(s)) }
+                        Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(shownSongs, i) }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
