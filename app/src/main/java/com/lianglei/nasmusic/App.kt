@@ -13,6 +13,7 @@ class App : Application(), ImageLoaderFactory {
         instance = this
         com.lianglei.nasmusic.data.SourceManager.init(this)
         com.lianglei.nasmusic.data.StatsStore.init(this)
+        com.lianglei.nasmusic.data.SortPrefs.init(this)
         com.lianglei.nasmusic.player.PlayerManager.init(this)
     }
 

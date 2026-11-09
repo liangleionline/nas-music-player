@@ -267,11 +267,11 @@ private fun fmtDuration(ms: Long): String {
 /** Folder detail page: songs in this folder, same list layout + same sorting as the songs page. */
 @Composable
 fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> Unit) {
-    var sortMode by remember { mutableStateOf(0) }
-    var sortDesc by remember { mutableStateOf(false) }
+    // 与文件夹浏览页共用同一份排序偏好（都是"文件夹里的歌曲列表"）
+    val sort = rememberSortState(com.lianglei.nasmusic.data.SortPrefs.FOLDERS)
     var showSortSheet by remember { mutableStateOf(false) }
     val folderSongs = remember(songs, folderName) { songs.filter { it.folder == folderName } }
-    val shown = remember(folderSongs, sortMode, sortDesc) { sortSongs(folderSongs, sortMode, sortDesc) }
+    val shown = remember(folderSongs, sort.mode, sort.desc) { sortSongs(folderSongs, sort.mode, sort.desc) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -295,11 +295,10 @@ fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (Int) -> U
     if (showSortSheet) {
         SortOptionsSheet(
             options = SongSortLabels,
-            selected = sortMode,
-            descending = sortDesc,
+            selected = sort.mode,
+            descending = sort.desc,
             onChoose = { idx, desc ->
-                sortMode = idx
-                sortDesc = desc
+                sort.choose(idx, desc)
                 showSortSheet = false
             },
             onDismiss = { showSortSheet = false }
