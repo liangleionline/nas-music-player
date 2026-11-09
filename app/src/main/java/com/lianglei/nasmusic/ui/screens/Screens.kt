@@ -104,6 +104,26 @@ fun sortAlbums(
 val ArtistSortLabels = listOf(R.string.sort_by_name, R.string.sort_by_count)
 
 /**
+ * 排序状态（内存 + 持久化）：按 [key] 读完上次的选择，[choose] 时立即写回，
+ * 这样退出应用再进来还保持用户上次的排序方式。
+ */
+class SortStateHolder(private val key: String) {
+    var mode by mutableStateOf(com.lianglei.nasmusic.data.SortPrefs.mode(key))
+        private set
+    var desc by mutableStateOf(com.lianglei.nasmusic.data.SortPrefs.desc(key))
+        private set
+
+    fun choose(index: Int, descending: Boolean) {
+        mode = index
+        desc = descending
+        com.lianglei.nasmusic.data.SortPrefs.save(key, index, descending)
+    }
+}
+
+@Composable
+fun rememberSortState(key: String): SortStateHolder = remember(key) { SortStateHolder(key) }
+
+/**
  * 通用排序底部弹层：与歌曲页同一套交互。
  * 点未选中的项 → 切到该排序项（保持当前方向）；点已选中的项 → 切换正序 / 倒序。
  */
@@ -162,8 +182,8 @@ fun SongListScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
-    var sortMode by remember { mutableStateOf(0) }
-    var sortDesc by remember { mutableStateOf(false) }
+    // 排序方式持久化：下次进页面沿用上次的选择
+    val sort = rememberSortState(com.lianglei.nasmusic.data.SortPrefs.SONGS)
     var showSortSheet by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -178,8 +198,8 @@ fun SongListScreen(
         searchQuery = ""
     }
 
-    val filtered = remember(songs, sortMode, sortDesc, searchQuery) {
-        val sorted = sortSongs(songs, sortMode, sortDesc)
+    val filtered = remember(songs, sort.mode, sort.desc, searchQuery) {
+        val sorted = sortSongs(songs, sort.mode, sort.desc)
         if (searchQuery.isBlank()) sorted
         else sorted.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
@@ -272,11 +292,10 @@ fun SongListScreen(
     if (showSortSheet) {
         SortOptionsSheet(
             options = SongSortLabels,
-            selected = sortMode,
-            descending = sortDesc,
+            selected = sort.mode,
+            descending = sort.desc,
             onChoose = { idx, desc ->
-                sortMode = idx
-                sortDesc = desc
+                sort.choose(idx, desc)
                 showSortSheet = false
             },
             onDismiss = { showSortSheet = false }
@@ -286,11 +305,10 @@ fun SongListScreen(
 
 @Composable
 fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
-    var sortMode by remember { mutableStateOf(0) }
-    var sortDesc by remember { mutableStateOf(false) }
+    val sort = rememberSortState(com.lianglei.nasmusic.data.SortPrefs.ALBUMS)
     var showSortSheet by remember { mutableStateOf(false) }
-    val albums = remember(songs, sortMode, sortDesc) {
-        sortAlbums(songs.groupBy { it.albumId }.entries.map { it.key to it.value }, sortMode, sortDesc)
+    val albums = remember(songs, sort.mode, sort.desc) {
+        sortAlbums(songs.groupBy { it.albumId }.entries.map { it.key to it.value }, sort.mode, sort.desc)
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -324,11 +342,10 @@ fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
     if (showSortSheet) {
         SortOptionsSheet(
             options = AlbumSortLabels,
-            selected = sortMode,
-            descending = sortDesc,
+            selected = sort.mode,
+            descending = sort.desc,
             onChoose = { idx, desc ->
-                sortMode = idx
-                sortDesc = desc
+                sort.choose(idx, desc)
                 showSortSheet = false
             },
             onDismiss = { showSortSheet = false }
@@ -338,16 +355,15 @@ fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
 
 @Composable
 fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
-    var sortMode by remember { mutableStateOf(0) } // 0 = 名称，1 = 歌曲数量
-    var sortDesc by remember { mutableStateOf(false) }
+    val sort = rememberSortState(com.lianglei.nasmusic.data.SortPrefs.ARTISTS) // 0 = 名称，1 = 歌曲数量
     var showSortSheet by remember { mutableStateOf(false) }
-    val groups = remember(songs, sortMode, sortDesc) {
+    val groups = remember(songs, sort.mode, sort.desc) {
         val base = songs.groupBy { it.artist }.entries.filter { it.key.isNotBlank() }
-        val sorted = when (sortMode) {
+        val sorted = when (sort.mode) {
             1 -> base.sortedBy { it.value.size }
             else -> base.sortedBy { it.key.lowercase() }
         }
-        if (sortDesc) sorted.reversed() else sorted
+        if (sort.desc) sorted.reversed() else sorted
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -378,11 +394,10 @@ fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
     if (showSortSheet) {
         SortOptionsSheet(
             options = ArtistSortLabels,
-            selected = sortMode,
-            descending = sortDesc,
+            selected = sort.mode,
+            descending = sort.desc,
             onChoose = { idx, desc ->
-                sortMode = idx
-                sortDesc = desc
+                sort.choose(idx, desc)
                 showSortSheet = false
             },
             onDismiss = { showSortSheet = false }
@@ -466,15 +481,14 @@ fun FolderBrowserScreen(
         }
         map.entries.sortedBy { it.key }.map { it.value }
     }
-    // 当前目录下的歌曲（复用歌曲页排序）
-    var sortMode by remember { mutableStateOf(0) }
-    var sortDesc by remember { mutableStateOf(false) }
+    // 当前目录下的歌曲（复用歌曲页排序，排序方式持久化）
+    val sort = rememberSortState(com.lianglei.nasmusic.data.SortPrefs.FOLDERS)
     var showSortSheet by remember { mutableStateOf(false) }
     val rawSongs = remember(songs, currentPath) {
         songs.filter { dirSegsOf(it.folder) == currentSegs }
     }
-    val curSongs = remember(rawSongs, sortMode, sortDesc) {
-        sortSongs(rawSongs, sortMode, sortDesc)
+    val curSongs = remember(rawSongs, sort.mode, sort.desc) {
+        sortSongs(rawSongs, sort.mode, sort.desc)
     }
     Column(Modifier.fillMaxSize()) {
         // 路径面包屑 + 排序按钮：与歌曲/专辑/艺术家页统一——16dp 内边距的标题行 +
@@ -574,11 +588,10 @@ fun FolderBrowserScreen(
     if (showSortSheet) {
         SortOptionsSheet(
             options = SongSortLabels,
-            selected = sortMode,
-            descending = sortDesc,
+            selected = sort.mode,
+            descending = sort.desc,
             onChoose = { idx, desc ->
-                sortMode = idx
-                sortDesc = desc
+                sort.choose(idx, desc)
                 showSortSheet = false
             },
             onDismiss = { showSortSheet = false }
