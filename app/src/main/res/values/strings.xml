@@ -116,9 +116,16 @@
     <string name="search_placeholder">搜索歌曲、专辑、艺术家</string>
     <string name="sort_title">排序</string>
     <string name="sort_custom">自定义</string>
+    <string name="sort_added">添加时间</string>
     <string name="sort_by_title">标题</string>
+    <string name="sort_by_name">名称</string>
     <string name="sort_by_artist">艺术家</string>
     <string name="sort_by_album">专辑</string>
+    <string name="sort_by_duration">时长</string>
+    <string name="sort_by_year">发行年份</string>
+    <string name="sort_by_count">歌曲数量</string>
+    <string name="sort_dir_hint">点击已选中的项可切换正序 / 倒序</string>
+    <string name="shuffle">随机播放</string>
     <string name="sort_dur_short">时长（短→长）</string>
     <string name="sort_dur_long">时长（长→短）</string>
     <string name="internal_storage">内部存储</string>
