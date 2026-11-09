@@ -128,6 +128,10 @@ object FnApi {
             if (a.length() > 0) a.getJSONObject(0).optString("name", "") else ""
         } ?: ""
         val album = t.optJSONObject("album")?.optString("name", "") ?: ""
+        // 入库时间：track.createdAt / album.createdAt，均为秒级 Unix 时间戳（见 docs/fn-nas-api.md）
+        val albumObj = t.optJSONObject("album")
+        val addedAt = t.optLong("createdAt", 0L)
+        val albumAddedAt = albumObj?.optLong("createdAt", 0L) ?: 0L
         val duration = t.optLong("duration", 0)
         val coverId = t.optString("coverId", "")
         val path = extractTrackPath(t)
@@ -149,7 +153,9 @@ object FnApi {
             bitrate = spec?.optInt("bitrate", 0) ?: 0,
             sampleRate = spec?.optInt("sampleRate", 0) ?: 0,
             fileSize = spec?.optLong("size", 0L) ?: 0L,
-            format = spec?.optString("format", "") ?: ""
+            format = spec?.optString("format", "") ?: "",
+            addedAt = addedAt,
+            albumAddedAt = albumAddedAt
         )
     }
 
