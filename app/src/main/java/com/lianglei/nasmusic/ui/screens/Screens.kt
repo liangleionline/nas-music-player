@@ -55,9 +55,20 @@ val SongSortLabels = listOf(
 
 /**
  * 歌曲排序：index 与 [SongSortLabels] 一一对应。
- * 0 = 添加时间（库里的原始顺序，服务端/媒体库按入库先后返回），desc 时改为最新的排在最前。
+ * 0 = 添加时间：按库里的真实入库时间 createdAt 排序，正序 = 最近添加的在最前（与升级前默认视图一致），
+ *     逆序 = 最早添加的在最前。没有可用时间戳（如本地媒体库）时退回列表原样顺序，同样支持正逆序。
  */
 fun sortSongs(songs: List<Song>, mode: Int, desc: Boolean): List<Song> {
+    if (mode == 0) {
+        val timed = songs.filter { it.addedAt > 0 }
+        // 至少两条且时间戳有区分度，才用时间排序；否则保持原样，避免"伪排序"
+        if (timed.size > 1 && timed.map { it.addedAt }.distinct().size > 1) {
+            val unknown = songs.filter { it.addedAt <= 0 }
+            return if (desc) timed.sortedBy { it.addedAt } + unknown
+            else timed.sortedByDescending { it.addedAt } + unknown
+        }
+        return if (desc) songs.reversed() else songs
+    }
     val base = when (mode) {
         1 -> songs.sortedBy { it.title.lowercase() }
         2 -> songs.sortedBy { it.artist.lowercase() }
@@ -78,7 +89,9 @@ val AlbumSortLabels = listOf(
 
 /**
  * 专辑分组排序。分组值 = (albumId, 该专辑全部歌曲)。
- * 年份未知（year <= 0）的专辑无论正序还是倒序都排在末尾，避免"未知年份"抢占列表头部。
+ * 0 = 添加时间：用专辑自身的入库时间 createdAt（缺失时退回该专辑最早的曲目入库时间），
+ *     正序 = 最近添加的在最前，逆序 = 最早添加的在最前。
+ * 年份、时间未知（<= 0）的专辑无论正序还是倒序都排在末尾，避免"未知值"抢占列表头部。
  */
 fun sortAlbums(
     albums: List<Pair<Long, List<Song>>>,
@@ -87,8 +100,20 @@ fun sortAlbums(
 ): List<Pair<Long, List<Song>>> {
     fun yearOf(g: List<Song>) = g.firstOrNull { it.year > 0 }?.year ?: 0
     fun nameOf(g: List<Song>) = (g.firstOrNull()?.album ?: "").lowercase()
+    fun addedOf(g: List<Song>): Long =
+        g.firstOrNull { it.albumAddedAt > 0 }?.albumAddedAt
+            ?: (g.map { it.addedAt }.filter { it > 0 }.minOrNull() ?: 0L)
     return when (mode) {
-        0 -> if (desc) albums.reversed() else albums
+        0 -> {
+            val known = albums.filter { addedOf(it.second) > 0 }
+            val unknown = albums.filter { addedOf(it.second) <= 0 }
+            if (known.size > 1 && known.map { addedOf(it.second) }.distinct().size > 1) {
+                if (desc) known.sortedBy { addedOf(it.second) } + unknown
+                else known.sortedByDescending { addedOf(it.second) } + unknown
+            } else {
+                if (desc) albums.reversed() else albums
+            }
+        }
         1 -> albums.sortedBy { nameOf(it.second) }.let { if (desc) it.reversed() else it }
         2 -> {
             val known = albums.filter { yearOf(it.second) > 0 }.sortedBy { yearOf(it.second) }
