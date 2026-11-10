@@ -1,5 +1,13 @@
 # NAS Music Player
 
+[![Latest release](https://img.shields.io/github/v/release/liangleionline/nas-music-player?label=version&sort=semver&color=2563eb)](https://github.com/liangleionline/nas-music-player/releases/latest)
+[![Total downloads](https://img.shields.io/github/downloads/liangleionline/nas-music-player/total?label=downloads&color=16a34a)](https://github.com/liangleionline/nas-music-player/releases)
+[![Latest release downloads](https://img.shields.io/github/downloads/liangleionline/nas-music-player/latest/total?label=latest%20downloads&color=16a34a)](https://github.com/liangleionline/nas-music-player/releases/latest)
+[![Stars](https://img.shields.io/github/stars/liangleionline/nas-music-player?color=eab308)](https://github.com/liangleionline/nas-music-player/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/liangleionline/nas-music-player?label=last%20commit)](https://github.com/liangleionline/nas-music-player/commits/main)
+[![License](https://img.shields.io/github/license/liangleionline/nas-music-player?color=blue)](https://github.com/liangleionline/nas-music-player/blob/main/LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-3ddc84)](https://github.com/liangleionline/nas-music-player/releases)
+
 基于 Android Jetpack Compose 开发的开源音乐播放器，支持**本地音乐**与**飞牛 fnOS NAS** 双音源播放，界面结构与交互方式参考 Salt Player 设计。
 
 ## 功能
@@ -26,9 +34,9 @@
 
 ## 版本
 
-最新版本：**v1.4.84**（versionCode 164，R8 混淆 + 资源压缩，APK ≈ 3.2MB）
+最新版本：见顶部 `version` 徽章（当前 **v1.5.4**，versionCode 184）
 
-Release 页面保留最新版本的 APK 与源码，历史版本已清理。
+Release 页面保留**最近 3 个版本**的 APK 与源码，更早的历史版本会清理；下载量与仓库访问/克隆数据可在顶部的 downloads、latest downloads 徽章上实时查看，也可以在 Release 页每个 APK 右侧看到单个版本的下载次数。
 
 APK 下载：[GitHub Releases](https://github.com/liangleionline/nas-music-player/releases)
 

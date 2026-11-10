@@ -339,7 +339,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         SmokeBackdrop(palette = smokePalette, running = backgroundRunning, centerFill = animatedBase)
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(start = 24.dp, end = 24.dp, top = 8.dp)) {
             // 顶部信息栏：标题（静态单行省略，避免跑马灯裁剪错乱）+ 歌手 + 投屏图标
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // heightIn(min)：标题/歌手换歌时若某行渲染高度微变，也不会把下方封面与控制条整体带偏
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
                         song?.title ?: "—",
@@ -482,7 +483,8 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
             Spacer(Modifier.height(12.dp))
 
             // Bottom action row - 5 items evenly weighted so center aligns with play button（对齐 Salt：图标 32dp，细线 Outlined 风格）
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // 固定 48dp：定时关闭开启后按钮内会多出一行倒计时文字，不固定高度就会把上面的封面/进度条顶上去
+            Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
                 // 1) 播放模式：顺序播放(灰Repeat) → 列表循环(Repeat) → 单曲循环(RepeatOne) → 随机(Shuffle)
                 val modeIcon = when (playMode) {
                     PlayMode.SEQUENTIAL -> Icons.Outlined.Repeat
@@ -1442,29 +1444,37 @@ private fun PlayerControlsRow() {
     val playing by PlayerManager.isPlaying.collectAsStateWithLifecycle()
     val buffering by PlayerManager.buffering.collectAsStateWithLifecycle()
     val retryPrompt by PlayerManager.retryPrompt.collectAsStateWithLifecycle()
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { PlayerManager.prev() }) {
-            Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
-        }
-        when {
-            buffering -> IconButton(onClick = { }, modifier = Modifier.size(72.dp)) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(32.dp),
-                    color = Color.White,
-                    strokeWidth = 2.5.dp
-                )
+    // v1.5.4 切歌不跳（真因）：中央按钮三态原先尺寸不一致——正常态 IconButton 默认 48dp（material3 1.2.1
+    // 的 IconButton 会 minimumInteractiveComponentSize 到 48dp，里面 72dp 的 Icon 实际被钳成 48dp），
+    // 而缓冲态 / 失败态显式写了 size(72.dp)。切歌瞬间 buffering=true → 本行高度 48dp→72dp（+24dp）
+    // → 面板占位被压缩，封面（居中）与进度条整体上抬约 12~24dp，缓冲结束再落回，
+    // 就是用户看到的"往上抬两毫米又落下来"。
+    // 修复：本行固定 48dp 高，三态都按 48dp 排，高度不再随播放状态变化；视觉尺寸与原来完全一致。
+    Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { PlayerManager.prev() }) {
+                Icon(Icons.Filled.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
             }
-            retryPrompt -> IconButton(onClick = { PlayerManager.retryNow() }, modifier = Modifier.size(72.dp)) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White,
-                    modifier = Modifier.size(32.dp))
+            when {
+                buffering -> IconButton(onClick = { }, modifier = Modifier.size(48.dp)) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        color = Color.White,
+                        strokeWidth = 2.5.dp
+                    )
+                }
+                retryPrompt -> IconButton(onClick = { PlayerManager.retryNow() }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = Color.White,
+                        modifier = Modifier.size(32.dp))
+                }
+                else -> IconButton(onClick = { PlayerManager.togglePlayPause() }) {
+                    Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
+                        tint = Color.White, modifier = Modifier.size(48.dp))
+                }
             }
-            else -> IconButton(onClick = { PlayerManager.togglePlayPause() }) {
-                Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null,
-                    tint = Color.White, modifier = Modifier.size(72.dp))
+            IconButton(onClick = { PlayerManager.next() }) {
+                Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp))
             }
-        }
-        IconButton(onClick = { PlayerManager.next() }) {
-            Icon(Icons.Filled.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp))
         }
     }
 }
