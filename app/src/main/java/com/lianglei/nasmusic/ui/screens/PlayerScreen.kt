@@ -297,24 +297,14 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         else "content://media/external/audio/albumart/${it.albumId}"
     }
 
-    // 从封面提取多个主色（KMeans，缩小位图 IO 线程执行），作为底色 + 烟雾动画调色板
+    // 从封面提取主色（缩小位图 IO 线程执行），作为底色 + 烟雾动画调色板
     // 复用 App 级全局 ImageLoader（App 实现 ImageLoaderFactory），不每屏新建实例
     val bgLoader = ctx.imageLoader
     // key 同时含 coverModel 与 song?.id：无封面歌曲（本地 albumId=0 / NAS coverId 为空）的
     // coverModel 可能是同一兜底 URL → key 不变会永远不重跑；加入 song id 保证每首歌独立提色
     val palette by produceState<List<Color>>(initialValue = emptyList(), coverModel, song?.id) {
         value = withContext(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val result = bgLoader.execute(
-                    ImageRequest.Builder(ctx).data(coverModel).size(160).build()
-                )
-                val bmp = (result.drawable as? BitmapDrawable)?.bitmap
-                val colors = if (bmp != null) dominantColors(bmp, 4).map { saturateColor(it, 1.5f) } else emptyList()
-                // 无封面 / 提色失败 → 用歌曲 id 哈希生成稳定且互不相同的主题色，避免所有歌同一个默认色
-                if (colors.isNotEmpty()) colors else fallbackColors(song)
-            } catch (e: Exception) {
-                fallbackColors(song)
-            }
+            paletteOfCover(bgLoader, ctx, coverModel, song)
         }
     }
     val coverBase = palette.firstOrNull()?.let { darkenToLuminance(it, 0.5f) } ?: Color(0xFF2A2A2E)
@@ -960,53 +950,146 @@ private fun fmtTime(ms: Long): String {
     return String.format(Locale.US, "%02d:%02d", s / 60, s % 60)
 }
 
-/** KMeans 提取 k 个主色（输入为缩小后的封面位图），按像素占比降序返回 */
-fun dominantColors(bmp: Bitmap, k: Int): List<Color> {
-    val pts = ArrayList<IntArray>()
-    var x = 0
-    while (x < bmp.width) {
-        var y = 0
-        while (y < bmp.height) {
-            val p = bmp.getPixel(x, y)
-            pts.add(intArrayOf((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF))
-            y++
-        }
-        x++
+/** coverModel → 调色板内存缓存：同一封面反复进出播放页不再重复提色（32 个封面足够覆盖一轮听歌） */
+private val PALETTE_CACHE = android.util.LruCache<String, List<Color>>(32)
+
+/**
+ * 取当前封面的调色板（v1.5.5）：
+ * 1. `allowHardware(false)` —— Coil 默认可能返回硬件位图，硬件位图 `getPixel()` 会抛异常，
+ *    旧实现因此经常走进兜底分支；
+ * 2. 提色走 [dominantColors] 的"有彩色倾向"算法，取的是封面的点缀色而不是黑底/白边；
+ * 3. 取不到彩色（黑白封面、无封面、加载失败）才用歌曲 id 哈希兜底色，保证每首歌仍有区分度。
+ */
+private suspend fun paletteOfCover(
+    loader: coil.ImageLoader,
+    ctx: android.content.Context,
+    coverModel: String?,
+    song: Song?
+): List<Color> {
+    if (coverModel.isNullOrEmpty()) return fallbackColors(song)
+    PALETTE_CACHE.get(coverModel)?.let { return it }
+    val extracted = try {
+        val result = loader.execute(
+            ImageRequest.Builder(ctx)
+                .data(coverModel)
+                .size(96)
+                .allowHardware(false)
+                .build()
+        )
+        val bmp = (result.drawable as? BitmapDrawable)?.bitmap
+        if (bmp == null) emptyList() else dominantColors(bmp, 5)
+    } catch (e: Exception) {
+        emptyList()
     }
-    if (pts.isEmpty()) return listOf(Color(0xFF2A2A2E))
-    val centers = ArrayList<IntArray>()
+    val colors = if (extracted.size >= 3) extracted else fallbackColors(song)
+    PALETTE_CACHE.put(coverModel, colors)
+    return colors
+}
+
+/**
+ * 从封面提取主色（v1.5.5 重写）：
+ * 旧实现按"像素数量"跑 KMeans 取 top3，而封面里占比最大的往往是黑底、白边、灰背景，
+ * 于是每首歌拿到的都是近似的中性色，提亮后整页变成同一团灰褐色 —— 表现为"没从封面取色"。
+ * 现在：先剔除近黑 / 近白 / 低饱和像素，再按 饱和度×明度 加权聚类，按权重挑 3 个色相相隔 ≥26° 的簇，
+ * 并把饱和度提到可见水平（地板 0.42），保证不同封面渲染出不同且看得见的颜色。
+ */
+fun dominantColors(bmp: Bitmap, k: Int = 5): List<Color> {
+    // 硬件位图不能逐像素读，先转成软件位图；其余图按步长抽样，控制耗时
+    val src = if (bmp.config == Bitmap.Config.HARDWARE) {
+        (bmp.copy(Bitmap.Config.ARGB_8888, false) ?: return emptyList())
+    } else bmp
+    val w = src.width
+    val h = src.height
+    if (w <= 0 || h <= 0) return emptyList()
+    val step = maxOf(1, maxOf(w, h) / 72)
+    val pts = ArrayList<FloatArray>(4096)
+    val wts = ArrayList<Float>(4096)
+    var x = 0
+    while (x < w) {
+        var y = 0
+        while (y < h) {
+            val p = src.getPixel(x, y)
+            if (((p ushr 24) and 0xFF) >= 128) {
+                val r = ((p shr 16) and 0xFF) / 255f
+                val g = ((p shr 8) and 0xFF) / 255f
+                val b = (p and 0xFF) / 255f
+                val mx = maxOf(r, g, b)
+                val mn = minOf(r, g, b)
+                val s = if (mx <= 0f) 0f else (mx - mn) / mx
+                // 只留有彩色倾向的像素：黑底(v<0.12)、白边(v>0.94)、灰背景(s<0.10) 全部丢弃
+                if (mx >= 0.12f && mx <= 0.94f && s >= 0.10f) {
+                    pts.add(floatArrayOf(r, g, b))
+                    wts.add(s * mx)
+                }
+            }
+            y += step
+        }
+        x += step
+    }
+    if (pts.size < 40) return emptyList()
+    // 加权 KMeans：权重 = 饱和度×明度，越鲜艳的像素对聚类中心影响越大
+    val centers = ArrayList<FloatArray>(k)
     for (i in 0 until k) centers.add(pts[(pts.size * i) / k].copyOf())
-    val counts = IntArray(k)
-    repeat(24) {
-        val sums = Array(k) { LongArray(3) }
-        counts.fill(0)
-        for (p in pts) {
+    val wsum = FloatArray(k)
+    repeat(20) {
+        val sums = Array(k) { FloatArray(3) }
+        wsum.fill(0f)
+        for (i in pts.indices) {
+            val p = pts[i]
+            val wt = wts[i]
             var best = 0
-            var bestD = Int.MAX_VALUE
-            for (ci in centers.indices) {
+            var bestD = Float.MAX_VALUE
+            for (ci in 0 until k) {
                 val c = centers[ci]
                 val d = (p[0] - c[0]) * (p[0] - c[0]) + (p[1] - c[1]) * (p[1] - c[1]) + (p[2] - c[2]) * (p[2] - c[2])
                 if (d < bestD) { bestD = d; best = ci }
             }
-            val s = sums[best]
-            s[0] = s[0] + p[0].toLong()
-            s[1] = s[1] + p[1].toLong()
-            s[2] = s[2] + p[2].toLong()
-            counts[best]++
+            sums[best][0] += p[0] * wt
+            sums[best][1] += p[1] * wt
+            sums[best][2] += p[2] * wt
+            wsum[best] += wt
         }
-        for (ci in centers.indices) {
-            if (counts[ci] > 0) {
-                val cen = centers[ci]
-                cen[0] = (sums[ci][0] / counts[ci]).toInt()
-                cen[1] = (sums[ci][1] / counts[ci]).toInt()
-                cen[2] = (sums[ci][2] / counts[ci]).toInt()
+        for (ci in 0 until k) {
+            if (wsum[ci] > 0f) {
+                centers[ci][0] = sums[ci][0] / wsum[ci]
+                centers[ci][1] = sums[ci][1] / wsum[ci]
+                centers[ci][2] = sums[ci][2] / wsum[ci]
             }
         }
     }
-    return centers.indices.sortedByDescending { counts[it] }.map { ci ->
-        val c = centers[ci]
-        Color(c[0] / 255f, c[1] / 255f, c[2] / 255f)
+    val order = (0 until k).sortedByDescending { wsum[it] }
+    val picked = ArrayList<Int>(3)
+    for (ci in order) {
+        if (picked.size >= 3) break
+        val hue = hsvOf(centers[ci])[0]
+        val separated = picked.all {
+            val d = kotlin.math.abs(hue - hsvOf(centers[it])[0])
+            minOf(d, 360f - d) >= 26f
+        }
+        if (separated) picked.add(ci)
     }
+    for (ci in order) { if (picked.size >= 3) break; if (ci !in picked) picked.add(ci) }
+    return picked.map { ci ->
+        val hsv = hsvOf(centers[ci])
+        // 饱和度先增强 1.6 倍、再保证不低于 0.42：淡彩封面也能看出色相，而不是一律灰
+        hsv[1] = minOf(1f, maxOf(hsv[1] * 1.6f, 0.42f))
+        hsv[2] = minOf(1f, maxOf(hsv[2], 0.45f))
+        Color(android.graphics.Color.HSVToColor(hsv))
+    }
+}
+
+/** RGB(0~1) → HSV（色相 0~360，饱和度/明度 0~1） */
+private fun hsvOf(c: FloatArray): FloatArray {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(
+        android.graphics.Color.rgb(
+            (c[0] * 255f).toInt().coerceIn(0, 255),
+            (c[1] * 255f).toInt().coerceIn(0, 255),
+            (c[2] * 255f).toInt().coerceIn(0, 255)
+        ),
+        hsv
+    )
+    return hsv
 }
 
 /**
@@ -1152,26 +1235,6 @@ private fun lightenIfDark(c: Color, minLum: Float): Color {
         (c.red * f).coerceIn(0f, 1f),
         (c.green * f).coerceIn(0f, 1f),
         (c.blue * f).coerceIn(0f, 1f)
-    )
-}
-
-/** HSV 饱和度增强：让烟雾颜色更鲜明、可分辨（红就是红、黄就是黄），避免多团叠加后被冲灰 */
-private fun saturateColor(c: Color, factor: Float): Color {
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(
-        android.graphics.Color.rgb(
-            (c.red * 255f).toInt().coerceIn(0, 255),
-            (c.green * 255f).toInt().coerceIn(0, 255),
-            (c.blue * 255f).toInt().coerceIn(0, 255)
-        ),
-        hsv
-    )
-    hsv[1] = (hsv[1] * factor).coerceAtMost(1f)
-    val rgb = android.graphics.Color.HSVToColor(hsv)
-    return Color(
-        ((rgb shr 16) and 0xFF) / 255f,
-        ((rgb shr 8) and 0xFF) / 255f,
-        (rgb and 0xFF) / 255f
     )
 }
 
