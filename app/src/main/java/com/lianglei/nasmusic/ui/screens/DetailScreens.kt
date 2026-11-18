@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.lianglei.nasmusic.data.Song
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import com.lianglei.nasmusic.ui.suppressClickOnRightSwipe
 
 private fun artUri(albumId: Long) = "content://media/external/audio/albumart/$albumId"
@@ -182,6 +184,31 @@ fun albumGroupsOf(songs: List<Song>, localTags: Map<Long, Pair<Int, Int>>): List
     return discs.map { d -> AlbumDiscGroup(d, byDisc.getValue(d).sortedWith(cmp)) }
 }
 
+/** 读一首歌的 (碟号, 音轨号)：飞牛用 HTTP Range 读头部字节自解析标签，本地走 MediaMetadataRetriever */
+private suspend fun readTagNumbers(song: Song): Pair<Int, Int> {
+    return try {
+        if (song.data.startsWith("http")) {
+            com.lianglei.nasmusic.data.AudioTagReader.cached(song.data)?.let { return it }
+            val head = com.lianglei.nasmusic.data.FnApi.fetchRange(song.data, 0, 511_999L) ?: return 0 to 0
+            com.lianglei.nasmusic.data.AudioTagReader.parse(head).also {
+                com.lianglei.nasmusic.data.AudioTagReader.put(song.data, it)
+            }
+        } else {
+            val mmr = android.media.MediaMetadataRetriever()
+            try {
+                mmr.setDataSource(song.data)
+                val track = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                    ?.trim()?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
+                val disc = if (android.os.Build.VERSION.SDK_INT >= 30)
+                    mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
+                        ?.trim()?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
+                else 0
+                disc to track
+            } finally { try { mmr.release() } catch (_: Throwable) {} }
+        }
+    } catch (_: Throwable) { 0 to 0 }
+}
+
 /** Album detail page: cover + title/artist/sample rate + stats + songs + participating artists. */
 @Composable
 fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int) -> Unit, onOpenArtist: (String) -> Unit = {}) {
@@ -212,28 +239,24 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
     val yearText = if ((first?.year ?: 0) > 0) "${first?.year}" else "—"
     val sampleRateText = if (sampleRate > 0) "$sampleRate Hz" else "—"
 
-    // 碟号/音轨号：飞牛歌曲拉取时已带 track.discNo / track.trackNo；
-    // 本地文件（MediaStore 无这两列）进专辑页时懒读标签补全，读完重新分组。
+    // 碟号/音轨号：飞牛拉取时已带 track.discNo / track.trackNo，但服务端对没写标签的文件返回 null，
+    // 这时直接从音频头部字节解析 ID3(TPOS/TRCK) / FLAC(DISCNUMBER/TRACKNUMBER) 兜底；
+    // 本地文件（MediaStore 无这两列）用 MediaMetadataRetriever 懒读。读完重新分组。
     var localTags by remember(albumSongs) { mutableStateOf(emptyMap<Long, Pair<Int, Int>>()) }
     LaunchedEffect(albumSongs) {
-        val need = albumSongs.filter { it.discNo == 0 && it.trackNo == 0 && !it.data.startsWith("http") }
+        val need = albumSongs.filter { it.discNo == 0 && it.trackNo == 0 }
         if (need.isEmpty()) return@LaunchedEffect
         localTags = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val out = HashMap<Long, Pair<Int, Int>>()
-            need.forEach { s ->
-                try {
-                    val mmr = android.media.MediaMetadataRetriever()
-                    try {
-                        mmr.setDataSource(s.data)
-                        val track = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
-                            ?.trim()?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
-                        val disc = if (android.os.Build.VERSION.SDK_INT >= 30)
-                            mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
-                                ?.trim()?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
-                        else 0
-                        if (track > 0 || disc > 0) out[s.id] = disc to track
-                    } finally { try { mmr.release() } catch (_: Throwable) {} }
-                } catch (_: Throwable) { }
+            coroutineScope {
+                need.chunked(4).forEach { chunk ->
+                    chunk.map { s ->
+                        async {
+                            val pair = readTagNumbers(s)
+                            if (pair.first > 0 || pair.second > 0) out[s.id] = pair
+                        }
+                    }.forEach { it.await() }
+                }
             }
             out
         }
@@ -245,7 +268,8 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
         var acc = 0
         discGroups.map { g -> val start = acc; acc += g.songs.size; start }
     }
-    val showDiscHeaders = discGroups.size > 1
+    // 有分组就显示组标题（单碟专辑也会显示 ＃，便于确认分组逻辑确实生效）
+    val showDiscHeaders = discGroups.isNotEmpty()
 
     LazyColumn(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
         item { Spacer(Modifier.height(24.dp)) }
