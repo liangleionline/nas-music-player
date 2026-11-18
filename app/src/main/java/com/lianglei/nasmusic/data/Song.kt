@@ -19,7 +19,9 @@ data class Song(
     val fileSize: Long = 0,     // 文件大小字节（飞牛 audioSpec.size；本地 MediaStore SIZE）
     val format: String = "",    // 文件格式（飞牛 audioSpec.format；本地 MIME 后缀）
     val addedAt: Long = 0,      // 入库时间（飞牛 track.createdAt，秒级 Unix 时间戳；本地无此值）
-    val albumAddedAt: Long = 0  // 专辑入库时间（飞牛 album.createdAt，秒级 Unix 时间戳）
+    val albumAddedAt: Long = 0, // 专辑入库时间（飞牛 album.createdAt，秒级 Unix 时间戳）
+    val discNo: Int = 0,        // 光盘编号（飞牛 track.discNo；本地标签懒读，0 = 无）
+    val trackNo: Int = 0        // 音轨编号（飞牛 track.trackNo；本地标签懒读，0 = 无）
 ) {
     val mediaUri: Uri
         get() = if (data.startsWith("http://") || data.startsWith("https://")) {

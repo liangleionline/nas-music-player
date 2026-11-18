@@ -111,6 +111,7 @@ object SourceManager {
                     put("year", s.year); put("bitrate", s.bitrate); put("sampleRate", s.sampleRate)
                     put("fileSize", s.fileSize); put("format", s.format)
                     put("addedAt", s.addedAt); put("albumAddedAt", s.albumAddedAt)
+                    put("discNo", s.discNo); put("trackNo", s.trackNo)
                 })
             }
             f.writeText(arr.toString())
@@ -140,7 +141,8 @@ object SourceManager {
                     year = o.optInt("year"), bitrate = o.optInt("bitrate"),
                     sampleRate = o.optInt("sampleRate"), fileSize = o.optLong("fileSize"),
                     format = o.optString("format"),
-                    addedAt = o.optLong("addedAt"), albumAddedAt = o.optLong("albumAddedAt")
+                    addedAt = o.optLong("addedAt"), albumAddedAt = o.optLong("albumAddedAt"),
+                    discNo = o.optInt("discNo"), trackNo = o.optInt("trackNo")
                 ))
             }
             feiniuCache = list

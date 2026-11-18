@@ -155,7 +155,10 @@ object FnApi {
             fileSize = spec?.optLong("size", 0L) ?: 0L,
             format = spec?.optString("format", "") ?: "",
             addedAt = addedAt,
-            albumAddedAt = albumAddedAt
+            albumAddedAt = albumAddedAt,
+            // 碟号 / 音轨号：服务端入库时已解析好标签（真实响应里可能为 null → optInt 取 0）
+            discNo = t.optInt("discNo", 0),
+            trackNo = t.optInt("trackNo", 0)
         )
     }
 

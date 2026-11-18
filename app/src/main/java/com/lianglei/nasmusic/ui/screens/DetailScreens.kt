@@ -140,6 +140,48 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (List<Song
     }
 }
 
+/** 专辑内曲目分组结果：discNo = 0 表示"没有碟号"，渲染成 ＃ 组 */
+data class AlbumDiscGroup(val discNo: Int, val songs: List<Song>)
+
+/** 生效的碟号：曲目自带的标签值优先，其次专辑页懒读到的本地标签，缺省 0（无碟号） */
+private fun discOfSong(song: Song, local: Map<Long, Pair<Int, Int>>): Int =
+    if (song.discNo > 0) song.discNo else local[song.id]?.first ?: 0
+
+/** 生效的音轨号：同上 */
+private fun trackOfSong(song: Song, local: Map<Long, Pair<Int, Int>>): Int =
+    if (song.trackNo > 0) song.trackNo else local[song.id]?.second ?: 0
+
+/** 文件名（标题为空时的兜底排序键）：本地取文件路径末段，飞牛取 folder 里的文件名段 */
+private fun fileNameOf(song: Song): String {
+    val p = if (song.data.startsWith("http")) song.folder else song.data
+    val name = p.substringAfterLast('/').substringAfterLast('\\').trim()
+    return name.ifBlank { song.title.trim() }
+}
+
+/**
+ * 专辑详情分组排序（v1.5.6）：
+ * ① 有碟号的按碟号升序分成 CD1、CD2…，没有碟号的统一进最后的 ＃ 组；
+ * ② 组内先按音轨号升序，没有音轨号的排在有号的之后；
+ * ③ 没有音轨号（或音轨号相同）时按标题排序，标题为空的按文件名排序。
+ */
+fun albumGroupsOf(songs: List<Song>, localTags: Map<Long, Pair<Int, Int>>): List<AlbumDiscGroup> {
+    val collator = java.text.Collator.getInstance(java.util.Locale.CHINA)
+    val byDisc = LinkedHashMap<Int, MutableList<Song>>()
+    songs.forEach { s -> byDisc.getOrPut(discOfSong(s, localTags)) { mutableListOf() }.add(s) }
+    fun keyOf(s: Song): String = s.title.trim().ifBlank { fileNameOf(s) }
+    val cmp = Comparator<Song> { a, b ->
+        val ta = trackOfSong(a, localTags).let { if (it > 0) it else Int.MAX_VALUE }
+        val tb = trackOfSong(b, localTags).let { if (it > 0) it else Int.MAX_VALUE }
+        if (ta != tb) ta.compareTo(tb) else {
+            val c = collator.compare(keyOf(a), keyOf(b))
+            if (c != 0) c else a.id.compareTo(b.id)
+        }
+    }
+    // 碟号升序在前，无碟号（0）统一收尾
+    val discs = byDisc.keys.filter { it > 0 }.sorted() + byDisc.keys.filter { it <= 0 }.sorted()
+    return discs.map { d -> AlbumDiscGroup(d, byDisc.getValue(d).sortedWith(cmp)) }
+}
+
 /** Album detail page: cover + title/artist/sample rate + stats + songs + participating artists. */
 @Composable
 fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int) -> Unit, onOpenArtist: (String) -> Unit = {}) {
@@ -170,6 +212,41 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
     val yearText = if ((first?.year ?: 0) > 0) "${first?.year}" else "—"
     val sampleRateText = if (sampleRate > 0) "$sampleRate Hz" else "—"
 
+    // 碟号/音轨号：飞牛歌曲拉取时已带 track.discNo / track.trackNo；
+    // 本地文件（MediaStore 无这两列）进专辑页时懒读标签补全，读完重新分组。
+    var localTags by remember(albumSongs) { mutableStateOf(emptyMap<Long, Pair<Int, Int>>()) }
+    LaunchedEffect(albumSongs) {
+        val need = albumSongs.filter { it.discNo == 0 && it.trackNo == 0 && !it.data.startsWith("http") }
+        if (need.isEmpty()) return@LaunchedEffect
+        localTags = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val out = HashMap<Long, Pair<Int, Int>>()
+            need.forEach { s ->
+                try {
+                    val mmr = android.media.MediaMetadataRetriever()
+                    try {
+                        mmr.setDataSource(s.data)
+                        val track = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                            ?.trim()?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
+                        val disc = if (android.os.Build.VERSION.SDK_INT >= 30)
+                            mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
+                                ?.trim()?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
+                        else 0
+                        if (track > 0 || disc > 0) out[s.id] = disc to track
+                    } finally { try { mmr.release() } catch (_: Throwable) {} }
+                } catch (_: Throwable) { }
+            }
+            out
+        }
+    }
+    val discGroups = remember(albumSongs, localTags) { albumGroupsOf(albumSongs, localTags) }
+    // 播放队列顺序必须与页面展示顺序一致（分组标题不计入队列）
+    val shownSongs = remember(discGroups) { discGroups.flatMap { it.songs } }
+    val groupStarts = remember(discGroups) {
+        var acc = 0
+        discGroups.map { g -> val start = acc; acc += g.songs.size; start }
+    }
+    val showDiscHeaders = discGroups.size > 1
+
     LazyColumn(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
         item { Spacer(Modifier.height(24.dp)) }
         item {
@@ -196,25 +273,42 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
             }
         }
         item { Divider(Modifier.padding(horizontal = 20.dp)) }
-        items(albumSongs.size) { i ->
-            Row(
-                Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(albumSongs, i) }
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("${i + 1}", color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp))
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(albumSongs[i].title, fontSize = 15.sp, maxLines = 1)
-                    Spacer(Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (albumSongs[i].isHighQuality) {
-                            Box(Modifier.background(Color(0xFFE8DCC8), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp)) {
-                                Text("HQ", color = Color(0xFF8B6F47), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        discGroups.forEachIndexed { gi, group ->
+            if (showDiscHeaders) {
+                item(key = "disc-${group.discNo}") {
+                    Text(
+                        text = if (group.discNo > 0) stringResource(R.string.album_disc_cd, group.discNo)
+                        else stringResource(R.string.album_disc_unknown),
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 2.dp),
+                        color = Color.Gray, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                    )
+                }
+            }
+            items(group.songs.size, key = { "song-${group.songs[it].id}" }) { i ->
+                val s = group.songs[i]
+                val tn = trackOfSong(s, localTags)
+                Row(
+                    Modifier.fillMaxWidth().suppressClickOnRightSwipe { onPlay(shownSongs, groupStarts[gi] + i) }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (tn > 0) "$tn" else "${i + 1}",
+                        color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(s.title, fontSize = 15.sp, maxLines = 1)
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (s.isHighQuality) {
+                                Box(Modifier.background(Color(0xFFE8DCC8), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp)) {
+                                    Text("HQ", color = Color(0xFF8B6F47), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.width(6.dp))
                             }
-                            Spacer(Modifier.width(6.dp))
+                            Text(s.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
                         }
-                        Text(albumSongs[i].artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
                     }
                 }
             }
