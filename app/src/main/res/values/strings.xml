@@ -25,6 +25,8 @@
     <string name="album_title">专辑</string>
     <string name="artist_songs_line">%1$s · %2$d 首</string>
     <string name="contrib_artists">参与创作的艺术家</string>
+    <string name="album_disc_cd">CD%1$d</string>
+    <string name="album_disc_unknown">＃</string>
 
     <!-- 下一首播放 Toast -->
     <string name="toast_added_next">已加入下一首播放</string>
