@@ -271,7 +271,9 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
     // 有分组就显示组标题（单碟专辑也会显示 ＃，便于确认分组逻辑确实生效）
     val showDiscHeaders = discGroups.isNotEmpty()
 
-    LazyColumn(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
+    // 背景跟随全局 Scaffold 底色（v1.5.10）：这里原来单独铺了一层米黄 #F5F2EC，
+    // 与歌曲/专辑/艺术家列表页的 #F2F3F5 不一致，页面切换时能明显看出偏黄。
+    LazyColumn(Modifier.fillMaxSize()) {
         item { Spacer(Modifier.height(24.dp)) }
         item {
             Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
