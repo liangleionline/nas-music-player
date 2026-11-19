@@ -156,17 +156,21 @@
     <string name="placeholder_suffix">%1$s （待实现）</string>
 
     <!-- 设置页 -->
-    <string name="play_cache">播放缓存</string>
-    <string name="cache_usage">当前已使用 %1$s（上限约 200MB，自动缓存最近听过的歌，二次播放秒开）</string>
+    <string name="play_cache">音乐缓存</string>
+    <string name="cache_usage">点击设置。\n占用空间 %1$s/%2$s</string>
+    <string name="music_cache_limit_title">音乐缓存上限</string>
+    <string name="music_cache_limit_hint">上限（MB）</string>
+    <string name="music_cache_limit_range">可设置 %1$d – %2$d MB</string>
     <string name="clearing">清理中…</string>
     <string name="clear_cache">清空缓存</string>
     <string name="bg_protect_title">后台播放保护</string>
     <string name="bg_protect_desc">若后台播放被系统退出，点击前往电池设置开启「不受限制」</string>
-    <string name="cover_prefetch_title">封面预取</string>
-    <string name="cover_prefetch_desc_idle">播放中且连上 WiFi 时，后台把曲库封面抓到本地（已缓存 %1$d / %2$d 张）</string>
-    <string name="cover_prefetch_desc_running">正在后台预取封面…已缓存 %1$d / %2$d 张</string>
-    <string name="cover_prefetch_desc_done">封面已全部缓存（%1$d 张），列表与播放页直接读本地</string>
-    <string name="cover_prefetch_desc_off">已关闭：封面仍按原方式按需加载</string>
+    <string name="cover_prefetch_title">封面缓存</string>
+    <string name="cover_prefetch_desc_idle">已缓存%1$d/%2$d张封面，\n占用空间%3$s</string>
+    <string name="cover_prefetch_desc_off">此功能已关闭\n点击以开启功能</string>
+    <string name="cover_prefetch_dialog_desc">播放中连上 WiFi 时，后台把曲库封面抓到本地，列表与播放页秒出封面。</string>
+    <string name="cover_enable">打开此功能</string>
+    <string name="cover_disable">关闭此功能</string>
 
     <!-- 统计页 -->
     <string name="stats_no_record">还没有播放记录，去听首歌吧</string>

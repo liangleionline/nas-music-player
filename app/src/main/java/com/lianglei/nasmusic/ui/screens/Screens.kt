@@ -874,16 +874,29 @@ fun PlaceholderScreen(name: String) {
     }
 }
 
-/** 设置页：播放缓存用量展示 + 一键清空（v1.4.56 新增） */
+/** 设置页：音乐缓存（可自定上限）+ 封面缓存（开关/清空）+ 后台播放保护 */
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var cacheBytes by remember { mutableStateOf(com.lianglei.nasmusic.player.CacheManager.cacheSizeBytes()) }
     var clearing by remember { mutableStateOf(false) }
+    var coverBytes by remember { mutableStateOf(com.lianglei.nasmusic.data.CoverPrefetcher.cacheSizeBytes(context)) }
+    var clearingCover by remember { mutableStateOf(false) }
+    var limitMb by remember { mutableIntStateOf(com.lianglei.nasmusic.player.CacheManager.limitMb) }
+    var showLimitDialog by remember { mutableStateOf(false) }
+    var showCoverDialog by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val coverEnabled by com.lianglei.nasmusic.data.CoverPrefetcher.enabled.collectAsStateWithLifecycle()
     val coverProgress by com.lianglei.nasmusic.data.CoverPrefetcher.progress.collectAsStateWithLifecycle()
-    val coverRunning by com.lianglei.nasmusic.data.CoverPrefetcher.running.collectAsStateWithLifecycle()
+
+    // 两个缓存的实际占用会随播放 / 后台预取变化，定时刷一次展示值
+    LaunchedEffect(Unit) {
+        while (true) {
+            cacheBytes = com.lianglei.nasmusic.player.CacheManager.cacheSizeBytes()
+            coverBytes = com.lianglei.nasmusic.data.CoverPrefetcher.cacheSizeBytes(context)
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         // 顶栏：返回 + 标题
@@ -897,9 +910,10 @@ fun SettingsScreen(onBack: () -> Unit) {
             Text(stringResource(R.string.settings), fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
 
-        // 缓存行
+        // 音乐缓存：点整行打开「上限设置」弹窗，右侧保留一键清空
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            Modifier.fillMaxWidth().clickable { showLimitDialog = true }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Filled.DeleteSweep, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(28.dp))
@@ -908,7 +922,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Text(stringResource(R.string.play_cache), fontWeight = FontWeight.Medium, fontSize = 15.sp)
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    stringResource(R.string.cache_usage, formatBytes(cacheBytes)),
+                    stringResource(
+                        R.string.cache_usage,
+                        fmtCacheSize(cacheBytes),
+                        fmtCacheSize(limitMb.toLong() * 1024L * 1024L)
+                    ),
                     color = Color.Gray, fontSize = 12.sp
                 )
             }
@@ -933,9 +951,10 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
 
-        // 封面预取（v1.5.9）：播放中 + WiFi 下后台补封面，列表/播放页不再逐张等网络
+        // 封面缓存：点整行打开「打开/关闭此功能」弹窗，右侧一键清空
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            Modifier.fillMaxWidth().clickable { showCoverDialog = true }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Filled.Image, null, tint = Color(0xFF7E57C2), modifier = Modifier.size(28.dp))
@@ -945,18 +964,33 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(2.dp))
                 val total = coverProgress.second
                 val cached = coverProgress.first
-                val desc = when {
-                    !coverEnabled -> stringResource(R.string.cover_prefetch_desc_off)
-                    total > 0 && cached >= total -> stringResource(R.string.cover_prefetch_desc_done, total)
-                    coverRunning -> stringResource(R.string.cover_prefetch_desc_running, cached, total)
-                    else -> stringResource(R.string.cover_prefetch_desc_idle, cached, total)
+                val desc = if (!coverEnabled) {
+                    stringResource(R.string.cover_prefetch_desc_off)
+                } else {
+                    stringResource(R.string.cover_prefetch_desc_idle, cached, total, fmtCacheSize(coverBytes))
                 }
                 Text(desc, color = Color.Gray, fontSize = 12.sp)
             }
-            Switch(
-                checked = coverEnabled,
-                onCheckedChange = { com.lianglei.nasmusic.data.CoverPrefetcher.setEnabled(context, it) }
-            )
+            Button(
+                onClick = {
+                    clearingCover = true
+                    scope.launch {
+                        withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            com.lianglei.nasmusic.data.CoverPrefetcher.clearCache(context)
+                        }
+                        coverBytes = com.lianglei.nasmusic.data.CoverPrefetcher.cacheSizeBytes(context)
+                        clearingCover = false
+                        if (coverEnabled) com.lianglei.nasmusic.data.CoverPrefetcher.start()
+                    }
+                },
+                enabled = !clearingCover && coverBytes > 0,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF7E57C2)
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                Text(if (clearingCover) stringResource(R.string.clearing) else stringResource(R.string.clear_cache), fontSize = 13.sp)
+            }
         }
 
         // 后台播放保护：跳转系统电池/后台限制设置（v1.4.88，三星等系统会冻结后台进程导致播放被退出）
@@ -975,7 +1009,83 @@ fun SettingsScreen(onBack: () -> Unit) {
             Icon(Icons.Filled.KeyboardArrowRight, null, tint = Color.Gray)
         }
     }
+
+    // 音乐缓存上限弹窗：自己输入 MB
+    if (showLimitDialog) {
+        var input by remember { mutableStateOf(limitMb.toString()) }
+        val parsed = input.toIntOrNull()
+        val valid = parsed != null && parsed in
+                com.lianglei.nasmusic.player.CacheManager.MIN_LIMIT_MB..com.lianglei.nasmusic.player.CacheManager.MAX_LIMIT_MB
+        AlertDialog(
+            onDismissRequest = { showLimitDialog = false },
+            title = { Text(stringResource(R.string.music_cache_limit_title)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { s -> input = s.filter { it.isDigit() }.take(4) },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.music_cache_limit_hint)) },
+                        isError = input.isNotEmpty() && !valid,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(
+                            R.string.music_cache_limit_range,
+                            com.lianglei.nasmusic.player.CacheManager.MIN_LIMIT_MB,
+                            com.lianglei.nasmusic.player.CacheManager.MAX_LIMIT_MB
+                        ),
+                        color = Color.Gray, fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = valid,
+                    onClick = {
+                        val mb = parsed ?: return@TextButton
+                        com.lianglei.nasmusic.player.CacheManager.setLimitMb(context, mb)
+                        limitMb = com.lianglei.nasmusic.player.CacheManager.limitMb
+                        showLimitDialog = false
+                        scope.launch {
+                            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                com.lianglei.nasmusic.player.CacheManager.trimToLimit()
+                            }
+                            cacheBytes = com.lianglei.nasmusic.player.CacheManager.cacheSizeBytes()
+                        }
+                    }
+                ) { Text(stringResource(R.string.ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLimitDialog = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
+    // 封面缓存功能开关弹窗：只有一个动作按钮，文案随当前状态变
+    if (showCoverDialog) {
+        AlertDialog(
+            onDismissRequest = { showCoverDialog = false },
+            title = { Text(stringResource(R.string.cover_prefetch_title)) },
+            text = { Text(stringResource(R.string.cover_prefetch_dialog_desc)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    com.lianglei.nasmusic.data.CoverPrefetcher.setEnabled(context, !coverEnabled)
+                    showCoverDialog = false
+                }) {
+                    Text(
+                        if (coverEnabled) stringResource(R.string.cover_disable)
+                        else stringResource(R.string.cover_enable)
+                    )
+                }
+            }
+        )
+    }
 }
+
 
 /** 打开系统「电池 / 后台限制」设置页：优先直达本应用电池设置，失败降级到应用详情页 */
 private fun openBatterySettings(context: Context) {
@@ -997,10 +1107,12 @@ private fun openBatterySettings(context: Context) {
     }
 }
 
-private fun formatBytes(b: Long): String = when {
-    b >= 1024L * 1024L -> String.format("%.1f MB", b / 1024f / 1024f)
-    b >= 1024L -> String.format("%.0f KB", b / 1024f)
-    else -> "$b B"
+/** 设置页缓存用量：1GB 以上显示 GB，其余显示 MB（100MB 以上取整，避免数字太长） */
+private fun fmtCacheSize(b: Long): String = when {
+    b <= 0L -> "0MB"
+    b >= 1024L * 1024L * 1024L -> String.format("%.1fGB", b / 1024f / 1024f / 1024f)
+    b >= 100L * 1024L * 1024L -> String.format("%.0fMB", b / 1024f / 1024f)
+    else -> String.format("%.1fMB", b / 1024f / 1024f)
 }
 
 /** 统计页：按播放次数从高到低排列歌曲列表（v1.4.58） */
