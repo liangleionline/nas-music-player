@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -458,7 +460,11 @@ private fun DrawerPanel(
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
 
     Surface(color = Color(0xFFFCFCFD), shadowElevation = 6.dp) {
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            // v1.5.19：抽屉内容可纵向滚动（小屏/大字号下条目不会挤不下），
+            // 纵向手势由 Compose 消费，横向仍交给 DrawerLayout 关闭，两者互不抢
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        ) {
             Spacer(Modifier.height(28.dp))
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("NAS Music", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -529,7 +535,8 @@ private fun DrawerPanel(
                     nav.navigate(route) { launchSingleTop = true }
                 }
             }
-            Spacer(Modifier.weight(1f))
+            // 抽屉底部让出固定在底部的播放条高度，滚到最底也能看到最后一项
+            Spacer(Modifier.height(MINI_PLAYER_HEIGHT))
         }
     }
 }
@@ -606,6 +613,22 @@ class SwipeDrawerLayout @JvmOverloads constructor(
     private var touchStartY = 0f
     private val slop: Float get() = 24f * resources.displayMetrics.density
 
+    /** 本次手势起手时抽屉是否已展开 */
+    private var openedAtDown = false
+    /** 本次手势是否应完全让给右侧页面（抽屉已展开且起手在页面区域） */
+    private var gestureGoesToContent = false
+
+    init {
+        // 开合状态一变就重算"边缘触发区"：收起=整屏（任意位置右滑可开），展开=只有抽屉宽度（
+        // 右侧页面上的手势一律不归抽屉，避免上下滚动时把抽屉/页面带偏）
+        addDrawerListener(object : DrawerListener {
+            override fun onDrawerSlide(drawerView: View, slideOffset: Float) = applyEdgeSize()
+            override fun onDrawerOpened(drawerView: View) = applyEdgeSize()
+            override fun onDrawerClosed(drawerView: View) = applyEdgeSize()
+            override fun onDrawerStateChanged(newState: Int) = applyEdgeSize()
+        })
+    }
+
     /** DrawerLayout 私有的左侧拖动器（ViewDragHelper）。取不到时全部退回原生行为。 */
     private val leftDragger: ViewDragHelper?
         get() = runCatching {
@@ -615,24 +638,47 @@ class SwipeDrawerLayout @JvmOverloads constructor(
         }.getOrNull()
 
     /**
-     * 把边缘触发宽度补成整屏宽。
-     * 必须放在测量/布局之后重补：DrawerLayout 1.2.0 会按系统手势区 insets 重新计算边缘宽度，
-     * 只在初始化补一次会被它覆盖回去。
+     * 边缘触发宽度：抽屉收起时补成整屏宽（任意位置右滑都能开），
+     * 抽屉展开时缩回抽屉自身宽度（只有抽屉面板内的左滑才算关闭手势）。
+     * 必须放在测量/布局之后重补：DrawerLayout 1.2.0 会按系统手势区 insets 重新计算边缘宽度。
      */
-    private fun applyFullScreenEdge() {
+    private fun applyEdgeSize() {
         val w = width
         if (w <= 0) return
-        runCatching { leftDragger?.setEdgeSize(w) }
+        val drawerW = leftDrawer()?.width ?: 0
+        val edge = if (isDrawerOpen(GravityCompat.START) && drawerW > 0) drawerW else w
+        runCatching { leftDragger?.setEdgeSize(edge) }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        applyFullScreenEdge()
+        applyEdgeSize()
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
-        applyFullScreenEdge()
+        applyEdgeSize()
+    }
+
+    /**
+     * 抽屉展开后，右侧主页面上的手势完全不交给抽屉：不拦截，让 Compose 列表正常上下滚动。
+     * 画面上不会再有"页面被带得右移一下又瞬移回来"的抖动。
+     */
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                openedAtDown = isDrawerOpen(GravityCompat.START)
+                val drawerW = leftDrawer()?.width ?: 0
+                gestureGoesToContent = openedAtDown && ev.x > drawerW
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val blocked = gestureGoesToContent
+                gestureGoesToContent = false
+                if (blocked) return false
+            }
+        }
+        if (gestureGoesToContent) return false
+        return super.onInterceptTouchEvent(ev)
     }
 
     /** 左侧抽屉当前露出的比例：0 = 完全收起，1 = 完全展开。 */
@@ -668,10 +714,19 @@ class SwipeDrawerLayout @JvmOverloads constructor(
 
         // 抬手前先记下"抽屉被拖到了哪里"。super 会按原生规则开始结算动画，
         // 我们在下一帧按 1/3 结论纠正，位置连续所以看不出反向。
+        // 只有"从关到开"的手势才套用 1/3 规则；抽屉本来就是展开的（用户在拖关闭），
+        // 交给原生判定（拖过半 / 有甩动速度就关），否则会把手势强行拉回展开。
         val frac = drawerFraction()
         val dragged = draggingNow() || (frac > 0f && frac < 1f)
         val wantOpen = frac >= 1f / 3f
+        val closingFromOpen = openedAtDown
         val result = super.dispatchTouchEvent(ev)
+
+        if (closingFromOpen) {
+            // 抽屉本来就是展开的：这次手势要么是在拖关闭（交给原生结算），
+            // 要么是页面上的滚动（已由 onInterceptTouchEvent 完全放行），这里什么都不做。
+            return result
+        }
 
         if (dragged) {
             post {
