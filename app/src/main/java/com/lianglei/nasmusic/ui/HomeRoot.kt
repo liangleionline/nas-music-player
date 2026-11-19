@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.GravityCompat
+import androidx.customview.widget.ViewDragHelper
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -548,11 +549,15 @@ private fun MiniPlayer(song: Song?, isPlaying: Boolean, buffering: Boolean, onCl
 }
 
 /**
- * 全屏手势 DrawerLayout：
- * 在 dispatchTouchEvent 的最起点做"纯观察"（先于 super、绝不消费、绝不拦截），
- * 因此能看到所有触摸（包括被 ComposeView 消化的事件），同时完全不影响事件分发——
- * 汉堡键、列表滚动、点击播放等下层交互不受任何干扰。
- * 左缘 20dp 内由 DrawerLayout 原生边缘手势跟手；其余全屏区域右滑开抽屉、左滑关抽屉（系统动画）。
+ * 全屏跟手手势 DrawerLayout（v1.5.13）：
+ *
+ * 1. **跟手拉出**：DrawerLayout 内部用 ViewDragHelper 做拖动，但它的"边缘触发区"默认只有
+ *    左缘 20dp。把该拖动器的边缘宽度补成整屏宽后，屏幕任意位置起手的右滑都会被它接管，
+ *    抽屉跟着手指实时平移（推动式，内容同步被推开），不再"抬手后补一段系统动画"。
+ * 2. **1/3 松手判定**：原生判定是 50%（外加速度阈值）。这里在抬手时读一次抽屉当前的
+ *    露出比例：≥ 1/3 就确保展开，< 1/3 就确保弹回，覆盖原生结论（同一帧内改判，
+ *    位置连续，不会看到反向跳）。
+ * 3. **关闭手势保留**：抽屉打开后，面板外的左滑仍然直接关闭（原有操作习惯不变）。
  */
 class SwipeDrawerLayout @JvmOverloads constructor(
     context: Context
@@ -561,27 +566,92 @@ class SwipeDrawerLayout @JvmOverloads constructor(
     private var touchStartY = 0f
     private val slop: Float get() = 24f * resources.displayMetrics.density
 
+    /** DrawerLayout 私有的左侧拖动器（ViewDragHelper）。取不到时全部退回原生行为。 */
+    private val leftDragger: ViewDragHelper?
+        get() = runCatching {
+            val f = DrawerLayout::class.java.getDeclaredField("mLeftDragger")
+            f.isAccessible = true
+            f.get(this) as? ViewDragHelper
+        }.getOrNull()
+
+    /**
+     * 把边缘触发宽度补成整屏宽。
+     * 必须放在测量/布局之后重补：DrawerLayout 1.2.0 会按系统手势区 insets 重新计算边缘宽度，
+     * 只在初始化补一次会被它覆盖回去。
+     */
+    private fun applyFullScreenEdge() {
+        val w = width
+        if (w <= 0) return
+        runCatching { leftDragger?.setEdgeSize(w) }
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        applyFullScreenEdge()
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        applyFullScreenEdge()
+    }
+
+    /** 左侧抽屉当前露出的比例：0 = 完全收起，1 = 完全展开。 */
+    private fun drawerFraction(): Float {
+        val d = leftDrawer() ?: return 0f
+        val w = d.width
+        if (w <= 0) return 0f
+        val left = d.left + d.translationX
+        return ((left + w) / w).coerceIn(0f, 1f)
+    }
+
+    private fun leftDrawer(): View? {
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            val lp = child.layoutParams as? DrawerLayout.LayoutParams ?: continue
+            if ((lp.gravity and Gravity.LEFT) == Gravity.LEFT) return child
+        }
+        return null
+    }
+
+    private fun draggingNow(): Boolean =
+        runCatching { leftDragger?.viewDragState == ViewDragHelper.STATE_DRAGGING }.getOrDefault(false)
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                touchStartX = ev.x
-                touchStartY = ev.y
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val dx = ev.x - touchStartX
-                val dy = ev.y - touchStartY
-                if (kotlin.math.abs(dx) > slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
-                    if (getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED) {
-                        if (isDrawerOpen(GravityCompat.START)) {
-                            if (dx < 0) closeDrawer(GravityCompat.START)
-                        } else if (touchStartX > slop && dx > 0) {
-                            openDrawer(GravityCompat.START)
-                        }
-                    }
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            touchStartX = ev.x
+            touchStartY = ev.y
+            return super.dispatchTouchEvent(ev)
+        }
+        if (ev.actionMasked != MotionEvent.ACTION_UP) {
+            return super.dispatchTouchEvent(ev)
+        }
+
+        // 抬手前先记下"抽屉被拖到了哪里"。super 会按原生规则开始结算动画，
+        // 我们在下一帧按 1/3 结论纠正，位置连续所以看不出反向。
+        val frac = drawerFraction()
+        val dragged = draggingNow() || (frac > 0f && frac < 1f)
+        val wantOpen = frac >= 1f / 3f
+        val result = super.dispatchTouchEvent(ev)
+
+        if (dragged) {
+            post {
+                if (wantOpen) {
+                    if (!isDrawerOpen(GravityCompat.START) &&
+                        getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED
+                    ) openDrawer(GravityCompat.START)
+                } else {
+                    if (isDrawerOpen(GravityCompat.START)) closeDrawer(GravityCompat.START)
                 }
             }
+        } else {
+            // 没进入拖动：保留"抽屉已打开时左滑直接关闭"的原有交互
+            val dx = ev.x - touchStartX
+            val dy = ev.y - touchStartY
+            if (isDrawerOpen(GravityCompat.START) &&
+                getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED &&
+                dx < -slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f
+            ) closeDrawer(GravityCompat.START)
         }
-        // 观察完交给 super：拦截、分发、Compose 处理全部照旧，一次都不碰
-        return super.dispatchTouchEvent(ev)
+        return result
     }
 }
