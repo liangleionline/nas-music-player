@@ -69,6 +69,12 @@ object PlayerManager {
         this.controller?.removeListener(playerListener)
         this.controller = controller
         controller.addListener(playerListener)
+        // v1.5.12：绑定后立刻把真实状态同步到 UI。冷启动时恢复队列会先 prepare()，
+        // 而 {_isPlaying} 之前只靠 onIsPlayingChanged 更新 —— 一旦监听回调在 setUp 期间
+        // 报过一次 true（或回调漏了一次 false），UI 就会一直显示"暂停键"（以为在播），
+        // 而实际没有任何音频在放。这里以 controller 的真实状态为准先校正一次。
+        _isPlaying.value = controller.isPlaying
+        _buffering.value = controller.playbackState == Player.STATE_BUFFERING
         // v1.5.2：重新绑定后必须把 mode 下发给底层，否则 Activity 重建/回前台时
         // 底层可能还留着上一次的 shuffle 状态，导致"显示顺序播放、实际随机跳歌"
         applyModeToController()
@@ -426,14 +432,21 @@ object PlayerManager {
         _queue.value = songs
         _currentIndex.value = startIndex
         _positionMs.value = position
+        // v1.5.12：恢复只摆好队列和进度，绝不带 playWhenReady。
+        // 若底层因为上一次会话残留仍是"待播"（playWhenReady=true），这里显式停住，
+        // 否则冷启动会变成"控制条显示播放中、其实没有声音"的怪状态。
+        _isPlaying.value = false
         // 12k 首歌构造 MediaItem 有几十~上百毫秒开销，放到后台线程做，避免冷启动第一帧被拖住
         scope.launch {
             val items = withContext(Dispatchers.Default) { songs.map { mediaItemOf(it) } }
             val cc = controller ?: return@launch
             cc.setMediaItems(items, startIndex, position)
+            // 先暂停再 prepare：恢复态必须是"暂停"，由用户自己决定要不要继续播
+            cc.pause()
             cc.prepare()
             applyModeToController()
             _durationMs.value = cc.duration.coerceAtLeast(0)
+            _isPlaying.value = cc.isPlaying
         }
         // Don't auto-play, just restore position
     }
@@ -441,6 +454,12 @@ object PlayerManager {
     /** Call from a 500ms ticker in the UI. */
     fun tick() {
         val c = controller ?: return
+        // v1.5.12：以底层真实状态为准，每 500ms 校正一次播放/缓冲状态。
+        // 监听回调一旦漏一次（冷启动 setUp、MediaSession 重连、通知栏操作都可能漏），
+        // 界面按钮就会长期停在错误的一侧（例如没播放却显示暂停键）。
+        if (_isPlaying.value != c.isPlaying) _isPlaying.value = c.isPlaying
+        val isBuffering = c.playbackState == Player.STATE_BUFFERING
+        if (_buffering.value != isBuffering) _buffering.value = isBuffering
         _positionMs.value = c.currentPosition
         _durationMs.value = c.duration.coerceAtLeast(0)
         // Sync current index in case onMediaItemTransition was missed
