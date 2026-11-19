@@ -90,6 +90,9 @@ fun HomeRoot() {
     val context = LocalContext.current
     val drawerWidthPx = with(LocalDensity.current) { DRAWER_WIDTH.toPx() }
 
+    // v1.5.17：全局更新弹窗（冷启动自动检查 / 设置页手动检查都会走到这里）
+    UpdatePromptHost(context)
+
     val searchTriggerState = remember { mutableStateOf(false) }
     val drawerOpenState = remember { mutableStateOf(false) }
     var drawerLayoutRef by remember { mutableStateOf<DrawerLayout?>(null) }
