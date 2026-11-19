@@ -877,6 +877,9 @@ fun SettingsScreen(onBack: () -> Unit) {
     var cacheBytes by remember { mutableStateOf(com.lianglei.nasmusic.player.CacheManager.cacheSizeBytes()) }
     var clearing by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val coverEnabled by com.lianglei.nasmusic.data.CoverPrefetcher.enabled.collectAsStateWithLifecycle()
+    val coverProgress by com.lianglei.nasmusic.data.CoverPrefetcher.progress.collectAsStateWithLifecycle()
+    val coverRunning by com.lianglei.nasmusic.data.CoverPrefetcher.running.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         // 顶栏：返回 + 标题
@@ -924,6 +927,32 @@ fun SettingsScreen(onBack: () -> Unit) {
             ) {
                 Text(if (clearing) stringResource(R.string.clearing) else stringResource(R.string.clear_cache), fontSize = 13.sp)
             }
+        }
+
+        // 封面预取（v1.5.9）：播放中 + WiFi 下后台补封面，列表/播放页不再逐张等网络
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Image, null, tint = Color(0xFF7E57C2), modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.cover_prefetch_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Spacer(Modifier.height(2.dp))
+                val total = coverProgress.second
+                val cached = coverProgress.first
+                val desc = when {
+                    !coverEnabled -> stringResource(R.string.cover_prefetch_desc_off)
+                    total > 0 && cached >= total -> stringResource(R.string.cover_prefetch_desc_done, total)
+                    coverRunning -> stringResource(R.string.cover_prefetch_desc_running, cached, total)
+                    else -> stringResource(R.string.cover_prefetch_desc_idle, cached, total)
+                }
+                Text(desc, color = Color.Gray, fontSize = 12.sp)
+            }
+            Switch(
+                checked = coverEnabled,
+                onCheckedChange = { com.lianglei.nasmusic.data.CoverPrefetcher.setEnabled(context, it) }
+            )
         }
 
         // 后台播放保护：跳转系统电池/后台限制设置（v1.4.88，三星等系统会冻结后台进程导致播放被退出）
