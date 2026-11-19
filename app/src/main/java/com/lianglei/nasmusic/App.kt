@@ -41,6 +41,12 @@ class App : Application(), ImageLoaderFactory {
             // 播放中继续补：曲库有变动（新增专辑）时能把新封面也补上
             PlayerManager.isPlaying.collect { playing -> if (playing) CoverPrefetcher.start() }
         }
+        scope.launch {
+            // v1.5.17：每次冷启动查一次本仓库最新 Release，有更新就在首页弹窗；
+            // 放到 5 秒后，不和首页渲染、曲库加载抢带宽
+            kotlinx.coroutines.delay(5_000)
+            com.lianglei.nasmusic.data.UpdateCenter.checkOnLaunch(this@App)
+        }
     }
 
     override fun newImageLoader(): ImageLoader {

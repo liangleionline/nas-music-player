@@ -888,6 +888,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val coverEnabled by com.lianglei.nasmusic.data.CoverPrefetcher.enabled.collectAsStateWithLifecycle()
     val coverProgress by com.lianglei.nasmusic.data.CoverPrefetcher.progress.collectAsStateWithLifecycle()
+    val checkingUpdate by com.lianglei.nasmusic.data.UpdateCenter.checking.collectAsStateWithLifecycle()
 
     // 两个缓存的实际占用会随播放 / 后台预取变化，定时刷一次展示值
     LaunchedEffect(Unit) {
@@ -990,6 +991,39 @@ fun SettingsScreen(onBack: () -> Unit) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
             ) {
                 Text(if (clearingCover) stringResource(R.string.clearing) else stringResource(R.string.clear_cache), fontSize = 13.sp)
+            }
+        }
+
+        // 检查更新（v1.5.17）：查本仓库最新 Release，有更新直接下载 APK
+        Row(
+            Modifier.fillMaxWidth().clickable {
+                if (!checkingUpdate) com.lianglei.nasmusic.data.UpdateCenter.check(context)
+            }.padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Refresh, null, tint = Color(0xFFFB8C00), modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.update_check_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(R.string.update_check_desc, com.lianglei.nasmusic.data.UpdateCenter.currentVersion()),
+                    color = Color.Gray, fontSize = 12.sp
+                )
+            }
+            Button(
+                onClick = { com.lianglei.nasmusic.data.UpdateCenter.check(context) },
+                enabled = !checkingUpdate,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFB8C00)
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    if (checkingUpdate) stringResource(R.string.update_checking)
+                    else stringResource(R.string.update_check),
+                    fontSize = 13.sp
+                )
             }
         }
 

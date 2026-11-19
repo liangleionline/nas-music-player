@@ -171,6 +171,16 @@
     <string name="cover_prefetch_dialog_desc">播放中连上 WiFi 时，后台把曲库封面抓到本地，列表与播放页秒出封面。</string>
     <string name="cover_enable">打开此功能</string>
     <string name="cover_disable">关闭此功能</string>
+    <string name="update_check_title">检查更新</string>
+    <string name="update_check_desc">当前版本 v%1$s</string>
+    <string name="update_check">检查更新</string>
+    <string name="update_checking">检查中…</string>
+    <string name="update_available_title">发现新版本 v%1$s</string>
+    <string name="update_current_version">当前版本 v%1$s</string>
+    <string name="update_notes_empty">该版本没有填写更新说明</string>
+    <string name="update_now">立即更新</string>
+    <string name="update_later">稍后</string>
+    <string name="update_downloading">正在下载…%1$d%%</string>
 
     <!-- 统计页 -->
     <string name="stats_no_record">还没有播放记录，去听首歌吧</string>
