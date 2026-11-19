@@ -21,6 +21,7 @@ class App : Application(), ImageLoaderFactory {
         com.lianglei.nasmusic.data.SourceManager.init(this)
         com.lianglei.nasmusic.data.StatsStore.init(this)
         com.lianglei.nasmusic.data.SortPrefs.init(this)
+        com.lianglei.nasmusic.player.CacheManager.init(this)
         PlayerManager.init(this)
         CoverPrefetcher.init(this)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

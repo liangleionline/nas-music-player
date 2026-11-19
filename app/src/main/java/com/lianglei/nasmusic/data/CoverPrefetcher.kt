@@ -104,6 +104,19 @@ object CoverPrefetcher {
         _running.value = false
     }
 
+    /** 封面磁盘缓存当前占用（Coil disk cache） */
+    fun cacheSizeBytes(ctx: Context): Long =
+        runCatching { coil.Coil.imageLoader(ctx).diskCache?.size ?: 0L }.getOrDefault(0L)
+
+    /** 清空封面缓存：停掉预取 → 清 Coil 磁盘缓存 → 作废 done 清单 → 进度归零（在协程里调用） */
+    suspend fun clearCache(ctx: Context) {
+        stop()
+        runCatching { coil.Coil.imageLoader(ctx).diskCache?.clear() }
+        done.clear()
+        runCatching { File(ctx.filesDir, DONE_FILE).delete() }
+        reportProgress()
+    }
+
     private suspend fun run() {
         val ctx = appCtx ?: return
         if (SourceManager.current.value != MusicSource.FEINIU) return
