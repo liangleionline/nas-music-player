@@ -42,7 +42,10 @@ object CoverPrefetcher {
     /** 并发路数：3 路足够跑满家用 WiFi，又不至于把 NAS 的小水管抢空影响播放 */
     private const val WORKERS = 3
     private const val THROTTLE_MS = 30L
-    private const val MAX_CACHE_BYTES = 512L * 1024 * 1024
+    /** 单张封面的失败容忍度：超过就跳过它，避免个别坏图把一路 worker 卡死 */
+    private const val MAX_FAIL_PER_ID = 3
+    /** 设备剩余空间低于这个值就收手，不去占满存储 */
+    private const val MIN_FREE_BYTES = 500L * 1024 * 1024
     private const val MAX_FAIL_STREAK = 5
     /** 预取请求的边长：列表/播放页封面都是小图，只解码到这个尺寸，省 CPU 也省内存 */
     private const val REQUEST_SIZE = 160
@@ -51,6 +54,8 @@ object CoverPrefetcher {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
     private val done = ConcurrentHashMap.newKeySet<String>()
+    /** 本次运行里每张封面的连续失败次数，达到 [MAX_FAIL_PER_ID] 就跳过 */
+    private val failed = ConcurrentHashMap<String, Int>()
     @Volatile private var doneLoaded = false
 
     private val _enabled = MutableStateFlow(true)
@@ -108,6 +113,7 @@ object CoverPrefetcher {
             .distinct()
         if (ids.isEmpty()) return
         val loader = coil.Coil.imageLoader(ctx)
+        failed.clear()
         _running.value = true
         try {
             // 缓存目录被系统清过（或用户清了应用缓存）时，done 记录也要一起作废，
@@ -150,18 +156,24 @@ object CoverPrefetcher {
                                 waited += 10_000
                                 if (waited >= 10 * 60_000L) return@launch
                             }
-                            val used = loader.diskCache?.size ?: 0L
-                            if (used >= MAX_CACHE_BYTES) return@launch // 缓存预算用满，收手
+                            // v1.5.15：不再看"Coil 磁盘缓存用满多少"就整体退出。
+                            // 旧逻辑以 512MB 为界，缓存顶满后 3 路 worker 全部 return，进度就永久冻在 8960/12267。
+                            // 现在只按设备剩余空间兜底，余量低于 MIN_FREE_BYTES 才收手。
+                            if (freeBytes(ctx) < MIN_FREE_BYTES) return@launch
+                            // 个别封面反复取不到（服务端 404/坏图）时跳过，不让它反复耗掉一路 worker
+                            if ((failed[id] ?: 0) >= MAX_FAIL_PER_ID) continue
 
                             val ok = fetch(ctx, loader, id)
                             if (ok) {
                                 failStreak.set(0)
+                                failed.remove(id)
                                 if (done.add(id)) {
                                     appendDone(ctx, id)
                                     _progress.value = cachedCount.incrementAndGet() to ids.size
                                 }
                                 delay(THROTTLE_MS)
                             } else {
+                                failed[id] = (failed[id] ?: 0) + 1
                                 if (failStreak.incrementAndGet() >= MAX_FAIL_STREAK) {
                                     failStreak.set(0)
                                     delay(60_000)
@@ -206,4 +218,9 @@ object CoverPrefetcher {
         return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
     }
+
+    /** 应用私有目录所在分区的可用空间 */
+    private fun freeBytes(ctx: Context): Long = runCatching {
+        android.os.StatFs(ctx.filesDir.absolutePath).availableBytes
+    }.getOrDefault(Long.MAX_VALUE)
 }
