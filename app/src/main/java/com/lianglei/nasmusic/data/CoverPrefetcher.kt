@@ -116,10 +116,14 @@ object CoverPrefetcher {
                 done.clear()
                 runCatching { File(ctx.filesDir, DONE_FILE).delete() }
             }
-            // 没有 WiFi 就先等着，不消耗蜂窝流量
+            // 没有 WiFi 就先等着，不消耗蜂窝流量；但最多等 10 分钟（v1.5.11 起开屏就会触发一次，
+            // 不能在没有 WiFi 的场景下无限空转），到点收工，下次开屏/开播或切到飞牛音源再续
+            var startWait = 0L
             while (!onWifi(ctx)) {
                 if (!_enabled.value) return
                 delay(10_000)
+                startWait += 10_000
+                if (startWait >= 10 * 60_000L) return
             }
             while (!doneLoaded) delay(200)
 

@@ -195,6 +195,7 @@ private fun HomeContent(
     val songs by SourceManager.songs.collectAsStateWithLifecycle()
     val loading by SourceManager.loading.collectAsStateWithLifecycle()
     val playlists by SourceManager.playlists.collectAsStateWithLifecycle()
+    val playlistsLoading by SourceManager.playlistsLoading.collectAsStateWithLifecycle()
     val currentIndex by PlayerManager.currentIndex.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlaying.collectAsStateWithLifecycle()
     val buffering by PlayerManager.buffering.collectAsStateWithLifecycle()
@@ -327,7 +328,7 @@ private fun HomeContent(
                             FolderListScreen(songs, onOpenFolder = { name -> if (name.isNotBlank()) nav.navigate("folder/" + java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")) })
                         }
                     }
-                    composable("playlists") { PlaylistScreen(playlists = playlists, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
+                    composable("playlists") { PlaylistScreen(playlists = playlists, loading = playlistsLoading, onOpenPlaylist = { guid -> nav.navigate("playlist/$guid") }) }
                     composable("scan") { ScanSourceScreen() }
                     composable("library") { NasLibraryScreen(onBack = { nav.popBackStack() }, onOpenFeiniuLogin = { nav.navigate("fn-login") }) }
                     composable("fn-login") { FeiniuLoginScreen(onBack = { nav.popBackStack() }, onSuccess = { nav.popBackStack("library", false) }) }
@@ -358,15 +359,25 @@ private fun HomeContent(
                     composable("playlist/{guid}") { backStackEntry ->
                         val guid = backStackEntry.arguments?.getString("guid") ?: ""
                         var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+                        // v1.5.11：歌单曲目要联网拉，拉取期间不要一上来就显示空列表
+                        var playlistLoading by remember { mutableStateOf(currentSource == MusicSource.FEINIU) }
                         LaunchedEffect(guid, currentSource) {
-                            playlistSongs = if (currentSource == MusicSource.FEINIU) {
-                                SourceManager.fetchPlaylistTracks(guid)
+                            if (currentSource == MusicSource.FEINIU) {
+                                playlistSongs = SourceManager.fetchPlaylistTracks(guid)
+                                playlistLoading = false
                             } else {
-                                songs
+                                playlistSongs = songs
+                                playlistLoading = false
                             }
                         }
                         val plName = playlists.find { it.guid == guid }?.name ?: stringResource(R.string.default_playlist)
-                        PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx); openPlayer() }
+                        if (playlistLoading && playlistSongs.isEmpty()) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        } else {
+                            PlaylistDetailScreen(plName, playlistSongs) { idx -> PlayerManager.playQueue(playlistSongs, idx); openPlayer() }
+                        }
                     }
                 }
             }
