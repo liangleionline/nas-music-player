@@ -72,6 +72,9 @@ private val systemEntries = listOf(
 
 private val DRAWER_WIDTH = 200.dp
 
+/** 迷你播放条高度：v1.5.18 起播放条固定在 HomeRoot 顶层，Scaffold 只留同高占位 */
+private val MINI_PLAYER_HEIGHT = 56.dp
+
 /**
  * 主入口（v1.4.15 重构：改用 Google 官方 DrawerLayout）。
  *
@@ -131,6 +134,7 @@ fun HomeRoot() {
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     AndroidView(
         factory = { ctx ->
             // v1.5.14 推动式：右侧内容容器，抽屉滑动时按同一比例右移
@@ -189,6 +193,30 @@ fun HomeRoot() {
         update = { drawerLayoutRef = it },
         modifier = Modifier.fillMaxSize()
     )
+
+    // v1.5.18 固定播放条：迷你播放条画在抽屉层之上（页面被推开时它不跟着走），
+    // 全局只有这一份，抽屉开合/页面切换都影响不到它的位置。
+    val queue by PlayerManager.queue.collectAsStateWithLifecycle()
+    val currentIndex by PlayerManager.currentIndex.collectAsStateWithLifecycle()
+    val isPlaying by PlayerManager.isPlaying.collectAsStateWithLifecycle()
+    val buffering by PlayerManager.buffering.collectAsStateWithLifecycle()
+    MiniPlayer(
+        song = queue.getOrNull(currentIndex),
+        isPlaying = isPlaying,
+        buffering = buffering,
+        onClick = {
+            context.startActivity(android.content.Intent(context, PlayerActivity::class.java))
+            (context as? android.app.Activity)?.overridePendingTransition(R.anim.slide_in_bottom, 0)
+        },
+        onQueue = {
+            context.startActivity(
+                android.content.Intent(context, PlayerActivity::class.java).apply { putExtra("showQueue", true) }
+            )
+            (context as? android.app.Activity)?.overridePendingTransition(R.anim.slide_in_bottom, 0)
+        },
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+    )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -211,11 +239,6 @@ private fun HomeContent(
     val loading by SourceManager.loading.collectAsStateWithLifecycle()
     val playlists by SourceManager.playlists.collectAsStateWithLifecycle()
     val playlistsLoading by SourceManager.playlistsLoading.collectAsStateWithLifecycle()
-    val currentIndex by PlayerManager.currentIndex.collectAsStateWithLifecycle()
-    val isPlaying by PlayerManager.isPlaying.collectAsStateWithLifecycle()
-    val buffering by PlayerManager.buffering.collectAsStateWithLifecycle()
-    val queue by PlayerManager.queue.collectAsStateWithLifecycle()
-    val current = queue.getOrNull(currentIndex)
 
     // 打开播放页：独立 Activity + 系统窗口动画（v1.4.81）。
     // 播放由 PlayerService（前台服务）承载，Activity 切换不影响播放。
@@ -298,14 +321,10 @@ private fun HomeContent(
             )
         },
         bottomBar = {
-            // 迷你播放栏始终显示；点击打开播放页（独立 Activity），队列按钮直接进队列页
-            MiniPlayer(
-                song = current,
-                isPlaying = isPlaying,
-                buffering = buffering,
-                onClick = { openPlayer() },
-                onQueue = { openPlayer(showQueue = true) }
-            )
+            // v1.5.18：真正的播放条移到 HomeRoot 顶层（固定不随抽屉推动），
+            // 这里只留同高的占位，保证列表底部内边距（innerPadding）与之前完全一致，
+            // 歌曲列表最后一行不会被播放条盖住。
+            Spacer(Modifier.height(MINI_PLAYER_HEIGHT))
         }
     ) { pad ->
         Box(Modifier.fillMaxSize()) {
@@ -530,10 +549,17 @@ private fun DrawerGroup(entries: List<DrawerEntry>, onClick: (String) -> Unit) {
 }
 
 @Composable
-private fun MiniPlayer(song: Song?, isPlaying: Boolean, buffering: Boolean, onClick: () -> Unit, onQueue: () -> Unit) {
-    Surface(tonalElevation = 3.dp) {
+private fun MiniPlayer(
+    song: Song?,
+    isPlaying: Boolean,
+    buffering: Boolean,
+    onClick: () -> Unit,
+    onQueue: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(modifier = modifier, tonalElevation = 3.dp) {
         Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 12.dp).clickable(onClick = onClick),
+            Modifier.fillMaxWidth().height(MINI_PLAYER_HEIGHT).padding(horizontal = 12.dp).clickable(onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
