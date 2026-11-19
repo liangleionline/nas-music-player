@@ -162,6 +162,11 @@
     <string name="clear_cache">清空缓存</string>
     <string name="bg_protect_title">后台播放保护</string>
     <string name="bg_protect_desc">若后台播放被系统退出，点击前往电池设置开启「不受限制」</string>
+    <string name="cover_prefetch_title">封面预取</string>
+    <string name="cover_prefetch_desc_idle">播放中且连上 WiFi 时，后台把曲库封面抓到本地（已缓存 %1$d / %2$d 张）</string>
+    <string name="cover_prefetch_desc_running">正在后台预取封面…已缓存 %1$d / %2$d 张</string>
+    <string name="cover_prefetch_desc_done">封面已全部缓存（%1$d 张），列表与播放页直接读本地</string>
+    <string name="cover_prefetch_desc_off">已关闭：封面仍按原方式按需加载</string>
 
     <!-- 统计页 -->
     <string name="stats_no_record">还没有播放记录，去听首歌吧</string>
