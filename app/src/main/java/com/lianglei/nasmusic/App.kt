@@ -23,14 +23,35 @@ class App : Application(), ImageLoaderFactory {
         com.lianglei.nasmusic.data.SortPrefs.init(this)
         PlayerManager.init(this)
         CoverPrefetcher.init(this)
-        // v1.5.9：一开播就让封面预取跑起来（仅在 WiFi/有线网络下真正发请求，见 CoverPrefetcher）
-        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scope.launch {
+            // v1.5.11：开屏就开始热封面，不再等"开始播放"才动手
+            // （预取内部仍然只在 WiFi/有线时才真正发请求，见 CoverPrefetcher）
+            kotlinx.coroutines.delay(3_000)
+            CoverPrefetcher.start()
+        }
+        scope.launch {
+            // 登录/切到飞牛音源后也补一次（此时曲库缓存才刚可用）
+            com.lianglei.nasmusic.data.SourceManager.current.collect { src ->
+                if (src == com.lianglei.nasmusic.data.MusicSource.FEINIU) CoverPrefetcher.start()
+            }
+        }
+        scope.launch {
+            // 播放中继续补：曲库有变动（新增专辑）时能把新封面也补上
             PlayerManager.isPlaying.collect { playing -> if (playing) CoverPrefetcher.start() }
         }
     }
 
     override fun newImageLoader(): ImageLoader {
+        // v1.5.11：默认 OkHttp 的 Dispatcher 对同一域名只放 5 个并发请求，
+        // 封面全部来自同一个 NAS 域名 → 列表里十几张封面要排队，看起来就是"一张张慢慢冒"。
+        // 放宽到 8（预取固定占 3 路，界面仍留 5 路），局域网内足够。
+        val dispatcher = okhttp3.Dispatcher().apply {
+            maxRequests = 64
+            maxRequestsPerHost = 8
+        }
         val client = OkHttpClient.Builder()
+            .dispatcher(dispatcher)
             .addInterceptor(Interceptor { chain ->
                 val req = chain.request().newBuilder()
                 if (FnApi.token.isNotEmpty()) {

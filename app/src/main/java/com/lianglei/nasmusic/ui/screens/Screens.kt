@@ -627,12 +627,16 @@ fun FolderBrowserScreen(
 @Composable
 fun PlaylistScreen(
     playlists: List<com.lianglei.nasmusic.data.FnApi.FnPlaylist>,
+    loading: Boolean = false,
     onOpenPlaylist: (String) -> Unit = {}
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         if (playlists.isEmpty()) {
+            // v1.5.11：正在拉歌单时显示加载中，只有确认"服务器上没有歌单"才显示暂无歌单
+            // （旧版不管在不在加载都报"暂无歌单"，于是打开时闪一下空页、过一会歌单又冒出来）
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.no_playlists), color = Color.Gray)
+                if (loading) CircularProgressIndicator()
+                else Text(stringResource(R.string.no_playlists), color = Color.Gray)
             }
             return@Column
         }
