@@ -62,12 +62,14 @@ class App : Application(), ImageLoaderFactory {
             .build()
         return ImageLoader.Builder(this)
             .okHttpClient(client)
-            // v1.5.9：给封面磁盘缓存 512MB 上限。十二万首级的曲库封面也就几百 MB，
-            // 预取过的封面之后都从本地读，列表滚动不再逐张等网络。
+            // v1.5.15：封面磁盘缓存上限 512MB → 1GB。
+            // 根因：Coil 的磁盘缓存存的是"封面原图字节"（不是请求里 160px 的解码尺寸），
+            // 一万两千多张封面平均每张 50~60KB 就要 700MB 左右。512MB 顶满后预取器被判"预算用尽"提前收工，
+            // 设置页就停在 8960/12267 不动了。
             .diskCache(
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(512L * 1024 * 1024)
+                    .maxSizeBytes(1024L * 1024 * 1024)
                     .build()
             )
             .crossfade(true)
