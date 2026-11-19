@@ -617,6 +617,8 @@ class SwipeDrawerLayout @JvmOverloads constructor(
     private var openedAtDown = false
     /** 本次手势是否应完全让给右侧页面（抽屉已展开且起手在页面区域） */
     private var gestureGoesToContent = false
+    /** 本次手势起手点是否在"抽屉已展开时的右侧页面区域" */
+    private var pageAreaAtDown = false
 
     init {
         // 开合状态一变就重算"边缘触发区"：收起=整屏（任意位置右滑可开），展开=只有抽屉宽度（
@@ -706,6 +708,10 @@ class SwipeDrawerLayout @JvmOverloads constructor(
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             touchStartX = ev.x
             touchStartY = ev.y
+            // 抽屉展开、且手指落在抽屉面板右侧的页面区域：纵向手势给页面滚动，
+            // 横向左滑在抬手时用来关闭抽屉
+            pageAreaAtDown = isDrawerOpen(GravityCompat.START) &&
+                ev.x > (leftDrawer()?.width ?: 0)
             return super.dispatchTouchEvent(ev)
         }
         if (ev.actionMasked != MotionEvent.ACTION_UP) {
@@ -724,7 +730,16 @@ class SwipeDrawerLayout @JvmOverloads constructor(
 
         if (closingFromOpen) {
             // 抽屉本来就是展开的：这次手势要么是在拖关闭（交给原生结算），
-            // 要么是页面上的滚动（已由 onInterceptTouchEvent 完全放行），这里什么都不做。
+            // 要么是页面上的滚动（已由 onInterceptTouchEvent 完全放行）。
+            // 页面区域上的"横向左滑"单独兜底：纵向滚动不会误判，
+            // 只有横向位移明显大于纵向时才算关闭手势。
+            if (pageAreaAtDown) {
+                val dx = ev.x - touchStartX
+                val dy = ev.y - touchStartY
+                if (dx < -slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f &&
+                    getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED
+                ) closeDrawer(GravityCompat.START)
+            }
             return result
         }
 
