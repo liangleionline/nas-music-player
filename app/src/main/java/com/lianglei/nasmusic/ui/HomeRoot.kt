@@ -107,9 +107,9 @@ fun HomeRoot() {
         }
     }
     LaunchedEffect(songs.size) {
-        if (songs.isNotEmpty() && PlayerManager.queue.value.isEmpty()) {
-            PlayerManager.restoreState(songs)
-        }
+        // v1.5.8：恢复交给 PlayerManager 自己做幂等 + 重试（它还会在 controller 绑定、曲库变化时补一次），
+        // UI 这边只负责"曲库一到就通知一声"，不再用 queue.isEmpty() 做一次性门槛。
+        if (songs.isNotEmpty()) PlayerManager.restoreState(songs)
     }
 
     val backStack by nav.currentBackStackEntryAsState()
