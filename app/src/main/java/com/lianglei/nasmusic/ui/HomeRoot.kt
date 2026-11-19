@@ -40,6 +40,10 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.view.animation.DecelerateInterpolator
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
 import com.lianglei.nasmusic.PlayerActivity
@@ -619,6 +623,10 @@ class SwipeDrawerLayout @JvmOverloads constructor(
     private var gestureGoesToContent = false
     /** 本次手势起手点是否在"抽屉已展开时的右侧页面区域" */
     private var pageAreaAtDown = false
+    /** 是否正在手动驱动"页面区域左滑关闭"的跟手位移 */
+    private var manualDrag = false
+    /** 手动拖动过程中抽屉露出的比例（1 = 完全展开，0 = 完全收起） */
+    private var manualFrac = 1f
 
     init {
         // 开合状态一变就重算"边缘触发区"：收起=整屏（任意位置右滑可开），展开=只有抽屉宽度（
@@ -704,18 +712,108 @@ class SwipeDrawerLayout @JvmOverloads constructor(
     private fun draggingNow(): Boolean =
         runCatching { leftDragger?.viewDragState == ViewDragHelper.STATE_DRAGGING }.getOrDefault(false)
 
+    /** DrawerLayout 里那个"非抽屉"的普通内容子 View（右侧主页面容器） */
+    private fun contentView(): View? {
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            val lp = child.layoutParams as? DrawerLayout.LayoutParams ?: continue
+            if (lp.gravity == Gravity.NO_GRAVITY) return child
+        }
+        return null
+    }
+
+    /**
+     * 跟手位移：抽屉按 1:1 往左退出屏幕，右侧页面同步往右挪同样距离。
+     * frac = 1 表示抽屉完全展开（抽屉 translationX = 0，页面 translationX = 抽屉宽度）。
+     */
+    private fun applyManualFraction(frac: Float) {
+        val d = leftDrawer() ?: return
+        val w = d.width.toFloat()
+        if (w <= 0f) return
+        manualFrac = frac.coerceIn(0f, 1f)
+        d.translationX = -w * (1f - manualFrac)
+        contentView()?.translationX = w * manualFrac
+    }
+
+    /** 松手结算：露出不足 1/3 就关掉，否则回到完全展开；位移量都从当前值连续过渡，不跳变。 */
+    private fun settleManualDrag() {
+        val start = manualFrac
+        // 与"拉出超过 1/3 才展开"对称：收起时延展超过 1/3 就关
+        val target = if (start > 2f / 3f) 1f else 0f
+        ValueAnimator.ofFloat(start, target).apply {
+            duration = 200L
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { applyManualFraction(it.animatedValue as Float) }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    manualDrag = false
+                    val d = leftDrawer() ?: return
+                    val w = d.width.toFloat()
+                    if (target >= 1f) {
+                        // 回到完全展开：位移归零，页面仍然被顶开一个抽屉宽度
+                        d.translationX = 0f
+                        contentView()?.translationX = w
+                    } else {
+                        // 立即切到原生"关闭"状态（不播动画）：先让 DrawerLayout 把自己的
+                        // 偏移挪到 -w，下一帧再清掉我们加的 translationX，避免闪一下抽屉
+                        closeDrawer(GravityCompat.START, false)
+                        contentView()?.translationX = 0f
+                        post { leftDrawer()?.translationX = 0f }
+                    }
+                }
+            })
+            start()
+        }
+    }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             touchStartX = ev.x
             touchStartY = ev.y
+            manualDrag = false
             // 抽屉展开、且手指落在抽屉面板右侧的页面区域：纵向手势给页面滚动，
-            // 横向左滑在抬手时用来关闭抽屉
+            // 横向左滑则由本类接管，跟手把抽屉往回推
             pageAreaAtDown = isDrawerOpen(GravityCompat.START) &&
                 ev.x > (leftDrawer()?.width ?: 0)
             return super.dispatchTouchEvent(ev)
         }
+
+        if (ev.actionMasked == MotionEvent.ACTION_CANCEL && manualDrag) {
+            settleManualDrag()
+            return true
+        }
+
+        if (ev.actionMasked == MotionEvent.ACTION_MOVE) {
+            // 起于页面区域、以横向为主的左滑 → 接管本次手势，跟手推动抽屉
+            if (!manualDrag && pageAreaAtDown && isDrawerOpen(GravityCompat.START) &&
+                getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED
+            ) {
+                val dx = ev.x - touchStartX
+                val dy = ev.y - touchStartY
+                if (dx < -slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                    manualDrag = true
+                    // 先给页面一个 CANCEL，让列表停住，避免它和抽屉位移抢手势
+                    val cancel = MotionEvent.obtain(ev)
+                    cancel.action = MotionEvent.ACTION_CANCEL
+                    super.dispatchTouchEvent(cancel)
+                    cancel.recycle()
+                }
+            }
+            if (manualDrag) {
+                val w = (leftDrawer()?.width ?: 0).toFloat()
+                if (w > 0f) applyManualFraction(1f + (ev.x - touchStartX) / w)
+                return true
+            }
+            return super.dispatchTouchEvent(ev)
+        }
+
         if (ev.actionMasked != MotionEvent.ACTION_UP) {
             return super.dispatchTouchEvent(ev)
+        }
+
+        if (manualDrag) {
+            settleManualDrag()
+            return true
         }
 
         // 抬手前先记下"抽屉被拖到了哪里"。super 会按原生规则开始结算动画，
@@ -729,10 +827,8 @@ class SwipeDrawerLayout @JvmOverloads constructor(
         val result = super.dispatchTouchEvent(ev)
 
         if (closingFromOpen) {
-            // 抽屉本来就是展开的：这次手势要么是在拖关闭（交给原生结算），
-            // 要么是页面上的滚动（已由 onInterceptTouchEvent 完全放行）。
-            // 页面区域上的"横向左滑"单独兜底：纵向滚动不会误判，
-            // 只有横向位移明显大于纵向时才算关闭手势。
+            // 抽屉本来就是展开的：拖动关闭已交原生结算，页面纵向滚动也已完全放行。
+            // 这里只兜底"位移不足 slop 的轻扫"（跟手拖动没被触发时也能关掉抽屉）。
             if (pageAreaAtDown) {
                 val dx = ev.x - touchStartX
                 val dy = ev.y - touchStartY
