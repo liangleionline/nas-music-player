@@ -95,6 +95,9 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         // 只停进度轮询，不释放 controller 连接：播放服务常驻，回前台直接恢复进度与按钮
         ticker?.cancel()
+        // v1.5.8：退到后台/被系统回收前立刻落盘一次进度（同步 commit），
+        // 避免"装新版 APK 时进程被直接 force-stop"只留下 30 秒前的旧快照
+        PlayerManager.saveState()
         super.onStop()
     }
 

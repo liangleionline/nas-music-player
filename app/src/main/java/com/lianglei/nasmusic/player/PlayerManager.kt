@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Process-wide observable player state. The Activity wires the MediaController
@@ -71,6 +72,9 @@ object PlayerManager {
         // v1.5.2：重新绑定后必须把 mode 下发给底层，否则 Activity 重建/回前台时
         // 底层可能还留着上一次的 shuffle 状态，导致"显示顺序播放、实际随机跳歌"
         applyModeToController()
+        // v1.5.8：controller 就绪是所有恢复动作的前提。冷启动时曲库（缓存）往往比服务连接先到，
+        // 旧的恢复逻辑在 controller 为 null 时直接 return 且永不重试 → mini player 一直"未在播放"。
+        if (!restoredOnce) restoreState(com.lianglei.nasmusic.data.SourceManager.songs.value)
     }
 
     private val playerListener = object : Player.Listener {
@@ -319,67 +323,118 @@ object PlayerManager {
         controller?.clearMediaItems()
         _queue.value = emptyList()
         _currentIndex.value = -1
+        // 用户主动清空队列 = 明确不要恢复：同步清掉存档（commit 保证立刻落盘）
+        prefs?.let { p ->
+            scope.launch(Dispatchers.IO) {
+                runCatching {
+                    p.edit().remove("queueIds").remove("index").remove("position").commit()
+                }
+            }
+        }
+        restoredOnce = true
     }
 
     private var prefs: android.content.SharedPreferences? = null
     private var appCtx: android.content.Context? = null
+    /** 一次进程内只尝试恢复一次（成功、或确认没有可恢复快照）。 */
+    private var restoredOnce = false
+
     fun init(ctx: android.content.Context) {
         appCtx = ctx.applicationContext
         prefs = ctx.getSharedPreferences("player_state", android.content.Context.MODE_PRIVATE)
         // 恢复上次的播放模式（默认列表循环），避免重启后模式"回到默认但底层另有状态"
         val saved = prefs?.getString("playMode", PlayMode.REPEAT_ALL.name)
         _playMode.value = runCatching { PlayMode.valueOf(saved!!) }.getOrDefault(PlayMode.REPEAT_ALL)
+        // v1.5.8：恢复不再只押在 UI 的 LaunchedEffect 上。曲库（本地扫描 / 飞牛缓存）晚到，
+        // 这里在每次曲库变化时补一次，直到恢复完成，避免"曲库空着那一次尝试失败就永远不恢复"。
+        scope.launch {
+            com.lianglei.nasmusic.data.SourceManager.songs.collect { list ->
+                if (!restoredOnce && list.isNotEmpty()) restoreState(list)
+            }
+        }
     }
 
     fun saveState() {
         val p = prefs ?: return
         val c = controller ?: return
+        val q = _queue.value
+        // v1.5.8：队列为空时绝不写存档。旧实现在冷启动扫库/连 NAS 期间（队列还是空）
+        // 每 30s 用 tick 触发一次 saveState，把空队列覆盖到存档上，导致下次启动彻底没状态可恢复。
+        if (q.isEmpty()) return
         // 保存完整队列（songId 列表）：下次启动按 id 重建队列，精确恢复到当时正在播的列表
-        val ids = org.json.JSONArray(_queue.value.map { it.id.toString() }).toString()
-        p.edit()
-            .putString("queueIds", ids)
-            .putInt("index", c.currentMediaItemIndex)
-            .putLong("position", c.currentPosition)
-            .putString("source", com.lianglei.nasmusic.data.SourceManager.current.value.name)
-            .apply()
+        val ids = org.json.JSONArray(q.map { it.id.toString() }).toString()
+        val index = c.currentMediaItemIndex
+        val pos = c.currentPosition
+        val source = com.lianglei.nasmusic.data.SourceManager.current.value.name
+        // v1.5.8：apply() 是异步落盘，装新版 APK（进程被 force-stop）时最后一次写入可能没落盘；
+        // 改为 IO 线程上 commit() 同步落盘，保证"更新前那一刻"的进度不丢。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                p.edit()
+                    .putString("queueIds", ids)
+                    .putInt("index", index)
+                    .putLong("position", pos)
+                    .putString("source", source)
+                    .commit()
+            }
+        }
     }
 
+    /**
+     * 恢复上次播放的队列与进度（不自动播放）。
+     * 可重入：曲库未加载或 controller 未绑定时直接返回，等 [bind] 或曲库流再触发一次。
+     */
     fun restoreState(songs: List<Song>) {
+        if (restoredOnce) return
+        // 用户已经自己点了歌，不再用旧快照覆盖
+        if (_queue.value.isNotEmpty()) { restoredOnce = true; return }
         val p = prefs ?: return
-        val src = p.getString("source", "")
-        if (src != com.lianglei.nasmusic.data.SourceManager.current.value.name) return
-        var idx = p.getInt("index", -1)
-        val pos = p.getLong("position", 0L)
-        val savedIds = p.getString("queueIds", "")?.takeIf { it.isNotBlank() }
-        val restored: List<Song> = if (savedIds != null) {
-            val ids = mutableListOf<String>()
-            try {
-                val arr = org.json.JSONArray(savedIds)
-                for (i in 0 until arr.length()) ids.add(arr.getString(i))
-            } catch (t: Throwable) {
-            }
-            if (ids.isEmpty()) emptyList()
-            else {
-                // 按 songId 从当前曲库重建队列：仍在库里的保留，已删除的歌自动跳过
-                val byId = songs.associateBy { it.id.toString() }
-                ids.mapNotNull { byId[it] }
-            }
-        } else {
-            // 旧版本格式（无 queueIds）：退回"全曲库 + index"
-            songs
+        val savedIds = p.getString("queueIds", "")?.takeIf { it.isNotBlank() } ?: run {
+            restoredOnce = true            // 没有快照（新装/清过），无需恢复
+            return
         }
-        if (restored.isEmpty()) return
-        idx = if (idx in restored.indices) idx else 0
-        playQueueSilent(restored, idx, pos)
+        val src = p.getString("source", "") ?: ""
+        // 音源不一致时不恢复，避免把 NAS 队列塞进本地模式（反之亦然）
+        if (src.isNotBlank() && src != com.lianglei.nasmusic.data.SourceManager.current.value.name) {
+            restoredOnce = true
+            return
+        }
+        val pool = songs.ifEmpty { com.lianglei.nasmusic.data.SourceManager.songs.value }
+        if (controller == null || pool.isEmpty()) {
+            return
+        }
+        val ids = mutableListOf<String>()
+        try {
+            val arr = org.json.JSONArray(savedIds)
+            for (i in 0 until arr.length()) ids.add(arr.getString(i))
+        } catch (t: Throwable) {
+        }
+        if (ids.isEmpty()) { restoredOnce = true; return }
+        // 按 songId 从当前曲库重建队列：仍在库里的保留，已删除的歌自动跳过
+        val byId = pool.associateBy { it.id.toString() }
+        val restored = ids.mapNotNull { byId[it] }
+        if (restored.isEmpty()) { restoredOnce = true; return }
+        var idx = p.getInt("index", 0)
+        if (idx !in restored.indices) idx = 0
+        playQueueSilent(restored, idx, p.getLong("position", 0L).coerceAtLeast(0L))
+        restoredOnce = true
     }
 
     private fun playQueueSilent(songs: List<Song>, startIndex: Int, position: Long) {
-        val c = controller ?: return
+        if (controller == null) return
+        // 立即把队列/索引/进度写进 UI 状态：否则 mini player 在 tick 第一次同步前仍显示"未在播放"
         _queue.value = songs
-        val items = songs.map { mediaItemOf(it) }
-        c.setMediaItems(items, startIndex, position)
-        c.prepare()
-        applyModeToController()
+        _currentIndex.value = startIndex
+        _positionMs.value = position
+        // 12k 首歌构造 MediaItem 有几十~上百毫秒开销，放到后台线程做，避免冷启动第一帧被拖住
+        scope.launch {
+            val items = withContext(Dispatchers.Default) { songs.map { mediaItemOf(it) } }
+            val cc = controller ?: return@launch
+            cc.setMediaItems(items, startIndex, position)
+            cc.prepare()
+            applyModeToController()
+            _durationMs.value = cc.duration.coerceAtLeast(0)
+        }
         // Don't auto-play, just restore position
     }
 
