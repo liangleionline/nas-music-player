@@ -130,30 +130,41 @@ fun HomeRoot() {
 
     AndroidView(
         factory = { ctx ->
+            // v1.5.14 推动式：右侧内容容器，抽屉滑动时按同一比例右移
+            val contentView = ComposeView(ctx).apply {
+                setBackgroundColor(0xFFF2F3F5.toInt())
+                setContent {
+                    HomeContent(
+                        nav = nav,
+                        searchTriggerState = searchTriggerState,
+                        drawerOpenState = drawerOpenState,
+                        onOpenDrawer = { drawerLayoutRef?.openDrawer(GravityCompat.START) },
+                        onCloseDrawer = { drawerLayoutRef?.closeDrawer(GravityCompat.START) }
+                    )
+                }
+            }
             SwipeDrawerLayout(ctx).apply {
                 // 推动式抽屉：无遮罩，内容被抽屉推开
                 setScrimColor(android.graphics.Color.TRANSPARENT)
                 addDrawerListener(object : DrawerLayout.DrawerListener {
                     override fun onDrawerStateChanged(state: Int) {}
-                    override fun onDrawerSlide(drawerView: View, slideOffset: Float) {}
-                    override fun onDrawerOpened(drawerView: View) { drawerOpenState.value = true }
-                    override fun onDrawerClosed(drawerView: View) { drawerOpenState.value = false }
+                    // 抽屉露出多少，右侧内容就同步右移多少（1:1，位移量 = 抽屉宽度）
+                    override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
+                        contentView.translationX = drawerWidthPx * slideOffset
+                    }
+                    override fun onDrawerOpened(drawerView: View) {
+                        drawerOpenState.value = true
+                        contentView.translationX = drawerWidthPx
+                    }
+                    override fun onDrawerClosed(drawerView: View) {
+                        drawerOpenState.value = false
+                        contentView.translationX = 0f
+                    }
                 })
 
                 // 右侧主内容（Compose）
                 addView(
-                    ComposeView(ctx).apply {
-                        setBackgroundColor(0xFFF2F3F5.toInt())
-                        setContent {
-                            HomeContent(
-                                nav = nav,
-                                searchTriggerState = searchTriggerState,
-                                drawerOpenState = drawerOpenState,
-                                onOpenDrawer = { openDrawer(GravityCompat.START) },
-                                onCloseDrawer = { closeDrawer(GravityCompat.START) }
-                            )
-                        }
-                    },
+                    contentView,
                     ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 )
 
