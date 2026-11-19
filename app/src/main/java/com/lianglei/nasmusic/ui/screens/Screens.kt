@@ -1012,7 +1012,8 @@ fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (List<Song>, Int)
     }
     // 统计页当前展示的歌曲顺序（按播放次数），点歌时整份传下去，保证"下一首"就是列表里的下一首
     val shownSongs = remember(stats) { stats.map { it.first } }
-    Column(Modifier.fillMaxSize().background(Color(0xFFF5F2EC))) {
+    // 背景跟随全局 Scaffold 底色（v1.5.10）：原来铺的米黄 #F5F2EC 与其他页面不一致，统一去掉
+    Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
