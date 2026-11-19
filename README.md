@@ -47,9 +47,15 @@
 
 ## 版本与更新日志
 
-最新版本：见顶部 `version` 徽章（当前 **v1.5.11**，versionCode 191）
+最新版本：见顶部 `version` 徽章（当前 **v1.5.12**，versionCode 192）
 
 Release 页面每次发版保留**最新 3 个版本**的 APK，更早的版本连同说明一起清理；累计下载量与最新版下载量看顶部 `downloads`、`latest downloads` 徽章，单个版本精确次数可在 Release 页对应 APK 右侧查看。
+
+### v1.5.12（versionCode 192）
+
+- 修复**冷启动后控制条显示「暂停键」但其实没有在播放**（上次退出时正在播放的场景）：
+  - 恢复播放状态时显式 `pause()` + `prepare()`，恢复出的队列永远是"暂停"态，不会因为底层残留 `playWhenReady=true` 而出现"显示在播、实际没声音"
+  - MediaSession 绑定成功、以及每 500ms 的进度 tick，都以 controller 的真实状态回写播放/缓冲标志。旧实现只依赖 `onIsPlayingChanged` 回调，冷启动 setUp 或通知栏操作时漏一次回调，按钮就会长期停在错误一侧
 
 ### v1.5.11（versionCode 191）
 
