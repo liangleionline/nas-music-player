@@ -853,9 +853,14 @@ fun ScanSourceScreen() {
     if (showDialog || scanning) {
         val logScroll = rememberScrollState()
         LaunchedEffect(scanLog.size, showDialog) {
-            // 先让这一帧完成测量/布局（ScrollState.maxValue 到这时才是新值），再跳到底
-            withFrameNanos { }
-            if (!logScroll.isScrollInProgress) logScroll.scrollTo(logScroll.maxValue)
+            // 新行加入后内容高度要到下一帧的测量阶段才更新，
+            // 所以连续盯几帧，一直贴到最底部为止（最多 4 帧，约 66ms）
+            repeat(4) {
+                withFrameNanos { }
+                if (!logScroll.isScrollInProgress && logScroll.value != logScroll.maxValue) {
+                    logScroll.scrollTo(logScroll.maxValue)
+                }
+            }
         }
         Dialog(
             onDismissRequest = { },
