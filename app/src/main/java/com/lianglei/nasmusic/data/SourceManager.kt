@@ -287,14 +287,25 @@ object SourceManager {
             }
             _playlistsLoading.value = false
 
-            feiniuCache = FnApi.fetchAllTracks(onProgress)
+            val scan = FnApi.fetchAllTracks(onProgress)
+            feiniuCache = scan.songs
             _songs.value = feiniuCache
-            saveFeiniuCache()
-            // 记录本次成功同步时间，下次冷启动据此判断能不能直接用缓存
-            feiniuUpdatedAt = System.currentTimeMillis()
-            prefs?.edit()?.putLong(KEY_FN_LIB_UPDATED, feiniuUpdatedAt)?.apply()
-            onProgress("完成！")
+            if (scan.complete) {
+                saveFeiniuCache()
+                // 记录本次成功同步时间，下次冷启动据此判断能不能直接用缓存
+                feiniuUpdatedAt = System.currentTimeMillis()
+                prefs?.edit()?.putLong(KEY_FN_LIB_UPDATED, feiniuUpdatedAt)?.apply()
+                if (scan.skipped > 0) {
+                    onProgress("完成！共 ${scan.songs.size} 首（跳过 ${scan.skipped} 条无法解析的记录）")
+                } else {
+                    onProgress("完成！")
+                }
+            } else {
+                // 没取全就不落长期缓存：否则 24h 内会一直用这份残缺曲库，用户以为已经同步好了
+                onProgress("本次只同步到 ${scan.songs.size} 首（应为 ${scan.total} 首），暂不写入缓存，下次启动会重新扫描")
+            }
         } catch (t: Throwable) {
+            onProgress("同步失败：${t.message ?: t.javaClass.simpleName}")
         } finally {
             _loading.value = false
             _playlistsLoading.value = false

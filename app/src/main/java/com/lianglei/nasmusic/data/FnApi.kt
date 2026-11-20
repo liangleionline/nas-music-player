@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
 import java.net.URI
 import java.security.MessageDigest
 import java.util.UUID
@@ -39,6 +40,18 @@ object FnApi {
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * 元数据（JSON）请求专用客户端：整次调用最多 40s。
+     * 曲库深分页时个别页会让 NAS 算很久，没有整体超时就会一直挂着、界面停在日志最后一行。
+     */
+    private val apiClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
+            .callTimeout(40, TimeUnit.SECONDS)
             .build()
     }
 
@@ -93,40 +106,169 @@ object FnApi {
         }
     }
 
-    suspend fun fetchAllTracks(onProgress: (String) -> Unit = {}): List<Song> = withContext(Dispatchers.IO) {
-        onProgress("开始连接飞牛音乐服务器...")
-        val list = mutableListOf<Song>()
-        var page = 1
-        while (true) {
-            val url = "$baseUrl/track/list?page=$page&size=100&sort=createdAt,desc"
-            onProgress("正在获取第 $page 页歌曲列表...")
-            val resp = httpGet(url)
-            val json = JSONObject(resp)
-            if (json.optInt("code", -1) != 0) break
-            val data = json.optJSONObject("data") ?: break
-            val arr = data.optJSONArray("list") ?: break
-            for (i in 0 until arr.length()) {
-                val t = arr.getJSONObject(i)
-                val s = parseTrack(t)
-                list.add(s)
-                if (i % 20 == 0) onProgress("已加载 ${list.size} 首: ${s.title} - ${s.artist}")
-            }
-            val total = data.optInt("total", 0)
-            onProgress("第 $page 页完成，共 ${list.size}/$total 首")
-            if (list.size >= total || arr.length() == 0) break
-            page++
-        }
-        onProgress("歌曲加载完成，共 ${list.size} 首")
-        list
+    /** 一次曲库同步的结果：完整与否要能被上层看见，避免把"扫了一半"当成成功缓存。 */
+    data class TrackScan(
+        val songs: List<Song>,
+        val total: Int,
+        val skipped: Int,
+        val aborted: Boolean,
+        val error: String? = null
+    ) {
+        /** 是否取全了：被跳过的少数坏记录不算失败，中止或明显缺页才算 */
+        val complete: Boolean get() = !aborted && (total == 0 || songs.size + skipped >= total)
     }
 
-    /** 解析单个 track JSON → Song（fetchAllTracks / fetchPlaylistTracks 共用，字段口径一致） */
+    /**
+     * 拉取整库曲目（分页）。
+     *
+     * v1.5.22 起按"已消费行数"驱动分页并带降级：
+     * 1. 单页失败先重试 3 次（退避），仍失败就把每页窗口 100 → 20 → 5 → 1 递减——
+     *    深分页偶发超时/服务端报错时，小窗口通常能过去；
+     * 2. 退化到每页 1 首还失败，说明是某一条记录本身有问题（服务端序列化报错），
+     *    就跳过该条继续往下，最多跳 50 条，避免整个同步卡死在一页上；
+     * 3. 所有失败原因都写进日志，不再是静默停在"正在获取第 N 页"。
+     */
+    suspend fun fetchAllTracks(onProgress: (String) -> Unit = {}): TrackScan = withContext(Dispatchers.IO) {
+        onProgress("开始连接飞牛音乐服务器...")
+        val songs = mutableListOf<Song>()
+        var cursor = 0          // 已从服务端消费的行数（含被跳过的坏记录）
+        var total = 0
+        var size = 100
+        var skipped = 0
+        var aborted = false
+        var lastError: String? = null
+
+        while (true) {
+            if (total > 0 && cursor >= total) break
+            // page 是 1 基整页序号；只有 cursor 能被 size 整除时换算才精确
+            if (size > 1 && cursor % size != 0) size = 1
+            val page = cursor / size + 1
+            onProgress(
+                if (total > 0) "正在获取第 $page 页（每页 $size 首，已加载 ${songs.size}/$total 首）..."
+                else "正在获取第 $page 页（每页 $size 首，已加载 ${songs.size} 首）..."
+            )
+
+            val json = try {
+                fetchTrackPage(page, size)
+            } catch (t: Throwable) {
+                lastError = t.message?.take(160) ?: t.javaClass.simpleName
+                null
+            }
+
+            if (json == null) {
+                when {
+                    size > 20 -> {
+                        size = 20
+                        onProgress("第 $page 页失败（$lastError），改为每页 20 首重试...")
+                        continue
+                    }
+                    size > 5 -> {
+                        size = 5
+                        onProgress("第 $page 页仍失败（$lastError），改为每页 5 首重试...")
+                        continue
+                    }
+                    size > 1 -> {
+                        size = 1
+                        onProgress("第 $page 页仍失败（$lastError），改为每页 1 首逐条重试...")
+                        continue
+                    }
+                    skipped < 50 -> {
+                        skipped++
+                        cursor++
+                        onProgress("第 $page 条记录取不到（$lastError），跳过 1 条继续（累计 $skipped 条）")
+                        continue
+                    }
+                    else -> {
+                        aborted = true
+                        onProgress("连续跳过 $skipped 条记录仍失败（$lastError），本次同步中止")
+                        break
+                    }
+                }
+            }
+
+            val data = json.optJSONObject("data")
+            if (data == null) {
+                aborted = true
+                lastError = "服务端未返回 data 字段"
+                onProgress("第 $page 页无数据（$lastError），本次同步中止")
+                break
+            }
+            val arr = data.optJSONArray("list")
+            if (arr == null || arr.length() == 0) break
+
+            for (i in 0 until arr.length()) {
+                // 单条记录解析失败（字段缺失/类型异常）不能中断整次同步，计入跳过继续往下
+                val t = arr.optJSONObject(i)
+                if (t == null) {
+                    skipped++
+                    continue
+                }
+                val s = try {
+                    parseTrack(t)
+                } catch (e: Exception) {
+                    skipped++
+                    lastError = "第 ${cursor + i + 1} 条解析失败：${e.message?.take(80) ?: e.javaClass.simpleName}"
+                    null
+                } ?: continue
+                songs.add(s)
+                if (i % 20 == 0) onProgress("已加载 ${songs.size} 首: ${s.title} - ${s.artist}")
+            }
+            cursor += arr.length()
+            data.optInt("total", 0).takeIf { it > 0 }?.let { total = it }
+            onProgress("第 $page 页完成，共 ${songs.size}/$total 首")
+            if (arr.length() < size) break        // 最后一页
+        }
+
+        onProgress(
+            buildString {
+                append("歌曲加载完成，共 ${songs.size} 首")
+                if (total > 0) append("/$total")
+                if (skipped > 0) append("，跳过 $skipped 条")
+                if (aborted) append("，未取全")
+            } + ")"
+        )
+        val result = TrackScan(songs, total, skipped, aborted, lastError)
+        if (result.complete) onProgress("曲库同步完整。") else onProgress("曲库同步不完整：${lastError ?: "部分页未取到"}")
+        result
+    }
+
+    /** 取一页歌曲列表：单页内重试 3 次（退避），仍失败抛出最后一次异常。 */
+    private fun fetchTrackPage(page: Int, size: Int): JSONObject {
+        val url = "$baseUrl/track/list?page=$page&size=$size&sort=createdAt,desc"
+        var last: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                val json = JSONObject(httpGet(url))
+                val code = json.optInt("code", -1)
+                if (code != 0) {
+                    throw IOException("服务端 code=$code ${json.optString("msg", "").take(80)}")
+                }
+                return json
+            } catch (t: Exception) {
+                last = t
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep(400L * (attempt + 1))
+                    } catch (ignored: InterruptedException) {
+                    }
+                }
+            }
+        }
+        throw last ?: IOException("未知错误")
+    }
+
+    /** 解析单个 track JSON → Song（fetchAllTracks / fetchPlaylistTracks 共用，字段口径一致）。
+     *  容错：服务端个别记录缺 guid / 字段为 null 时不能让整次同步炸掉，尽量把能用的信息解析出来。 */
     private fun parseTrack(t: JSONObject): Song {
-        val guid = t.getString("guid")
-        val title = t.optString("title", "Unknown")
-        val artist = t.optJSONArray("artists")?.let { a ->
-            if (a.length() > 0) a.getJSONObject(0).optString("name", "") else ""
-        } ?: ""
+        val guid = t.optString("guid", "").let { if (it == "null") "" else it }
+        val title = t.optString("title", "Unknown").let { if (it == "null") "Unknown" else it }
+        val artist = try {
+            t.optJSONArray("artists")?.let { a ->
+                if (a.length() > 0) a.optJSONObject(0)?.optString("name", "") ?: "" else ""
+            } ?: ""
+        } catch (e: Exception) {
+            ""
+        }
         val album = t.optJSONObject("album")?.optString("name", "") ?: ""
         // 入库时间：track.createdAt / album.createdAt，均为秒级 Unix 时间戳（见 docs/fn-nas-api.md）
         val albumObj = t.optJSONObject("album")
@@ -138,14 +280,16 @@ object FnApi {
         val spec = t.optJSONObject("audioSpec")
         val isFlac = spec?.optString("code", "")?.contains("flac", true) == true ||
                 spec?.optString("format", "")?.contains("flac", true) == true
+        // 没有 guid 也要能进曲库（只是不能播放）：用 路径/标题 生成一个稳定 id
+        val idKey = if (guid.isNotEmpty()) guid else "track:${path}:$title:$album"
         return Song(
-            id = guid.hashCode().toLong(),
+            id = idKey.hashCode().toLong(),
             title = title,
             artist = artist,
             album = album,
             albumId = albumKeyOf(album, coverId),
             duration = duration,
-            data = "$baseUrl/track/stream?guid=$guid",
+            data = if (guid.isNotEmpty()) "$baseUrl/track/stream?guid=$guid" else "",
             folder = if (path.isNotEmpty()) path else "飞牛NAS",
             isHighQuality = isFlac,
             coverId = coverId,
@@ -262,7 +406,14 @@ object FnApi {
             // Feiniu API expects raw token in Authorization header, NOT "Bearer <token>"
             if (token.isNotEmpty()) header("Authorization", token)
         }.build()
-        return client.newCall(req).execute().use { it.body?.string() ?: "" }
+        apiClient.newCall(req).execute().use { resp ->
+            val body = resp.body?.string() ?: ""
+            if (!resp.isSuccessful) {
+                throw IOException("HTTP ${resp.code} ${body.take(120).replace('\n', ' ')}")
+            }
+            if (body.isBlank()) throw IOException("HTTP ${resp.code} 空响应")
+            return body
+        }
     }
 
     /**
