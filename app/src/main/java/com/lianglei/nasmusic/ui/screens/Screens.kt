@@ -29,6 +29,8 @@ import com.lianglei.nasmusic.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import android.content.Context
@@ -847,26 +849,55 @@ fun ScanSourceScreen() {
     }
 
     // Scanning progress dialog
+    // v1.5.24：固定宽度（不随日志文字长短忽宽忽窄），日志有新行时自动滚到最底部
     if (showDialog || scanning) {
-        AlertDialog(
+        val logScroll = rememberScrollState()
+        LaunchedEffect(scanLog.size, showDialog) {
+            // 先让这一帧完成测量/布局（ScrollState.maxValue 到这时才是新值），再跳到底
+            withFrameNanos { }
+            if (!logScroll.isScrollInProgress) logScroll.scrollTo(logScroll.maxValue)
+        }
+        Dialog(
             onDismissRequest = { },
-            title = { Text(if (scanning) stringResource(R.string.scanning_dialog) else stringResource(R.string.scan_complete_dialog)) },
-            text = {
-                Column(
-                    Modifier.height(200.dp).verticalScroll(rememberScrollState())
-                ) {
-                    scanLog.takeLast(30).forEach { Text(it, fontSize = 11.sp, maxLines = 1) }
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+        ) {
+            Surface(
+                modifier = Modifier.width(ScanDialogWidth),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp
+            ) {
+                Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp)) {
+                    Text(
+                        if (scanning) stringResource(R.string.scanning_dialog) else stringResource(R.string.scan_complete_dialog),
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Box(
+                        Modifier.fillMaxWidth().height(200.dp).verticalScroll(logScroll)
+                    ) {
+                        Column {
+                            scanLog.takeLast(40).forEach {
+                                Text(it, fontSize = 11.sp, lineHeight = 15.sp)
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(
+                            onClick = { showDialog = false },
+                            enabled = !scanning
+                        ) { Text(stringResource(R.string.ok)) }
+                    }
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { showDialog = false },
-                    enabled = !scanning
-                ) { Text(stringResource(R.string.ok)) }
             }
-        )
+        }
     }
 }
+
+/** 扫描日志弹窗的固定宽度（不随内容伸缩） */
+private val ScanDialogWidth = 300.dp
 
 @Composable
 fun PlaceholderScreen(name: String) {
