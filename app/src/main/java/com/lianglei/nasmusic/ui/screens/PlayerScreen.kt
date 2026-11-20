@@ -592,31 +592,75 @@ private fun android.content.Context.findActivity(): android.app.Activity? {
 
 /**
  * 读取歌曲内嵌歌词（带磁盘缓存），统一返回 LRC 格式文本（行带 [mm:ss.cc] 时间戳）。
- * 结果写入 cacheDir/lyrics/ 磁盘缓存，同一首歌重复进入播放页 / 重启 APP 直接命中缓存，
- * 不再依赖网络读取 → 解决"有时有歌词、有时没有"的不稳定问题。
+ * 结果写入 cacheDir/lyrics/ 磁盘缓存，同一首歌重复进入播放页 / 重启 APP 直接命中缓存。
+ *
+ * v1.5.25：缓存不再是"一次写入永久命中"。NAS 上替换了音频文件（比如用户把歌拷出来改了内嵌歌词
+ * 再传回去）时 URL 不变，旧实现会一直显示改之前的词，连重启 APP 都没用（缓存文件在磁盘上）。
+ * 现在缓存文件头带一行来源指纹 `#v2 size=<曲库文件大小> total=<服务器当前总长>`：
+ *   - 曲库里的大小和指纹不一致 → 失效重读；
+ *   - 直接向服务器发一个 `Range: bytes=0-0` 小请求问当前总长，和指纹不一致 → 失效重读；
+ *   - 请求失败（网络抖动）保留缓存，不让歌词凭空消失；
+ *   - 老格式（没有 `#v2` 头）一律视为失效，升级后第一次进播放页就会刷成最新歌词。
+ *
  * 本地文件（song.data 为路径）直接读文件头/尾标签区；
  * 飞牛 NAS（song.data 为流式 URL）用 HTTP Range 请求读头/尾 1MB。
  * 支持：MP3(ID3v2.2/2.3/2.4 USLT/ULT+SYLT/SLT)、FLAC(Vorbis Comment LYRICS)、M4A(iTunes ©lyr)。
  * 纯文本（无时间戳）歌词按行生成 4 秒间隔时间戳。
  */
 internal suspend fun readEmbeddedLyricsCached(song: Song, ctx: android.content.Context): String {
-    // 磁盘缓存：同一首歌不重复请求
-    val cacheKey = (song.id.toString() + "_" + song.data).hashCode().toLong().let { java.lang.Long.toHexString(it) }
     val cacheDir = File(ctx.cacheDir, "lyrics")
-    val cacheFile = File(cacheDir, "$cacheKey.txt")
+    val cacheFile = File(cacheDir, lyricCacheName(song) + ".txt")
     if (cacheFile.exists()) {
-        val cached = cacheFile.readText()
-        if (cached.isNotEmpty()) return cached
+        val raw = runCatching { cacheFile.readText() }.getOrNull().orEmpty()
+        val cached = usableCachedLyrics(song, raw)
+        if (cached != null) return cached
     }
     val lyrics = readEmbeddedLyrics(song)
     if (lyrics.isNotEmpty()) {
         try {
             if (!cacheDir.exists()) cacheDir.mkdirs()
-            cacheFile.writeText(lyrics)
+            val total = sourceTotalBytes(song) ?: 0L
+            cacheFile.writeText("#v2 size=${song.fileSize} total=$total\n" + lyrics)
         } catch (e: Exception) {
         }
     }
     return lyrics
+}
+
+/** 歌词磁盘缓存文件名：同一首歌（id + 源 URL）固定一个文件，内容变了由文件头指纹判定 */
+private fun lyricCacheName(song: Song): String =
+    java.lang.Long.toHexString((song.id.toString() + "_" + song.data).hashCode().toLong())
+
+/**
+ * 缓存文本还能用吗？能用返回歌词正文，否则返回 null 让调用方重新读文件。
+ * 头部格式：`#v2 size=<曲库文件大小> total=<服务器当前文件总长>`（任一为 0 表示未知）。
+ */
+private suspend fun usableCachedLyrics(song: Song, raw: String): String? {
+    if (raw.isEmpty()) return null
+    val head = raw.substringBefore('\n')
+    if (!head.startsWith("#v2 ")) return null
+    val body = raw.substringAfter('\n', "")
+    if (body.isEmpty()) return null
+    val size = head.substringAfter("size=", "").substringBefore(' ').trim().toLongOrNull() ?: 0L
+    val total = head.substringAfter("total=", "").substringBefore(' ').trim().toLongOrNull() ?: 0L
+    // 一、曲库里记的文件大小对不上（重新同步过曲库）→ 文件早被替换了
+    if (size > 0 && song.fileSize > 0 && size != song.fileSize) return null
+    // 二、server 端当前总长对不上 → 文件被替换过（改内嵌歌词通常会让文件长度变化）
+    val nowTotal = sourceTotalBytes(song)
+    if (total > 0 && nowTotal != null && nowTotal > 0 && nowTotal != total) return null
+    return body
+}
+
+/** 源文件当前总长：NAS 发一个 `Range: bytes=0-0` 拿 Content-Range；本地直接取文件长度。拿不到返回 null */
+private suspend fun sourceTotalBytes(song: Song): Long? = try {
+    if (song.data.startsWith("http")) {
+        com.lianglei.nasmusic.data.FnApi.fetchRangeTotal(song.data)
+    } else {
+        val f = File(song.data)
+        if (f.exists()) f.length() else null
+    }
+} catch (e: Exception) {
+    null
 }
 
 /** 读取歌曲内嵌歌词（无缓存版）。扩展名判定：本地取 song.data 真实路径；飞牛取 song.folder（相对路径含文件名）。

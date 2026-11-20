@@ -429,6 +429,31 @@ object FnApi {
     }
 
     /**
+     * 只问一句"这个文件现在多大"：发一个 `Range: bytes=0-0` 的小请求，读 Content-Range 的总长。
+     * 用于判断 NAS 上的音频文件是否被替换过（改了内嵌歌词、重新压码等），
+     * 从而让播放器/歌词缓存能立刻失效，而不是一直用旧文件、旧歌词。
+     * 拿不到（网络抖动 / 服务器不回 Range）返回 null，调用方应保留原有缓存。
+     */
+    suspend fun fetchRangeTotal(url: String): Long? = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder().url(url)
+                .header("Range", "bytes=0-0")
+                .apply {
+                    if (token.isNotEmpty()) header("Authorization", token)
+                }
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val fromRange = resp.header("Content-Range")?.substringAfterLast('/')?.trim()?.toLongOrNull()
+                val fromLength = resp.header("Content-Length")?.trim()?.toLongOrNull()
+                fromRange ?: fromLength
+            }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /**
      * HTTP Range 请求读取指定字节区间（用于读取歌曲文件头部/尾部标签区解析内嵌歌词）。
      * start/end 为包含边界；start 传负数（如 -1048576）表示 suffix range 读文件末尾 |start| 字节。
      * 重要：某些服务器忽略 Range 头直接返回整个文件。若全量下载，10MB 级文件在远程 NAS 上极易

@@ -5,8 +5,6 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.cache.CacheDataSink
-import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
@@ -25,15 +23,12 @@ class PlayerService : MediaSessionService() {
         // content:// for local MediaStore, http(s) for Feiniu stream (auth injected per-request).
         // 外包一层 Media3 CacheDataSource（SimpleCache LRU，上限约 20 首）：
         // 流式拉取过的 NAS 音频自动落盘，二次播放命中缓存秒开，无需重新加载。
+        // v1.5.25：用 ResolvingCacheDataSourceFactory 每首歌重新解析当前 SimpleCache，
+        // 用户在设置页清空音乐缓存之后不会再拿着已释放的旧缓存实例去播（表现为一直加载、重试 5 次）。
         val upstream = AuthHttpDataSourceFactory()
-        val cacheDataSourceFactory = CacheDataSource.Factory()
-            .setCache(CacheManager.cache(this))
-            .setUpstreamDataSourceFactory(upstream)
-            .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(CacheManager.cache(this)))
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val dataSourceFactory = DefaultDataSource.Factory(
             this,
-            cacheDataSourceFactory
+            ResolvingCacheDataSourceFactory(this, upstream)
         )
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
             .setDataSourceFactory(dataSourceFactory)

@@ -72,15 +72,38 @@ object CacheManager {
         ev.trimToLimit(c)
     }
 
-    /** 清空全部缓存（在 IO 线程调用）。释放实例后删除整个缓存目录，
-     *  下次 cache() 会在同一位置重建全新 SimpleCache，可继续缓存新歌。 */
+    /**
+     * 清空全部缓存（在 IO 线程调用）。
+     *
+     * v1.5.25 修正：这里**不再 release** SimpleCache 实例。
+     * 原因：PlayerService 在 onCreate 时就把 `CacheManager.cache(this)` 塞进了 CacheDataSource.Factory，
+     * 用户清缓存时 release 掉实例后，播放器手里那份引用变成"已关闭的 cache"，
+     * 之后点任何歌都会卡在 buffering、自动重试 5 次仍失败（报 Cache is closed），
+     * 只有彻底退出 APP（Service 重建、重新取实例）才能恢复。
+     * 改为逐个删除 key：占用归零、正在使用的实例继续可用。
+     *
+     * 同时清掉 `lyrics/` 目录：内嵌歌词是按歌曲 URL 永久缓存的，不清就会一直显示改之前的旧词。
+     */
+    @androidx.media3.common.util.UnstableApi
     fun clear(context: Context) {
         val c = simpleCache
         if (c != null) {
-            runCatching { c.release() }
-            simpleCache = null
+            // 两轮：第一轮删得掉的删掉，正在播放的那条可能被占用，第二轮再试一次
+            repeat(2) {
+                val keys = runCatching { c.keys.toList() }.getOrNull().orEmpty()
+                if (keys.isEmpty()) return@repeat
+                keys.forEach { k -> runCatching { c.removeResource(k) } }
+            }
+            // 未被索引引用的临时分片（上次写入被打断留下的 .tmp）
+            runCatching {
+                File(context.cacheDir, "audio_cache").listFiles()?.forEach { f ->
+                    if (f.name.endsWith(".tmp")) runCatching { f.delete() }
+                }
+            }
+        } else {
+            File(context.cacheDir, "audio_cache").deleteRecursively()
         }
-        File(context.cacheDir, "audio_cache").deleteRecursively()
+        File(context.cacheDir, "lyrics").deleteRecursively()
     }
 }
 
