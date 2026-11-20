@@ -710,6 +710,7 @@ fun ScanSourceScreen() {
                 Card(
                     Modifier.fillMaxWidth().clickable(enabled = !scanning) {
                         scanning = true
+                        scanLog = emptyList()
                         scope.launch {
                             com.lianglei.nasmusic.data.SourceManager.refreshFeiniuForce { msg ->
                                 scanLog = scanLog + msg
