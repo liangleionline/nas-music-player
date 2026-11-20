@@ -49,9 +49,17 @@
 
 ## 版本与更新日志
 
-最新版本：见顶部 `version` 徽章（当前 **v1.5.22**，versionCode 202）
+最新版本：见顶部 `version` 徽章（当前 **v1.5.23**，versionCode 203）
 
 Release 页面每次发版保留**最新 3 个版本**的 APK，更早的版本连同说明一起清理；累计下载量与最新版下载量看顶部 `downloads`、`latest downloads` 徽章，单个版本精确次数可在 Release 页对应 APK 右侧查看。
+
+### v1.5.23（versionCode 203）
+
+- **曲库同步日志存到 Download**：每次整库同步都会把请求过程写成一份日志，路径 `Download/NASMusic/nas-music-scan-<时间>.log`，扫描结束的对话框里直接显示这次日志的路径。
+  - 记录内容：baseUrl、每次 `track/list` 请求的 page/size、耗时、返回字节数、返回的 `code`/`total`/`list` 条数、每次重试的异常类名与消息、降级与跳过动作、最终汇总（songs/total/skipped/aborted/complete）。
+  - 不记录 token（只写是否已设置与长度）；Android 10+ 用 MediaStore 写公共 Download 目录，无需存储权限，写不了时退回应用专属 `logs` 目录并把真实路径显示出来。
+  - 同步日志同时包含歌单请求结果与同步异常堆栈摘要，用来定位"卡在第 N 页"这类问题。
+- 解决上一版引入的回归：JSON 请求已改回原有关键参数（`connect 20s / read 30s`，不额外加整调用超时），避免与 NAS 长响应撞出 `connection closed`。
 
 ### v1.5.22（versionCode 202）
 

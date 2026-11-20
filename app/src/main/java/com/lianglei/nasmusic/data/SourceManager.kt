@@ -276,18 +276,21 @@ object SourceManager {
         }
 
         try {
+            ScanLog.begin(if (force) "手动「从服务器重新加载」" else "冷启动自动同步")
+            ScanLog.line("缓存状态：已有 ${feiniuCache.size} 首，上次同步 $feiniuUpdatedAt")
             onProgress("正在连接服务器...")
             // 先拿歌单：一次请求就够，没必要排在整库扫描后面（旧顺序是歌单最后才拉）
             _playlistsLoading.value = true
             runCatching { FnApi.fetchPlaylists() }.onSuccess { pls ->
+                ScanLog.line("歌单：${pls.size} 个")
                 if (pls.isNotEmpty()) {
                     _playlists.value = pls
                     savePlaylistsCache()
                 }
-            }
+            }.onFailure { ScanLog.line("歌单请求失败：${it.javaClass.simpleName}: ${it.message}") }
             _playlistsLoading.value = false
 
-            val scan = FnApi.fetchAllTracks(onProgress)
+            val scan = FnApi.fetchAllTracks(onProgress) { ScanLog.line(it) }
             feiniuCache = scan.songs
             _songs.value = feiniuCache
             if (scan.complete) {
@@ -305,10 +308,16 @@ object SourceManager {
                 onProgress("本次只同步到 ${scan.songs.size} 首（应为 ${scan.total} 首），暂不写入缓存，下次启动会重新扫描")
             }
         } catch (t: Throwable) {
+            ScanLog.line("同步异常：${t.javaClass.name}: ${t.message}")
             onProgress("同步失败：${t.message ?: t.javaClass.simpleName}")
         } finally {
             _loading.value = false
             _playlistsLoading.value = false
+            // 日志落盘：Download/NASMusic/nas-music-scan-*.log
+            val path = appContext?.let { ScanLog.dump(it) }
+            onProgress(
+                if (path != null) "日志已保存：$path" else "日志保存失败（未取到应用上下文或存储不可写）"
+            )
         }
     }
 

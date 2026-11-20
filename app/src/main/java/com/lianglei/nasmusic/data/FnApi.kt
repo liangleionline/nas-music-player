@@ -43,18 +43,6 @@ object FnApi {
             .build()
     }
 
-    /**
-     * 元数据（JSON）请求专用客户端：整次调用最多 40s。
-     * 曲库深分页时个别页会让 NAS 算很久，没有整体超时就会一直挂着、界面停在日志最后一行。
-     */
-    private val apiClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(25, TimeUnit.SECONDS)
-            .callTimeout(40, TimeUnit.SECONDS)
-            .build()
-    }
-
     /** Parse user input and configure base URL. Handles full URLs or bare hosts. */
     fun configure(input: String) {
         val trimmed = input.trim().trimEnd('/')
@@ -128,8 +116,12 @@ object FnApi {
      *    就跳过该条继续往下，最多跳 50 条，避免整个同步卡死在一页上；
      * 3. 所有失败原因都写进日志，不再是静默停在"正在获取第 N 页"。
      */
-    suspend fun fetchAllTracks(onProgress: (String) -> Unit = {}): TrackScan = withContext(Dispatchers.IO) {
+    suspend fun fetchAllTracks(
+        onProgress: (String) -> Unit = {},
+        onLog: (String) -> Unit = {}
+    ): TrackScan = withContext(Dispatchers.IO) {
         onProgress("开始连接飞牛音乐服务器...")
+        onLog("开始拉取曲库：baseUrl=$baseUrl")
         val songs = mutableListOf<Song>()
         var cursor = 0          // 已从服务端消费的行数（含被跳过的坏记录）
         var total = 0
@@ -149,9 +141,10 @@ object FnApi {
             )
 
             val json = try {
-                fetchTrackPage(page, size)
+                fetchTrackPage(page, size, onLog)
             } catch (t: Throwable) {
                 lastError = t.message?.take(160) ?: t.javaClass.simpleName
+                onLog("页 $page(每页 $size) 三次尝试仍失败：${t.javaClass.simpleName}: ${t.message}")
                 null
             }
 
@@ -159,27 +152,32 @@ object FnApi {
                 when {
                     size > 20 -> {
                         size = 20
+                        onLog("降级：每页 100 → 20")
                         onProgress("第 $page 页失败（$lastError），改为每页 20 首重试...")
                         continue
                     }
                     size > 5 -> {
                         size = 5
+                        onLog("降级：每页 → 5")
                         onProgress("第 $page 页仍失败（$lastError），改为每页 5 首重试...")
                         continue
                     }
                     size > 1 -> {
                         size = 1
+                        onLog("降级：每页 → 1（逐条）")
                         onProgress("第 $page 页仍失败（$lastError），改为每页 1 首逐条重试...")
                         continue
                     }
                     skipped < 50 -> {
                         skipped++
                         cursor++
+                        onLog("跳过 cursor=$cursor 的记录（累计 $skipped）：$lastError")
                         onProgress("第 $page 条记录取不到（$lastError），跳过 1 条继续（累计 $skipped 条）")
                         continue
                     }
                     else -> {
                         aborted = true
+                        onLog("终止：连续跳过 $skipped 条仍失败，$lastError")
                         onProgress("连续跳过 $skipped 条记录仍失败（$lastError），本次同步中止")
                         break
                     }
@@ -228,24 +226,38 @@ object FnApi {
             } + ")"
         )
         val result = TrackScan(songs, total, skipped, aborted, lastError)
+        onLog(
+            "结束：songs=${songs.size} total=$total skipped=$skipped aborted=$aborted " +
+                "complete=${result.complete} lastError=${lastError ?: "-"}"
+        )
         if (result.complete) onProgress("曲库同步完整。") else onProgress("曲库同步不完整：${lastError ?: "部分页未取到"}")
         result
     }
 
-    /** 取一页歌曲列表：单页内重试 3 次（退避），仍失败抛出最后一次异常。 */
-    private fun fetchTrackPage(page: Int, size: Int): JSONObject {
+    /** 取一页歌曲列表：单页内重试 3 次（退避），仍失败抛出最后一次异常。全过程写日志。 */
+    private fun fetchTrackPage(page: Int, size: Int, onLog: (String) -> Unit = {}): JSONObject {
         val url = "$baseUrl/track/list?page=$page&size=$size&sort=createdAt,desc"
         var last: Exception? = null
         repeat(3) { attempt ->
+            val t0 = System.currentTimeMillis()
             try {
-                val json = JSONObject(httpGet(url))
+                val text = httpGet(url)
+                val ms = System.currentTimeMillis() - t0
+                onLog("GET page=$page size=$size → ${text.length}B ${ms}ms")
+                val json = JSONObject(text)
                 val code = json.optInt("code", -1)
                 if (code != 0) {
-                    throw IOException("服务端 code=$code ${json.optString("msg", "").take(80)}")
+                    val msg = json.optString("msg", "")
+                    onLog("  响应 code=$code msg=$msg")
+                    throw IOException("服务端 code=$code ${msg.take(80)}")
                 }
+                val data = json.optJSONObject("data")
+                onLog("  ok total=${data?.optInt("total", 0) ?: 0} list=${data?.optJSONArray("list")?.length() ?: 0}")
                 return json
             } catch (t: Exception) {
                 last = t
+                val ms = System.currentTimeMillis() - t0
+                onLog("  第 ${attempt + 1} 次失败 ${ms}ms：${t.javaClass.simpleName}: ${t.message}")
                 if (attempt < 2) {
                     try {
                         Thread.sleep(400L * (attempt + 1))
@@ -406,7 +418,7 @@ object FnApi {
             // Feiniu API expects raw token in Authorization header, NOT "Bearer <token>"
             if (token.isNotEmpty()) header("Authorization", token)
         }.build()
-        apiClient.newCall(req).execute().use { resp ->
+        client.newCall(req).execute().use { resp ->
             val body = resp.body?.string() ?: ""
             if (!resp.isSuccessful) {
                 throw IOException("HTTP ${resp.code} ${body.take(120).replace('\n', ' ')}")
