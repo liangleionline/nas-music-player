@@ -275,6 +275,8 @@ object SourceManager {
             return
         }
 
+        // v1.5.24：日志只在这次没拉全或报错时才落盘；同步成功了就不往 Download 里丢文件
+        var needDumpLog = true
         try {
             ScanLog.begin(if (force) "手动「从服务器重新加载」" else "冷启动自动同步")
             ScanLog.line("缓存状态：已有 ${feiniuCache.size} 首，上次同步 $feiniuUpdatedAt")
@@ -294,6 +296,7 @@ object SourceManager {
             feiniuCache = scan.songs
             _songs.value = feiniuCache
             if (scan.complete) {
+                needDumpLog = false
                 saveFeiniuCache()
                 // 记录本次成功同步时间，下次冷启动据此判断能不能直接用缓存
                 feiniuUpdatedAt = System.currentTimeMillis()
@@ -301,7 +304,7 @@ object SourceManager {
                 if (scan.skipped > 0) {
                     onProgress("完成！共 ${scan.songs.size} 首（跳过 ${scan.skipped} 条无法解析的记录）")
                 } else {
-                    onProgress("完成！")
+                    onProgress("完成！共 ${scan.songs.size} 首")
                 }
             } else {
                 // 没取全就不落长期缓存：否则 24h 内会一直用这份残缺曲库，用户以为已经同步好了
@@ -313,11 +316,13 @@ object SourceManager {
         } finally {
             _loading.value = false
             _playlistsLoading.value = false
-            // 日志落盘：Download/NASMusic/nas-music-scan-*.log
-            val path = appContext?.let { ScanLog.dump(it) }
-            onProgress(
-                if (path != null) "日志已保存：$path" else "日志保存失败（未取到应用上下文或存储不可写）"
-            )
+            if (needDumpLog) {
+                // 只有失败/不完整时才落盘：Download/NASMusic/nas-music-scan-*.log
+                val path = appContext?.let { ScanLog.dump(it) }
+                onProgress(
+                    if (path != null) "本次未取全，日志已保存：$path" else "本次未取全，日志保存失败（存储不可写）"
+                )
+            }
         }
     }
 
