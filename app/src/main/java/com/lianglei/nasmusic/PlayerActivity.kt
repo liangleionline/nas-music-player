@@ -55,6 +55,11 @@ class PlayerActivity : ComponentActivity() {
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
 
+        // v1.5.26：播放页自己也要确保连接。进程被系统回收后如果只恢复了本页
+        // （MainActivity 不在），旧实现没有任何地方建 MediaController → PlayerManager
+        // 队列永远是空的，整页只剩背景色，退回主页才恢复。ensureBound 是幂等的。
+        PlayerManager.ensureBound(this)
+
         // 返回键：finish + 下滑退出动画（与弹出动画对称）。
         // 播放页内的 Compose BackHandler（如歌曲信息弹窗）优先级更高，会先收弹窗。
         onBackPressedDispatcher.addCallback(this) {
@@ -88,7 +93,12 @@ class PlayerActivity : ComponentActivity() {
                             else Modifier
                         )
                     ) {
-                        QueueScreen(onClose = { showQueue = false })
+                        // v1.5.26：完全收起时不渲染这一层。首帧 size.height 还是 0，
+                        // 位移会算成 0 → 整层队列页正好盖在播放页上，表现就是"打开
+                        // 播放页只有背景色、没有文字"。收起（slide=1）即移除，不影响滑出动画。
+                        if (showQueue || queueSlide.value < 1f) {
+                            QueueScreen(onClose = { showQueue = false })
+                        }
                     }
                 }
             }
@@ -100,6 +110,8 @@ class PlayerActivity : ComponentActivity() {
     // 与 MainActivity 相同的 500ms 节律，controller 为空时 tick() 内部直接返回。
     override fun onStart() {
         super.onStart()
+        // 连接若在 onCreate 那次失败/被清掉，回到本页时再补一次（幂等，已有连接直接返回）
+        PlayerManager.ensureBound(this)
         ticker = lifecycleScope.launch {
             while (true) { delay(500); PlayerManager.tick() }
         }

@@ -1,10 +1,15 @@
 package com.lianglei.nasmusic.player
 
+import android.content.ComponentName
+import android.content.Context
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import com.lianglei.nasmusic.data.Song
 import com.lianglei.nasmusic.data.StatsStore
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +30,8 @@ enum class PlayMode { SEQUENTIAL, REPEAT_ALL, REPEAT_ONE, SHUFFLE }
 
 object PlayerManager {
     private var controller: MediaController? = null
+    /** 进程级连接请求（v1.5.26）：MainActivity / PlayerActivity 共用，只建一次 */
+    private var controllerFuture: ListenableFuture<MediaController>? = null
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
@@ -34,6 +41,10 @@ object PlayerManager {
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    /** 是否已连上播放服务（v1.5.26：播放页在数据未就绪时按此显示"连接中/恢复中"） */
+    private val _bound = MutableStateFlow(false)
+    val bound: StateFlow<Boolean> = _bound.asStateFlow()
 
     private val _buffering = MutableStateFlow(false)
     val buffering: StateFlow<Boolean> = _buffering.asStateFlow()
@@ -69,6 +80,7 @@ object PlayerManager {
         this.controller?.removeListener(playerListener)
         this.controller = controller
         controller.addListener(playerListener)
+        _bound.value = true
         // v1.5.12：绑定后立刻把真实状态同步到 UI。冷启动时恢复队列会先 prepare()，
         // 而 {_isPlaying} 之前只靠 onIsPlayingChanged 更新 —— 一旦监听回调在 setUp 期间
         // 报过一次 true（或回调漏了一次 false），UI 就会一直显示"暂停键"（以为在播），
@@ -81,6 +93,41 @@ object PlayerManager {
         // v1.5.8：controller 就绪是所有恢复动作的前提。冷启动时曲库（缓存）往往比服务连接先到，
         // 旧的恢复逻辑在 controller 为 null 时直接 return 且永不重试 → mini player 一直"未在播放"。
         if (!restoredOnce) restoreState(com.lianglei.nasmusic.data.SourceManager.songs.value)
+    }
+
+    /**
+     * v1.5.26：进程级幂等连接（MainActivity 与 PlayerActivity 都可以调用）。
+     *
+     * 旧实现只有 MainActivity.onStart 建连接、onDestroy 又 unbind。进程被系统回收后
+     * 用户再次打开 App 时，系统可能直接恢复栈顶的 PlayerActivity（播放页），此时
+     * 没有任何页面去建连接 → PlayerManager.controller 一直为 null → 队列无法从存档
+     * 恢复，播放页没有任何数据（只有背景），直到返回主界面 MainActivity 重建才通。
+     */
+    fun ensureBound(ctx: Context) {
+        if (controller != null || controllerFuture != null) return
+        val app = ctx.applicationContext
+        val token = SessionToken(app, ComponentName(app.packageName, PlayerService::class.java.name))
+        val future = MediaController.Builder(app, token).buildAsync()
+        controllerFuture = future
+        future.addListener({
+            val c = runCatching { future.get() }.getOrNull()
+            if (c != null) {
+                bind(c)
+            } else {
+                // 连接失败：清掉占位，下一次 ensureBound（页面 onStart）还能重试
+                controllerFuture = null
+            }
+        }, ContextCompat.getMainExecutor(app))
+    }
+
+    /**
+     * 释放进程级连接（v1.5.26）。Activity 销毁时**不再**调用：
+     * 播放页可能还在前台，把连接解绑会让它立刻变空白。只在换绑/彻底退出时用。
+     */
+    fun releaseConnection() {
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture = null
+        unbind()
     }
 
     private val playerListener = object : Player.Listener {
@@ -168,6 +215,7 @@ object PlayerManager {
     fun unbind() {
         controller?.removeListener(playerListener)
         controller = null
+        _bound.value = false
     }
 
     fun playQueue(songs: List<Song>, startIndex: Int) {

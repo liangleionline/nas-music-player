@@ -23,6 +23,10 @@ class App : Application(), ImageLoaderFactory {
         com.lianglei.nasmusic.data.SortPrefs.init(this)
         com.lianglei.nasmusic.player.CacheManager.init(this)
         PlayerManager.init(this)
+        // v1.5.26：在进程启动时就建立播放服务连接（幂等）。旧实现只在 MainActivity.onStart
+        // 里建，进程被系统回收后重新打开 App 若只恢复了栈顶的播放页（PlayerActivity），
+        // 就没有任何页面连得上服务 → 播放页没有队列、整屏只剩背景，退回主页才恢复。
+        PlayerManager.ensureBound(this)
         CoverPrefetcher.init(this)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope.launch {
