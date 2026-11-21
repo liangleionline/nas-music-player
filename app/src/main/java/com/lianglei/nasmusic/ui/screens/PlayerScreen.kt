@@ -185,6 +185,7 @@ fun splitLrcLine(text: String): Pair<String, String?> {
 fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true) {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
     val idx by PlayerManager.currentIndex.collectAsStateWithLifecycle()
+    val bound by PlayerManager.bound.collectAsStateWithLifecycle()
     // 注意：pos/dur/playing 不在顶层收集！pos/dur 每 500ms 更新、playing 在播放开始瞬间变化，
     // 顶层 collect 会导致整屏重组（弱设备上滑入/运行都会掉帧）。
     // pos/dur 下沉到 PlayerProgressRow（进度条）与 LyricPanelContent（歌词面板），
@@ -522,6 +523,21 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                 }
             }
             Spacer(Modifier.height(8.dp))
+        }
+
+        // v1.5.26：数据还没到位时给一句明确提示。旧实现 queue 为空时整页只剩背景和几个
+        // 空白控件（看起来像白屏），用户不知道是在恢复还是卡死。
+        if (song == null) {
+            Column(
+                Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    if (!bound) "正在连接播放服务…" else "正在恢复上次播放…",
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 14.sp
+                )
+            }
         }
     }
 

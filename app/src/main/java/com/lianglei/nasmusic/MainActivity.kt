@@ -10,11 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
 import com.lianglei.nasmusic.player.PlayerManager
-import com.lianglei.nasmusic.player.PlayerService
 import com.lianglei.nasmusic.ui.HomeRoot
 import com.lianglei.nasmusic.ui.theme.NasMusicTheme
 import kotlinx.coroutines.Job
@@ -22,9 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private lateinit var controllerFuture: ListenableFuture<MediaController>
     private var ticker: Job? = null
-    private var bound = false
 
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -76,17 +70,10 @@ class MainActivity : ComponentActivity() {
         // 若连接失败/耗时，controller 持续为 null → tick() 不更新进度(停在0)、
         // togglePlayPause 直接 return(按钮按不动)。现在连接在 Activity 存活期保持：
         // onStart 仅首次/重建时建立连接，onStop 只停 ticker，onDestroy 才释放。
-        if (!bound) {
-            val token = SessionToken(this, ComponentName(this, PlayerService::class.java))
-            controllerFuture = MediaController.Builder(this, token).buildAsync()
-            controllerFuture.addListener({
-                try {
-                    PlayerManager.bind(controllerFuture.get())
-                    bound = true
-                } catch (t: Throwable) {
-                }
-            }, mainExecutor)
-        }
+        // v1.5.26：连接改为进程级、幂等（PlayerManager.ensureBound）。播放页是独立
+        // Activity 且自己不建连接，进程被回收后若只恢复栈顶的播放页，就没有任何页面
+        // 连得上服务 → 播放页拿不到队列、整屏空白，退回主页才恢复。
+        PlayerManager.ensureBound(this)
         ticker = lifecycleScope.launch {
             while (true) { delay(500); PlayerManager.tick() }
         }
@@ -103,9 +90,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         ticker?.cancel()
-        if (::controllerFuture.isInitialized) MediaController.releaseFuture(controllerFuture)
-        PlayerManager.unbind()
-        bound = false
+        // v1.5.26：不再解绑连接。连接是进程级共享的，播放页（PlayerActivity）可能
+        // 还在前台；在本页销毁时 release 会让播放页立刻失去数据源变成空白页。
         super.onDestroy()
     }
 }
