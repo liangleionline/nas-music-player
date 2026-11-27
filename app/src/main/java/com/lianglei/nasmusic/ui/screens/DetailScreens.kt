@@ -350,7 +350,8 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
             val (name, group) = artists.elementAt(i)
             val artCoverId = group.firstOrNull()?.coverId ?: ""
             Row(
-                Modifier.suppressClickOnRightSwipe { onOpenArtist(name) }
+                Modifier.fillMaxWidth()
+                    .suppressClickOnRightSwipe { onOpenArtist(name) }
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
