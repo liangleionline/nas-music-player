@@ -629,8 +629,8 @@ class SwipeDrawerLayout @JvmOverloads constructor(
     private var manualFrac = 1f
 
     init {
-        // 开合状态一变就重算"边缘触发区"：收起=整屏（任意位置右滑可开），展开=只有抽屉宽度（
-        // 右侧页面上的手势一律不归抽屉，避免上下滚动时把抽屉/页面带偏）
+        // 开合状态一变就重算"边缘触发区"：收起=0（原生不抓边缘，开抽屉走手动判定），
+        // 展开=只有抽屉宽度（右侧页面上的手势一律不归抽屉，避免上下滚动时把抽屉/页面带偏）
         addDrawerListener(object : DrawerListener {
             override fun onDrawerSlide(drawerView: View, slideOffset: Float) = applyEdgeSize()
             override fun onDrawerOpened(drawerView: View) = applyEdgeSize()
@@ -648,15 +648,19 @@ class SwipeDrawerLayout @JvmOverloads constructor(
         }.getOrNull()
 
     /**
-     * 边缘触发宽度：抽屉收起时补成整屏宽（任意位置右滑都能开），
-     * 抽屉展开时缩回抽屉自身宽度（只有抽屉面板内的左滑才算关闭手势）。
-     * 必须放在测量/布局之后重补：DrawerLayout 1.2.0 会按系统手势区 insets 重新计算边缘宽度。
+     * 边缘触发宽度：抽屉展开时缩回抽屉自身宽度（只有抽屉面板内的左滑才算关闭手势）；
+     * 抽屉收起时**关闭原生边缘捕获**——开抽屉的手势改由 [dispatchTouchEvent] 里的手动
+     * 判定接管（横向为主、位移超过 slop 才算）。
+     *
+     * v1.5.28 修复：之前收起态把边缘宽度补成整屏宽，ViewDragHelper 会把列表里每一次摁住
+     * 都当成边缘起手，手指轻微右漂就把抽屉抓走拉开（表现为摁住一条列表项，整屏被推到
+     * 最右、抽屉一直拉到边缘）。
      */
     private fun applyEdgeSize() {
         val w = width
         if (w <= 0) return
         val drawerW = leftDrawer()?.width ?: 0
-        val edge = if (isDrawerOpen(GravityCompat.START) && drawerW > 0) drawerW else w
+        val edge = if (isDrawerOpen(GravityCompat.START) && drawerW > 0) drawerW else 0
         runCatching { leftDragger?.setEdgeSize(edge) }
     }
 
@@ -735,11 +739,14 @@ class SwipeDrawerLayout @JvmOverloads constructor(
         contentView()?.translationX = w * manualFrac
     }
 
-    /** 松手结算：露出不足 1/3 就关掉，否则回到完全展开；位移量都从当前值连续过渡，不跳变。 */
+    /** 松手结算：打开拖过 1/3 就展开，关闭拖过 2/3 才收起；位移量都从当前值连续过渡，不跳变。 */
     private fun settleManualDrag() {
         val start = manualFrac
-        // 与"拉出超过 1/3 才展开"对称：收起时延展超过 1/3 就关
-        val target = if (start > 2f / 3f) 1f else 0f
+        val target = if (openedAtDown) {
+            if (start > 2f / 3f) 1f else 0f
+        } else {
+            if (start >= 1f / 3f) 1f else 0f
+        }
         ValueAnimator.ofFloat(start, target).apply {
             duration = 200L
             interpolator = DecelerateInterpolator()
@@ -750,7 +757,9 @@ class SwipeDrawerLayout @JvmOverloads constructor(
                     val d = leftDrawer() ?: return
                     val w = d.width.toFloat()
                     if (target >= 1f) {
-                        // 回到完全展开：位移归零，页面仍然被顶开一个抽屉宽度
+                        // 回到完全展开：先同步 DrawerLayout 内部开合状态，再把位移归位，
+                        // 否则抽屉看着是开的、内部仍记为收起，后续点按页面不会正常收起
+                        if (!isDrawerOpen(GravityCompat.START)) openDrawer(GravityCompat.START, false)
                         d.translationX = 0f
                         contentView()?.translationX = w
                     } else {
@@ -784,13 +793,18 @@ class SwipeDrawerLayout @JvmOverloads constructor(
         }
 
         if (ev.actionMasked == MotionEvent.ACTION_MOVE) {
-            // 起于页面区域、以横向为主的左滑 → 接管本次手势，跟手推动抽屉
-            if (!manualDrag && pageAreaAtDown && isDrawerOpen(GravityCompat.START) &&
+            if (!manualDrag &&
                 getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED
             ) {
                 val dx = ev.x - touchStartX
                 val dy = ev.y - touchStartY
-                if (dx < -slop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                val horizontal = kotlin.math.abs(dx) > slop &&
+                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f
+                // 展开态：起于页面区域的左滑 → 跟手关闭；收起态：页面区域的右滑 → 跟手打开。
+                // 纵向滚动、摁住不动（位移没超过 slop）都不接管，手势留给列表。
+                val wantClose = pageAreaAtDown && dx < -slop
+                val wantOpen = !openedAtDown && dx > slop
+                if (horizontal && (wantClose || wantOpen)) {
                     manualDrag = true
                     // 先给页面一个 CANCEL，让列表停住，避免它和抽屉位移抢手势
                     val cancel = MotionEvent.obtain(ev)
@@ -801,7 +815,12 @@ class SwipeDrawerLayout @JvmOverloads constructor(
             }
             if (manualDrag) {
                 val w = (leftDrawer()?.width ?: 0).toFloat()
-                if (w > 0f) applyManualFraction(1f + (ev.x - touchStartX) / w)
+                if (w > 0f) {
+                    // 关闭：frac = 1 + dx/w（dx 为负）；打开：frac = dx/w
+                    val frac = if (openedAtDown) 1f + (ev.x - touchStartX) / w
+                              else (ev.x - touchStartX) / w
+                    applyManualFraction(frac)
+                }
                 return true
             }
             return super.dispatchTouchEvent(ev)
