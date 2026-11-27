@@ -35,7 +35,7 @@ fun NasLibraryScreen(
     val fnConnected by SourceManager.fnConnected.collectAsStateWithLifecycle()
     var showDisconfirm by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().background(Color(0xFFF2F3F5))) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Top bar
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
@@ -46,7 +46,7 @@ fun NasLibraryScreen(
         Card(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             colors = CardDefaults.cardColors(
-                containerColor = if (current == MusicSource.LOCAL) Color(0xFF1F6FEB) else Color.White
+                containerColor = if (current == MusicSource.LOCAL) Color(0xFF1F6FEB) else MaterialTheme.colorScheme.surface
             )
         ) {
             Row(
@@ -58,19 +58,19 @@ fun NasLibraryScreen(
             ) {
                 Icon(
                     Icons.Filled.Smartphone, null,
-                    tint = if (current == MusicSource.LOCAL) Color.White else Color.Gray
+                    tint = if (current == MusicSource.LOCAL) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
                         stringResource(R.string.local_player),
                         fontWeight = FontWeight.Bold,
-                        color = if (current == MusicSource.LOCAL) Color.White else Color.Black
+                        color = if (current == MusicSource.LOCAL) Color.White else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         if (current == MusicSource.LOCAL) stringResource(R.string.current_in_use) else stringResource(R.string.scan_local_music),
                         fontSize = 12.sp,
-                        color = if (current == MusicSource.LOCAL) Color.White.copy(alpha = 0.8f) else Color.Gray
+                        color = if (current == MusicSource.LOCAL) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -79,7 +79,7 @@ fun NasLibraryScreen(
         Text(
             stringResource(R.string.network_source),
             Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            color = Color.Gray, fontSize = 13.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp
         )
 
         // Feiniu card — behaves differently depending on connection state.
@@ -113,12 +113,12 @@ fun NasLibraryScreen(
                             fnConnected -> stringResource(R.string.fn_connected, "${SourceManager.fnUsername}@${SourceManager.fnHost}")
                             else -> stringResource(R.string.fn_click_login)
                         },
-                        color = Color.Gray, fontSize = 12.sp
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
                     )
                 }
                 if (fnConnected) {
                     IconButton(onClick = { showDisconfirm = true }) {
-                        Icon(Icons.Filled.Logout, null, tint = Color.Gray)
+                        Icon(Icons.Filled.Logout, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else if (current == MusicSource.FEINIU) {
                     Icon(Icons.Filled.CheckCircle, null, tint = Color(0xFF4CAF50))
@@ -128,9 +128,9 @@ fun NasLibraryScreen(
 
         // Other NAS entries (disabled)
         val others = listOf(
-            NasEntry(R.string.nas_synology, Icons.Filled.Storage, false, Color.Gray),
-            NasEntry(R.string.nas_qnap, Icons.Filled.Dns, false, Color.Gray),
-            NasEntry(R.string.nas_ugreen, Icons.Filled.Cloud, false, Color.Gray),
+            NasEntry(R.string.nas_synology, Icons.Filled.Storage, false, MaterialTheme.colorScheme.onSurfaceVariant),
+            NasEntry(R.string.nas_qnap, Icons.Filled.Dns, false, MaterialTheme.colorScheme.onSurfaceVariant),
+            NasEntry(R.string.nas_ugreen, Icons.Filled.Cloud, false, MaterialTheme.colorScheme.onSurfaceVariant),
         )
         others.forEach { e ->
             Card(
@@ -146,7 +146,7 @@ fun NasLibraryScreen(
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(e.nameRes), fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                        Text(stringResource(R.string.not_supported), color = Color.Gray, fontSize = 12.sp)
+                        Text(stringResource(R.string.not_supported), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                 }
             }
@@ -156,7 +156,7 @@ fun NasLibraryScreen(
         Text(
             stringResource(R.string.source_switch_hint),
             Modifier.fillMaxWidth().padding(24.dp),
-            color = Color.Gray, fontSize = 12.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
         )
     }
 

@@ -2,6 +2,7 @@
     <style name="Theme.NasMusic" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">@color/window_bg</item>
     </style>
 
     <!-- 播放页独立 Activity 主题（v1.4.81）：深色窗口背景，系统窗口动画期间不闪白 -->

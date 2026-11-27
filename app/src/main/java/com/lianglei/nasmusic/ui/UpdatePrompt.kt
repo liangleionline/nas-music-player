@@ -11,13 +11,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,7 +53,7 @@ fun UpdatePromptHost(context: Context) {
             Column {
                 Text(
                     stringResource(R.string.update_current_version, UpdateCenter.currentVersion()),
-                    color = Color.Gray, fontSize = 12.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
                 )
                 Spacer(Modifier.height(8.dp))
                 if (downloading) {

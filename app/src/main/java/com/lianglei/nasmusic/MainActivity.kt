@@ -30,8 +30,11 @@ class MainActivity : ComponentActivity() {
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
-        // Light status bar icons (dark text on light background)
-        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
+        // 状态栏图标跟随系统深浅色：浅色模式深图标，夜间模式浅图标
+        val nightMode = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = !nightMode
         // 排除左侧 40dp 的系统返回手势区，让抽屉边缘右滑不被系统手势截走（API 29+）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.decorView.post {

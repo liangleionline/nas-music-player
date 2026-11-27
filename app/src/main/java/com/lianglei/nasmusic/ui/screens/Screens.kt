@@ -168,7 +168,7 @@ fun SortOptionsSheet(
         Column(Modifier.padding(20.dp).padding(bottom = 24.dp)) {
             Text(stringResource(R.string.sort_title), fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(4.dp))
-            Text(stringResource(R.string.sort_dir_hint), color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(R.string.sort_dir_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Spacer(Modifier.height(12.dp))
             options.forEachIndexed { idx, labelRes ->
                 val active = selected == idx
@@ -181,7 +181,7 @@ fun SortOptionsSheet(
                     Text(
                         stringResource(labelRes),
                         fontSize = 15.sp,
-                        color = if (active) MaterialTheme.colorScheme.primary else Color.Black
+                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.weight(1f))
                     if (active) {
@@ -244,7 +244,7 @@ fun SongListScreen(
                 Icon(
                     Icons.Filled.Shuffle,
                     stringResource(R.string.shuffle),
-                    tint = Color.Gray,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -252,7 +252,7 @@ fun SongListScreen(
             Text("${filtered.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { showSortSheet = true }) {
-                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (searching) {
@@ -294,7 +294,7 @@ fun SongListScreen(
                                 }
                                 Spacer(Modifier.width(6.dp))
                             }
-                            Text("${s.artist} - ${s.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
+                            Text("${s.artist} - ${s.album}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, fontSize = 12.sp)
                         }
                     }
                     IconButton(
@@ -309,8 +309,8 @@ fun SongListScreen(
                             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(36.dp)
-                    ) { Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = Color.Gray, modifier = Modifier.size(20.dp)) }
-                    Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
+                    ) { Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+                    Icon(Icons.Filled.MoreVert, "more", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
                 }
             }
         }
@@ -342,7 +342,7 @@ fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
             Text("${albums.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { showSortSheet = true }) {
-                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         LazyVerticalGrid(
@@ -361,7 +361,7 @@ fun AlbumGridScreen(songs: List<Song>, onOpenAlbum: (Long) -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(group.first().album, maxLines = 1, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.song_count, group.size), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
         }
@@ -397,7 +397,7 @@ fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
             Text("${groups.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { showSortSheet = true }) {
-                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         LazyColumn(Modifier.weight(1f)) {
@@ -412,7 +412,7 @@ fun ArtistListScreen(songs: List<Song>, onOpenArtist: (String) -> Unit) {
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text(artist, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                        Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+                        Text(stringResource(R.string.song_count, group.size), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                 }
             }
@@ -439,11 +439,11 @@ fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
         item {
             Card(Modifier.fillMaxWidth().padding(12.dp)) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.SdStorage, null, tint = Color.Gray)
+                    Icon(Icons.Filled.SdStorage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text(stringResource(R.string.internal_storage), fontWeight = FontWeight.Medium)
-                        Text("/storage/emulated/0", color = Color.Gray, fontSize = 12.sp)
+                        Text("/storage/emulated/0", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                 }
             }
@@ -454,9 +454,9 @@ fun FolderListScreen(songs: List<Song>, onOpenFolder: (String) -> Unit) {
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(folder, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.song_count, group.size), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
-                Icon(Icons.Filled.MoreVert, null, tint = Color.Gray)
+                Icon(Icons.Filled.MoreVert, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -527,9 +527,9 @@ fun FolderBrowserScreen(
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.dir_count, children.size, curSongs.size), color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(R.string.dir_count, children.size, curSongs.size), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             IconButton(onClick = { showSortSheet = true }) {
-                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         LazyColumn(Modifier.fillMaxSize()) {
@@ -546,7 +546,7 @@ fun FolderBrowserScreen(
                     Column(Modifier.weight(1f)) {
                         Text(segs.last(), fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1)
                         Spacer(Modifier.height(2.dp))
-                        Text(stringResource(R.string.song_count, count), color = Color.Gray, fontSize = 12.sp)
+                        Text(stringResource(R.string.song_count, count), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                 }
             }
@@ -574,7 +574,7 @@ fun FolderBrowserScreen(
                                 }
                                 Spacer(Modifier.width(6.dp))
                             }
-                            Text("${s.artist} - ${s.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
+                            Text("${s.artist} - ${s.album}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, fontSize = 12.sp)
                         }
                     }
                     IconButton(
@@ -589,14 +589,14 @@ fun FolderBrowserScreen(
                             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(36.dp)
-                    ) { Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = Color.Gray, modifier = Modifier.size(20.dp)) }
-                    Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
+                    ) { Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+                    Icon(Icons.Filled.MoreVert, "more", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
                 }
             }
             if (children.isEmpty() && curSongs.isEmpty()) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.no_songs_in_dir), color = Color.Gray, fontSize = 13.sp)
+                        Text(stringResource(R.string.no_songs_in_dir), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     }
                 }
             }
@@ -605,7 +605,7 @@ fun FolderBrowserScreen(
                     Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
                         Text(
                             stringResource(R.string.no_dir_structure),
-                            color = Color(0xFFB08968), fontSize = 12.sp, lineHeight = 16.sp
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp
                         )
                     }
                 }
@@ -638,7 +638,7 @@ fun PlaylistScreen(
             // （旧版不管在不在加载都报"暂无歌单"，于是打开时闪一下空页、过一会歌单又冒出来）
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 if (loading) CircularProgressIndicator()
-                else Text(stringResource(R.string.no_playlists), color = Color.Gray)
+                else Text(stringResource(R.string.no_playlists), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Column
         }
@@ -655,13 +655,13 @@ fun PlaylistScreen(
                             modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
                         )
                     } else {
-                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFE0E2E6)))
+                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
                     }
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text(p.name, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                         if (p.trackCount > 0) {
-                            Text(stringResource(R.string.song_count, p.trackCount), color = Color.Gray, fontSize = 12.sp)
+                            Text(stringResource(R.string.song_count, p.trackCount), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
                     }
                 }
@@ -673,11 +673,11 @@ fun PlaylistScreen(
 @Composable
 private fun PlaceholderRow(title: String, sub: String, onClick: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().suppressClickOnRightSwipe { onClick() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFE0E2E6)))
+        Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
         Spacer(Modifier.width(16.dp))
         Column {
             Text(title, fontWeight = FontWeight.Medium, fontSize = 16.sp)
-            Text(sub, color = Color.Gray, fontSize = 12.sp)
+            Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
     }
 }
@@ -763,17 +763,17 @@ fun ScanSourceScreen() {
 
             // Custom folders
             item {
-                Text(stringResource(R.string.custom_folders), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text(stringResource(R.string.custom_folders), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
             }
             items(customFolders) { folder ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Folder, null, tint = Color.Gray)
+                        Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(folder.takeLast(40), fontWeight = FontWeight.Medium, fontSize = 14.sp)
                         }
-                        Icon(Icons.Filled.Close, null, tint = Color.Gray, modifier = Modifier.clickable {
+                        Icon(Icons.Filled.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable {
                             customFolders = customFolders - folder
                             prefs.edit().putStringSet("custom_folders", customFolders.toSet()).apply()
                         })
@@ -792,7 +792,7 @@ fun ScanSourceScreen() {
 
             // Settings
             item {
-                Text(stringResource(R.string.settings), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text(stringResource(R.string.settings), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
             }
             item {
                 Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -812,24 +812,24 @@ fun ScanSourceScreen() {
                         context.startActivity(intent)
                     }.padding(16.dp)) {
                         Text(stringResource(R.string.manage_permission), Modifier.weight(1f))
-                        Icon(Icons.Filled.OpenInNew, null, tint = Color.Gray)
+                        Icon(Icons.Filled.OpenInNew, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
 
             // Blocked folders
             item {
-                Text(stringResource(R.string.blocked_folders), color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text(stringResource(R.string.blocked_folders), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
             }
             items(blockedFolders) { folder ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.FolderOff, null, tint = Color.Gray)
+                        Icon(Icons.Filled.FolderOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(folder.takeLast(40), fontSize = 14.sp)
                         }
-                        Icon(Icons.Filled.Close, null, tint = Color.Gray, modifier = Modifier.clickable {
+                        Icon(Icons.Filled.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clickable {
                             blockedFolders = blockedFolders - folder
                             prefs.edit().putStringSet("blocked_folders", blockedFolders.toSet()).apply()
                         })
@@ -907,7 +907,7 @@ private val ScanDialogWidth = 300.dp
 @Composable
 fun PlaceholderScreen(name: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(stringResource(R.string.placeholder_suffix, name), color = Color.Gray)
+        Text(stringResource(R.string.placeholder_suffix, name), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -965,7 +965,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         fmtCacheSize(cacheBytes),
                         fmtCacheSize(limitMb.toLong() * 1024L * 1024L)
                     ),
-                    color = Color.Gray, fontSize = 12.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
                 )
             }
             Button(
@@ -1007,7 +1007,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 } else {
                     stringResource(R.string.cover_prefetch_desc_idle, cached, total, fmtCacheSize(coverBytes))
                 }
-                Text(desc, color = Color.Gray, fontSize = 12.sp)
+                Text(desc, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
             Button(
                 onClick = {
@@ -1045,7 +1045,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     stringResource(R.string.update_check_desc, com.lianglei.nasmusic.data.UpdateCenter.currentVersion()),
-                    color = Color.Gray, fontSize = 12.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
                 )
             }
             Button(
@@ -1075,9 +1075,9 @@ fun SettingsScreen(onBack: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.bg_protect_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
                 Spacer(Modifier.height(2.dp))
-                Text(stringResource(R.string.bg_protect_desc), color = Color.Gray, fontSize = 12.sp)
+                Text(stringResource(R.string.bg_protect_desc), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
-            Icon(Icons.Filled.KeyboardArrowRight, null, tint = Color.Gray)
+            Icon(Icons.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 
@@ -1109,7 +1109,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             com.lianglei.nasmusic.player.CacheManager.MIN_LIMIT_MB,
                             com.lianglei.nasmusic.player.CacheManager.MAX_LIMIT_MB
                         ),
-                        color = Color.Gray, fontSize = 12.sp
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
                     )
                 }
             },
@@ -1212,7 +1212,7 @@ fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (List<Song>, Int)
         }
         if (stats.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.stats_no_record), color = Color.Gray)
+                Text(stringResource(R.string.stats_no_record), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(Modifier.weight(1f)) {
@@ -1220,7 +1220,7 @@ fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (List<Song>, Int)
                     Text(
                         stringResource(R.string.stats_total, stats.size),
                         Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        color = Color.Gray, fontSize = 12.sp
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
                     )
                 }
                 items(stats.size) { i ->
@@ -1230,7 +1230,7 @@ fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (List<Song>, Int)
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("${i + 1}", color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp))
+                        Text("${i + 1}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.width(28.dp))
                         Spacer(Modifier.width(8.dp))
                         AsyncImage(
                             model = if (s.coverId.isNotEmpty()) com.lianglei.nasmusic.data.FnApi.coverUrl(s.coverId)
@@ -1242,7 +1242,7 @@ fun StatsScreen(songs: List<Song>, onBack: () -> Unit, onPlay: (List<Song>, Int)
                         Column(Modifier.weight(1f)) {
                             Text(s.title, maxLines = 1, fontSize = 15.sp)
                             Spacer(Modifier.height(3.dp))
-                            Text("${s.artist} - ${s.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
+                            Text("${s.artist} - ${s.album}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, fontSize = 12.sp)
                         }
                         // 播放次数徽章
                         Box(
@@ -1263,32 +1263,32 @@ fun AboutScreen() {
     Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
         Text("NAS Music Player", fontWeight = FontWeight.Bold, fontSize = 22.sp)
         Spacer(Modifier.height(4.dp))
-        Text("Version ${BuildConfig.VERSION_NAME}", color = Color.Gray, fontSize = 13.sp)
+        Text("Version ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         Spacer(Modifier.height(20.dp))
 
         Text(stringResource(R.string.about_title), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
         Text(
             stringResource(R.string.about_desc),
-            color = Color.DarkGray, fontSize = 13.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp
         )
         Spacer(Modifier.height(20.dp))
 
         Text(stringResource(R.string.open_source_refs), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
-        Text(stringResource(R.string.ref_media3), color = Color.DarkGray, fontSize = 12.sp)
-        Text(stringResource(R.string.ref_compose), color = Color.DarkGray, fontSize = 12.sp)
-        Text(stringResource(R.string.ref_coil), color = Color.DarkGray, fontSize = 12.sp)
-        Text(stringResource(R.string.ref_salt), color = Color.DarkGray, fontSize = 12.sp)
-        Text(stringResource(R.string.ref_saltaudio), color = Color.DarkGray, fontSize = 12.sp)
-        Text(stringResource(R.string.ref_fnmusic), color = Color.DarkGray, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_media3), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_compose), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_coil), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_salt), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_saltaudio), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text(stringResource(R.string.ref_fnmusic), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         Spacer(Modifier.height(20.dp))
 
         Text(stringResource(R.string.license_title), fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(8.dp))
         Text(
             stringResource(R.string.license_text),
-            color = Color.DarkGray, fontSize = 12.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
         )
     }
 }

@@ -104,7 +104,7 @@ fun FeiniuLoginScreen(
 
         // History entries
         if (history.isNotEmpty()) {
-            Text(stringResource(R.string.fn_history), color = Color.Gray, fontSize = 12.sp)
+            Text(stringResource(R.string.fn_history), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
             history.forEach { entry ->
                 val parts = entry.split("|")
@@ -119,11 +119,11 @@ fun FeiniuLoginScreen(
                     }
                 ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.History, null, tint = Color.Gray)
+                        Icon(Icons.Filled.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(h, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Text(u, color = Color.Gray, fontSize = 12.sp)
+                            Text(u, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
                     }
                 }
@@ -188,12 +188,12 @@ fun FeiniuLoginScreen(
                 Modifier
                     .fillMaxWidth()
                     .height(160.dp)
-                    .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                     .padding(12.dp)
             ) {
                 Column(Modifier.verticalScroll(logScroll)) {
                     logLines.takeLast(15).forEach { line ->
-                        Text(line, fontSize = 11.sp, color = Color.DarkGray, maxLines = 1)
+                        Text(line, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
                 }
             }
@@ -202,7 +202,7 @@ fun FeiniuLoginScreen(
         Spacer(Modifier.height(24.dp))
         Text(
             stringResource(R.string.fn_hint),
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp
         )
     }

@@ -145,7 +145,11 @@ fun HomeRoot() {
         factory = { ctx ->
             // v1.5.14 推动式：右侧内容容器，抽屉滑动时按同一比例右移
             val contentView = ComposeView(ctx).apply {
-                setBackgroundColor(0xFFF2F3F5.toInt())
+                // 底色跟随系统深浅色，避免 Compose 首帧绘制前透出窗口默认白
+                val night = (ctx.resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                setBackgroundColor(if (night) 0xFF000000.toInt() else 0xFFF2F3F5.toInt())
                 setContent {
                     HomeContent(
                         nav = nav,
@@ -287,7 +291,7 @@ private fun HomeContent(
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(
-        containerColor = Color(0xFFF2F3F5),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             // 顶栏始终显示：播放页/队列页是 Scaffold 之上的全屏浮层（见文件末尾），天然覆盖顶栏，
             // 不再用条件隐藏——否则点歌瞬间顶栏先消失、列表上跳
@@ -320,9 +324,9 @@ private fun HomeContent(
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = Color.Transparent,
-                    titleContentColor = Color.Black,
-                    navigationIconContentColor = Color.Black,
-                    actionIconContentColor = Color.Black
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },
@@ -463,7 +467,7 @@ private fun DrawerPanel(
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.hierarchy?.firstOrNull()?.route
 
-    Surface(color = Color(0xFFFCFCFD), shadowElevation = 6.dp) {
+    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
         Column(
             // v1.5.19：抽屉内容可纵向滚动（小屏/大字号下条目不会挤不下），
             // 纵向手势由 Compose 消费，横向仍交给 DrawerLayout 关闭，两者互不抢
@@ -476,7 +480,7 @@ private fun DrawerPanel(
             // NAS 状态卡：当前音源 + 一键切换/进入（贴合内容宽度，右侧不留大块空白）
             Card(
                 Modifier.wrapContentWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF4FC))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -520,7 +524,7 @@ private fun DrawerPanel(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Text(stringResource(R.string.drawer_media_lib), fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
+            Text(stringResource(R.string.drawer_media_lib), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
             DrawerGroup(mainEntries) { route ->
                 onCloseDrawer()
                 // 已在目标页则不再导航（避免 NavHost 转场动画覆盖产生重影）
@@ -532,7 +536,7 @@ private fun DrawerPanel(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.drawer_system), fontSize = 12.sp, color = Color(0xFF8C8C8C), modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
+            Text(stringResource(R.string.drawer_system), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
             DrawerGroup(systemEntries) { route ->
                 onCloseDrawer()
                 if (route != currentRoute) {
@@ -568,7 +572,7 @@ private fun MiniPlayer(
     onQueue: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(modifier = modifier, tonalElevation = 3.dp) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface) {
         Row(
             Modifier.fillMaxWidth().height(MINI_PLAYER_HEIGHT).padding(horizontal = 12.dp).clickable(onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
@@ -584,7 +588,7 @@ private fun MiniPlayer(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(song?.title ?: stringResource(R.string.not_playing), fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 14.sp)
-                Text(song?.artist ?: "—", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
+                Text(song?.artist ?: "—", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, fontSize = 12.sp)
             }
             if (buffering) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)

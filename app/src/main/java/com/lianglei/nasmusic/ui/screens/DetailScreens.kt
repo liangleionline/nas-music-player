@@ -58,16 +58,16 @@ fun SongRow(song: Song, onClick: () -> Unit, onAddNext: (() -> Unit)? = null) {
                     }
                     Spacer(Modifier.width(6.dp))
                 }
-                Text("${song.artist} - ${song.album}", color = Color.Gray, maxLines = 1, fontSize = 12.sp)
+                Text("${song.artist} - ${song.album}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, fontSize = 12.sp)
             }
         }
         // "下一首播放"加号：与歌曲列表页行为一致（已存在→提到下一首；空队列→加入并开始播放）
         if (onAddNext != null) {
             IconButton(onClick = onAddNext, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = Color.Gray, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.Add, stringResource(R.string.add_next), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
         }
-        Icon(Icons.Filled.MoreVert, "more", tint = Color.Gray, modifier = Modifier.padding(8.dp))
+        Icon(Icons.Filled.MoreVert, "more", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
     }
 }
 
@@ -75,7 +75,7 @@ fun SongRow(song: Song, onClick: () -> Unit, onAddNext: (() -> Unit)? = null) {
 @Composable
 fun SongListHeader(count: Int) {
     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.Shuffle, null, tint = Color.Gray)
+        Icon(Icons.Filled.Shuffle, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(12.dp))
         Text("$count", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     }
@@ -135,7 +135,7 @@ fun ArtistDetailScreen(artistName: String, songs: List<Song>, onPlay: (List<Song
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(group.first().album, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1)
-                    Text(stringResource(R.string.artist_songs_line, group.first().artist, group.size), color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.artist_songs_line, group.first().artist, group.size), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
         }
@@ -285,9 +285,9 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
                 Column {
                     Text(first?.album ?: "", fontWeight = FontWeight.Bold, fontSize = 20.sp, maxLines = 2)
                     Spacer(Modifier.height(6.dp))
-                    Text(first?.artist ?: "", color = Color.Gray, fontSize = 14.sp)
+                    Text(first?.artist ?: "", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text(sampleRateText, color = Color.Gray, fontSize = 12.sp)
+                    Text(sampleRateText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
         }
@@ -306,7 +306,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
                         text = if (group.discNo > 0) stringResource(R.string.album_disc_cd, group.discNo)
                         else stringResource(R.string.album_disc_unknown),
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 2.dp),
-                        color = Color.Gray, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 13.sp
                     )
                 }
             }
@@ -320,7 +320,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
                 ) {
                     Text(
                         if (tn > 0) "$tn" else "${i + 1}",
-                        color = Color.Gray, fontSize = 13.sp, modifier = Modifier.width(28.dp)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.width(28.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
@@ -333,7 +333,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
                                 }
                                 Spacer(Modifier.width(6.dp))
                             }
-                            Text(s.artist, color = Color.Gray, fontSize = 12.sp, maxLines = 1)
+                            Text(s.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
                         }
                     }
                 }
@@ -362,7 +362,7 @@ fun AlbumDetailScreen(albumId: Long, songs: List<Song>, onPlay: (List<Song>, Int
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text(name, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                    Text(stringResource(R.string.song_count, group.size), color = Color.Gray, fontSize = 12.sp)
+                    Text(stringResource(R.string.song_count, group.size), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
         }
@@ -374,7 +374,7 @@ private fun StatColumn(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(value, fontWeight = FontWeight.Bold, fontSize = 20.sp)
         Spacer(Modifier.height(4.dp))
-        Text(label, color = Color.Gray, fontSize = 12.sp)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
 }
 
@@ -398,7 +398,7 @@ fun FolderDetailScreen(folderName: String, songs: List<Song>, onPlay: (List<Song
             Text("${shown.size}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { showSortSheet = true }) {
-                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = Color.Gray)
+                Icon(Icons.Filled.Sort, stringResource(R.string.sort_title), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         LazyColumn(Modifier.weight(1f)) {
