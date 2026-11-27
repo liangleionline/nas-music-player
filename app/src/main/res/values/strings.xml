@@ -165,6 +165,12 @@
     <string name="clear_cache">清空缓存</string>
     <string name="bg_protect_title">后台播放保护</string>
     <string name="bg_protect_desc">若后台播放被系统退出，点击前往电池设置开启「不受限制」</string>
+    <string name="theme_title">外观主题</string>
+    <string name="theme_desc">跟随手机 / 白天 / 夜间</string>
+    <string name="theme_dialog_title">外观主题</string>
+    <string name="theme_system">跟随手机</string>
+    <string name="theme_light">白天模式</string>
+    <string name="theme_dark">夜间模式</string>
     <string name="cover_prefetch_title">封面缓存</string>
     <string name="cover_prefetch_desc_idle">已缓存%1$d/%2$d张封面，\n占用空间%3$s</string>
     <string name="cover_prefetch_desc_off">此功能已关闭\n点击以开启功能</string>

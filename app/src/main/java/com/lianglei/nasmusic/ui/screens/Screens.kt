@@ -922,6 +922,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var limitMb by remember { mutableIntStateOf(com.lianglei.nasmusic.player.CacheManager.limitMb) }
     var showLimitDialog by remember { mutableStateOf(false) }
     var showCoverDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+    val themeMode by com.lianglei.nasmusic.data.ThemePrefs.mode.collectAsStateWithLifecycle()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val coverEnabled by com.lianglei.nasmusic.data.CoverPrefetcher.enabled.collectAsStateWithLifecycle()
     val coverProgress by com.lianglei.nasmusic.data.CoverPrefetcher.progress.collectAsStateWithLifecycle()
@@ -946,6 +948,30 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
             }
             Text(stringResource(R.string.settings), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
+
+        // 外观主题：跟随手机 / 白天 / 夜间（v1.5.30）
+        val themeLabelRes = when (themeMode) {
+            com.lianglei.nasmusic.data.ThemeMode.LIGHT -> R.string.theme_light
+            com.lianglei.nasmusic.data.ThemeMode.DARK -> R.string.theme_dark
+            com.lianglei.nasmusic.data.ThemeMode.SYSTEM -> R.string.theme_system
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable { showThemeDialog = true }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Palette, null, tint = Color(0xFF1F6FEB), modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.theme_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(themeLabelRes),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
+                )
+            }
+            Icon(Icons.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         // 音乐缓存：点整行打开「上限设置」弹窗，右侧保留一键清空
@@ -1152,6 +1178,45 @@ fun SettingsScreen(onBack: () -> Unit) {
                         else stringResource(R.string.cover_enable)
                     )
                 }
+            }
+        )
+    }
+
+    // 外观主题弹窗：跟随手机 / 白天 / 夜间（v1.5.30）
+    if (showThemeDialog) {
+        val themeOptions = listOf(
+            com.lianglei.nasmusic.data.ThemeMode.SYSTEM to R.string.theme_system,
+            com.lianglei.nasmusic.data.ThemeMode.LIGHT to R.string.theme_light,
+            com.lianglei.nasmusic.data.ThemeMode.DARK to R.string.theme_dark
+        )
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text(stringResource(R.string.theme_dialog_title)) },
+            text = {
+                Column {
+                    themeOptions.forEach { (mode, labelRes) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                com.lianglei.nasmusic.data.ThemePrefs.setMode(mode)
+                                showThemeDialog = false
+                            }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = themeMode == mode,
+                                onClick = {
+                                    com.lianglei.nasmusic.data.ThemePrefs.setMode(mode)
+                                    showThemeDialog = false
+                                }
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(stringResource(labelRes), fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) { Text(stringResource(R.string.ok)) }
             }
         )
     }

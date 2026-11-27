@@ -145,10 +145,13 @@ fun HomeRoot() {
         factory = { ctx ->
             // v1.5.14 推动式：右侧内容容器，抽屉滑动时按同一比例右移
             val contentView = ComposeView(ctx).apply {
-                // 底色跟随系统深浅色，避免 Compose 首帧绘制前透出窗口默认白
-                val night = (ctx.resources.configuration.uiMode and
+                // 底色跟随所选主题（跟随系统 / 白天 / 夜间），避免 Compose 首帧绘制前透出窗口默认白
+                val systemNight = (ctx.resources.configuration.uiMode and
                     android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                     android.content.res.Configuration.UI_MODE_NIGHT_YES
+                val night = com.lianglei.nasmusic.data.ThemePrefs.resolveDark(
+                    com.lianglei.nasmusic.data.ThemePrefs.mode.value, systemNight
+                )
                 setBackgroundColor(if (night) 0xFF000000.toInt() else 0xFFF2F3F5.toInt())
                 setContent {
                     HomeContent(

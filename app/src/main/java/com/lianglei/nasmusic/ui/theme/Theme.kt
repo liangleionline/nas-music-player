@@ -1,13 +1,21 @@
 package com.lianglei.nasmusic.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lianglei.nasmusic.data.ThemeMode
+import com.lianglei.nasmusic.data.ThemePrefs
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF1F6FEB),
@@ -39,8 +47,20 @@ private val DarkColors = darkColorScheme(
 )
 
 @Composable
-fun NasMusicTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun NasMusicTheme(content: @Composable () -> Unit) {
+    val mode by ThemePrefs.mode.collectAsStateWithLifecycle()
+    val systemDark = isSystemInDarkTheme()
+    val dark = ThemePrefs.resolveDark(mode, systemDark)
     val scheme = if (dark) DarkColors else LightColors
+
+    // 状态栏图标跟随最终生效的深浅模式：浅色深图标，夜间浅图标
+    val view = LocalView.current
+    LaunchedEffect(dark) {
+        (view.context as? Activity)?.window?.let { window ->
+            WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = !dark
+        }
+    }
+
     MaterialTheme(colorScheme = scheme) {
         // 未显式指定颜色的 Text / Icon 统一跟随 onSurface，避免深色模式下默认黑字落在黑底上
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface, content = content)
