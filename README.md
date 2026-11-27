@@ -52,9 +52,13 @@
 
 ## 版本与更新日志
 
-最新版本：见顶部 `version` 徽章（当前 **v1.5.31**，versionCode 211）
+最新版本：见顶部 `version` 徽章（当前 **v1.5.32**，versionCode 212）
 
 Release 页面每次发版保留**最新 3 个版本**的 APK，更早的版本连同说明一起清理；累计下载量与最新版下载量看顶部 `downloads`、`latest downloads` 徽章，单个版本精确次数可在 Release 页对应 APK 右侧查看。
+
+### v1.5.32（versionCode 212）
+
+- **修复小米等 Android 9+ 手机连接局域网飞牛 NAS 报 `CLEARTEXT communication ... not permitted by network security policy`（GitHub Issue #1）**：APP 目标 SDK 34 默认禁止明文 HTTP，而飞牛 NAS 局域网地址多为 `http://IP:5666`，被系统网络安全策略直接拦截。新增 `networkSecurityConfig` 放行本应用明文流量（公网 GitHub 更新等仍走 HTTPS），局域网 `http://` 地址可正常登录连接。
 
 ### v1.5.31（versionCode 211）
 

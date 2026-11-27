@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  飞牛 NAS 多为局域网 http://IP:5666 明文访问，用户也可能填写自定义域名 / DDNS，
+  主机无法在配置里逐一枚举，因此对本应用放行明文流量（base-config）。
+  公网请求（GitHub 更新检查、APK 下载等）仍走 https，不受影响。
+  修复 Issue #1：CLEARTEXT communication ... not permitted by network security policy。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
