@@ -19,10 +19,30 @@ class LyricsMatchCoordinator(
 
     suspend fun match(request: LyricsMatchRequest): LyricsMatchResult {
         if (request.title.isBlank() || sources.isEmpty()) return LyricsMatchResult.NotFound
-        return matchAllSources(request)
+        val collected = collectMatches(request)
+        val matches = collected.matches
+        if (matches.isNotEmpty()) {
+            val selected = matches.sortedWith(contentComparator()).first()
+            return LyricsMatchResult.Found(selected.toMatchedLyrics())
+        }
+        return classifyFailure(collected.searchOutcomes, collected.fetchOutcomes)
     }
 
-    private suspend fun matchAllSources(request: LyricsMatchRequest): LyricsMatchResult = supervisorScope {
+    /**
+     * 一次并行抓取所有来源，返回每个来源质量最优的一条匹配（按整体质量排序）。
+     * 供播放页“手动选择歌词来源”使用；[match] 仍只返回全局最佳一条，行为不变。
+     */
+    suspend fun matchAll(request: LyricsMatchRequest): List<MatchedLyrics> {
+        if (request.title.isBlank() || sources.isEmpty()) return emptyList()
+        val collected = collectMatches(request)
+        return collected.matches
+            .groupBy { it.scored.candidate.source }
+            .mapNotNull { (_, sourceMatches) -> sourceMatches.sortedWith(contentComparator()).firstOrNull() }
+            .sortedWith(contentComparator())
+            .map { it.toMatchedLyrics() }
+    }
+
+    private suspend fun collectMatches(request: LyricsMatchRequest): AllMatches = supervisorScope {
         val primaryKeyword = buildList {
             request.artists.filter(String::isNotBlank).joinToString(" / ").takeIf(String::isNotBlank)?.let(::add)
             add(request.title)
@@ -44,22 +64,26 @@ class LyricsMatchCoordinator(
             async { fetchSource(source, sourceCandidates, request) }
         }.awaitAll()
 
-        val matches = fetchOutcomes.flatMap(FetchOutcome::matches)
-        if (matches.isNotEmpty()) {
-            val selected = matches.sortedWith(contentComparator()).first()
-            return@supervisorScope LyricsMatchResult.Found(
-                MatchedLyrics(
-                    source = selected.scored.candidate.source,
-                    candidate = selected.scored.candidate,
-                    score = selected.scored.score,
-                    lyrics = selected.lyrics,
-                    quality = selected.content.quality,
-                ),
-            )
-        }
-
-        classifyFailure(searchOutcomes, fetchOutcomes)
+        AllMatches(
+            matches = fetchOutcomes.flatMap(FetchOutcome::matches),
+            searchOutcomes = searchOutcomes,
+            fetchOutcomes = fetchOutcomes,
+        )
     }
+
+    private fun ProviderMatch.toMatchedLyrics(): MatchedLyrics = MatchedLyrics(
+        source = scored.candidate.source,
+        candidate = scored.candidate,
+        score = scored.score,
+        lyrics = lyrics,
+        quality = content.quality,
+    )
+
+    private data class AllMatches(
+        val matches: List<ProviderMatch>,
+        val searchOutcomes: List<SearchOutcome>,
+        val fetchOutcomes: List<FetchOutcome>,
+    )
 
     private suspend fun searchSource(
         source: LyricsSource,

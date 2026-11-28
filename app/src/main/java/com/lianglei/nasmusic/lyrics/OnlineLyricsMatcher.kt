@@ -58,11 +58,7 @@ object OnlineLyricsMatcher {
                     writeNegative(context, fp)
                     null
                 } else {
-                    val sourceKey = when (matched.source) {
-                        LyricsSourceId.Netease -> "netease"
-                        LyricsSourceId.QqMusic -> "qq"
-                        LyricsSourceId.Kugou -> "kugou"
-                    }
+                    val sourceKey = sourceKeyOf(matched.source)
                     writeSuccess(context, fp, lines, sourceKey)
                     OnlineMatch(lines, sourceKey)
                 }
@@ -75,6 +71,30 @@ object OnlineLyricsMatcher {
             LyricsMatchResult.InvalidResponse,
             -> null
         }
+    }
+
+    /**
+     * 强制走网络并行获取所有可用在线来源（网易/QQ/酷狗），每个来源返回最佳一条。
+     * 供播放页来源选择弹窗懒加载；不读/不写单源磁盘缓存（缓存只存全局最佳，无法覆盖其他来源）。
+     */
+    suspend fun matchAll(context: Context, song: Song): List<OnlineMatch> {
+        val request = LyricsMatchRequest(
+            localId = song.id.toString(),
+            title = song.title,
+            artists = listOf(song.artist).filter { it.isNotBlank() },
+            album = song.album.takeIf { it.isNotBlank() },
+            durationMs = song.duration.takeIf { it > 0 },
+        )
+        return coordinator.matchAll(request).mapNotNull { matched ->
+            val lines = matched.lyrics.toLrcLines()
+            if (lines.isEmpty()) null else OnlineMatch(lines, sourceKeyOf(matched.source))
+        }
+    }
+
+    private fun sourceKeyOf(source: LyricsSourceId): String = when (source) {
+        LyricsSourceId.Netease -> "netease"
+        LyricsSourceId.QqMusic -> "qq"
+        LyricsSourceId.Kugou -> "kugou"
     }
 
     /** RawLyrics → 本项目 LrcLine：主歌词（含逐字）+ 翻译行（同时间、无逐字） */

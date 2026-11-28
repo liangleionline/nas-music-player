@@ -97,6 +97,15 @@ data class LrcLine(
     val agent: String? = null
 )
 
+/** 播放页可手动切换的一个歌词来源（在线渠道或本地 TTML/LRC/内嵌） */
+data class LyricCandidate(
+    val key: String,          // netease / qq / kugou / ttml / lrc / embedded
+    val label: String,       // 来源选择弹窗里的显示名
+    val lines: List<LrcLine>,
+    val online: Boolean,
+    val wordByWord: Boolean,
+)
+
 /**
  * 下采样模糊变换：多次 1/2 缩放（BoxBlur 近似高斯模糊）后放大回原尺寸。
  * Coil 2.6.0 的 coil-base 不含 BlurTransformation，且 Modifier.blur 的实时 RenderEffect
@@ -256,6 +265,27 @@ fun splitLrcLine(text: String): Pair<String, String?> {
     return text to null
 }
 
+/** 把解析出的歌词行做中日拆分：带逐字时间的行保持整行，其余按 splitLrcLine 拆成原文 + 翻译两行 */
+private fun List<LrcLine>.splitLyricLines(): List<LrcLine> = flatMap { line ->
+    if (line.words.isNotEmpty()) listOf(line)
+    else {
+        val (jp, trans) = splitLrcLine(line.text)
+        if (trans != null) listOf(LrcLine(line.time, jp), LrcLine(line.time, trans))
+        else listOf(line)
+    }
+}
+
+/** 在线来源 key → 来源选择弹窗显示名 */
+private fun onlineSourceLabel(key: String): String = when (key.lowercase()) {
+    "netease" -> "网易云音乐"
+    "qq" -> "QQ 音乐"
+    "kugou" -> "酷狗音乐"
+    else -> key.uppercase()
+}
+
+/** 一次歌词加载的结果：全部候选 + 默认选中的来源 */
+private data class LoadedLyrics(val all: List<LyricCandidate>, val default: LyricCandidate?)
+
 @Composable
 fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true) {
     val queue by PlayerManager.queue.collectAsStateWithLifecycle()
@@ -316,53 +346,121 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     var lrcLines by remember { mutableStateOf(emptyList<LrcLine>()) }
     // 歌词来源标签（对齐设计图左下角"词 EMBEDDED"）：EMBEDDED=内嵌标签 / LRC=同目录 .lrc 文件
     var lyricSource by remember { mutableStateOf("") }
+    // 可手动切换的全部歌词来源候选 + 当前选中 key + 在线多源懒加载状态
+    var candidates by remember { mutableStateOf<List<LyricCandidate>>(emptyList()) }
+    var selectedSourceKey by remember { mutableStateOf<String?>(null) }
+    var onlineLoading by remember { mutableStateOf(false) }
     // 在线歌词自动匹配开关（设置页可关，默认开）；开关变化时重新加载当前歌曲歌词
     val autoMatchEnabled by LyricMatchPrefs.enabled.collectAsState()
     LaunchedEffect(song?.id, autoMatchEnabled) {
-        if (song == null) { lrcLines = emptyList(); lyricSource = ""; return@LaunchedEffect }
-        lrcLines = withContext(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                // 1) 在线匹配优先：开关开时先查网易云/QQ音乐/酷狗，成功即用（含逐字/翻译）。
-                //    匹配失败、无结果或网络异常时静默降级到下面的本地歌词，不打断播放。
-                if (autoMatchEnabled) {
-                    val online = OnlineLyricsMatcher.match(ctx, song)
-                    if (online != null && online.lines.isNotEmpty()) {
-                        lyricSource = online.sourceKey.uppercase()
-                        return@withContext online.lines
-                    }
-                }
-                // 2) 本地兜底：同名 .ttml（TTML 对唱/逐字）> 同名 .lrc > 内嵌标签
+        if (song == null) {
+            lrcLines = emptyList(); lyricSource = ""
+            candidates = emptyList(); selectedSourceKey = null
+            return@LaunchedEffect
+        }
+        // 切歌先清空候选与选中（lrcLines 保留上一首直到新结果替换，避免歌词面板整块消失）
+        candidates = emptyList(); selectedSourceKey = null
+        val loaded = try {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                // 1) 本地来源全部收集（存在才加）：同名 .ttml > 同名 .lrc > 内嵌标签，供弹窗手动切换
+                val local = ArrayList<LyricCandidate>()
                 val file = File(song.data)
                 val ttmlFile = File(file.parentFile, file.nameWithoutExtension + ".ttml")
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
-                val parsed: List<LrcLine> = when {
-                    ttmlFile.exists() -> {
-                        lyricSource = "TTML"
-                        parseLyricsAuto(ttmlFile.readText())
-                    }
-                    lrcFile.exists() -> {
-                        lyricSource = "LRC"
-                        parseLrc(lrcFile.readText())
-                    }
-                    else -> {
-                        val embedded = readEmbeddedLyricsCached(song, ctx) // 本地读标签区 / 飞牛 URL Range 读头尾，带磁盘缓存
-                        if (embedded.isNotEmpty()) { lyricSource = "EMBEDDED"; parseLyricsAuto(embedded) }
-                        else { lyricSource = ""; emptyList() }
+                runCatching {
+                    if (ttmlFile.exists()) {
+                        val parsed = parseLyricsAuto(ttmlFile.readText()).splitLyricLines()
+                        if (parsed.isNotEmpty()) {
+                            local += LyricCandidate("ttml", "TTML 文件", parsed, false, parsed.any { it.words.isNotEmpty() })
+                        }
                     }
                 }
-                // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）；
-                // 带逐字时间的行（TTML/增强 LRC）保持整行，不做拆分，避免破坏逐字对齐
-                parsed.flatMap { line ->
-                    if (line.words.isNotEmpty()) listOf(line)
-                    else {
-                        val (jp, trans) = splitLrcLine(line.text)
-                        if (trans != null) listOf(LrcLine(line.time, jp), LrcLine(line.time, trans))
-                        else listOf(line)
+                runCatching {
+                    if (lrcFile.exists()) {
+                        val parsed = parseLrc(lrcFile.readText()).splitLyricLines()
+                        if (parsed.isNotEmpty()) {
+                            local += LyricCandidate("lrc", "LRC 文件", parsed, false, parsed.any { it.words.isNotEmpty() })
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                lyricSource = ""
-                emptyList()
+                runCatching {
+                    val embeddedRaw = readEmbeddedLyricsCached(song, ctx) // 本地读标签区 / 飞牛 URL Range 读头尾，带磁盘缓存
+                    if (embeddedRaw.isNotBlank()) {
+                        val parsed = parseLyricsAuto(embeddedRaw).splitLyricLines()
+                        if (parsed.isNotEmpty()) {
+                            local += LyricCandidate("embedded", "内嵌歌词", parsed, false, parsed.any { it.words.isNotEmpty() })
+                        }
+                    }
+                }
+                // 2) 在线最佳来源（开关开时）：现有 match 走缓存/打分选优，作为默认在线候选
+                val onlineCand = runCatching {
+                    if (autoMatchEnabled) OnlineLyricsMatcher.match(ctx, song) else null
+                }.getOrNull()?.takeIf { it.lines.isNotEmpty() }?.let {
+                    LyricCandidate(
+                        key = it.sourceKey,
+                        label = onlineSourceLabel(it.sourceKey),
+                        lines = it.lines,
+                        online = true,
+                        wordByWord = it.lines.any { l -> l.words.isNotEmpty() }
+                    )
+                }
+                val all = buildList {
+                    if (onlineCand != null) add(onlineCand)
+                    addAll(local)
+                }
+                // 默认选中：在线最佳优先，否则本地按 TTML > LRC > 内嵌
+                LoadedLyrics(all, onlineCand ?: local.firstOrNull())
+            }
+        } catch (e: Exception) {
+            LoadedLyrics(emptyList(), null)
+        }
+        candidates = loaded.all
+        selectedSourceKey = loaded.default?.key
+        lrcLines = loaded.default?.lines ?: emptyList()
+        lyricSource = loaded.default?.key?.uppercase() ?: ""
+    }
+
+    // 手动切换来源：更新当前歌词与左下角标签
+    val onSelectSource: (String) -> Unit = { key ->
+        candidates.firstOrNull { it.key == key }?.let { c ->
+            selectedSourceKey = c.key
+            lrcLines = c.lines
+            lyricSource = c.key.uppercase()
+        }
+    }
+
+    // 来源弹窗打开时懒加载全部在线来源（网易/QQ/酷狗），合并进候选；失败保留已有候选不打断
+    val refreshOnlineSources: suspend () -> Unit = {
+        val current = song
+        if (current != null) {
+            onlineLoading = true
+            try {
+                val fresh = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    OnlineLyricsMatcher.matchAll(ctx, current)
+                }
+                if (fresh.isNotEmpty()) {
+                    val freshCands = fresh.map { m ->
+                        LyricCandidate(
+                            key = m.sourceKey,
+                            label = onlineSourceLabel(m.sourceKey),
+                            lines = m.lines,
+                            online = true,
+                            wordByWord = m.lines.any { l -> l.words.isNotEmpty() }
+                        )
+                    }
+                    val localCands = candidates.filter { !it.online }
+                    candidates = freshCands + localCands
+                    selectedSourceKey?.let { sel ->
+                        freshCands.firstOrNull { it.key == sel }?.let { c ->
+                            lrcLines = c.lines
+                            lyricSource = c.key.uppercase()
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // 在线多源懒加载失败时沿用首次加载的候选
+            } finally {
+                onlineLoading = false
             }
         }
     }
@@ -558,7 +656,15 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
                 ) {
                     // 歌词渲染独立组件：内部 collect positionMs → 播放进度只触发歌词面板局部重组，
                     // 不再每 500ms 整屏重组（弱设备上滑入/运行都不掉帧）
-                    LyricPanelContent(lrcLines, lyricSource)
+                    LyricPanelContent(
+                        lrcLines = lrcLines,
+                        lyricSource = lyricSource,
+                        candidates = candidates,
+                        selectedKey = selectedSourceKey,
+                        onlineLoading = onlineLoading,
+                        onSelectSource = onSelectSource,
+                        onRefreshOnline = refreshOnlineSources,
+                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -1593,8 +1699,18 @@ private fun PlayerProgressRow() {
  * 字号统一 20sp（对齐设计图），仅亮度区分当前行；左下角显示来源标签"词 EMBEDDED/LRC"。
  */
 @Composable
-private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
+private fun LyricPanelContent(
+    lrcLines: List<LrcLine>,
+    lyricSource: String,
+    candidates: List<LyricCandidate>,
+    selectedKey: String?,
+    onlineLoading: Boolean,
+    onSelectSource: (String) -> Unit,
+    onRefreshOnline: (suspend () -> Unit)?,
+) {
     val pos by PlayerManager.positionMs.collectAsStateWithLifecycle()
+    // 来源选择弹窗开关（点击左下角来源 chip 打开）
+    var showSourceDialog by remember { mutableStateOf(false) }
     // 按时间戳分组（同 time 的 日文行+翻译行 为一组），供歌词面板分行渲染
     val lyricGroups = remember(lrcLines) {
         lrcLines.groupBy { it.time }.entries.sortedBy { it.key }.map { it.value }
@@ -1611,7 +1727,8 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
             Text(stringResource(R.string.no_lyrics), color = Color.White.copy(alpha = 0.5f), fontSize = 15.sp)
         } else {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                Modifier.fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, bottom = if (lyricSource.isNotEmpty()) 42.dp else 0.dp),
                 horizontalAlignment = Alignment.Start,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -1687,13 +1804,98 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
                 }
             }
         }
-        // 歌词来源标签（左下角，对齐设计图"词 EMBEDDED"）
+        // 歌词来源标签（左下角，可点击打开来源选择；带背景与下拉箭头提示可切换）
         if (lyricSource.isNotEmpty() && lrcLines.isNotEmpty()) {
-            Text(
-                "词 $lyricSource",
-                color = Color.White.copy(alpha = 0.45f),
-                fontSize = 12.sp,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 6.dp)
+            Row(
+                Modifier.align(Alignment.BottomStart)
+                    .padding(start = 8.dp, bottom = 6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.White.copy(alpha = 0.10f))
+                    .clickable { showSourceDialog = true }
+                    .padding(start = 8.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "词 $lyricSource",
+                    color = Color.White.copy(alpha = 0.78f),
+                    fontSize = 12.sp
+                )
+                Icon(
+                    Icons.Filled.ArrowDropDown,
+                    contentDescription = "选择歌词来源",
+                    tint = Color.White.copy(alpha = 0.78f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        // 来源选择弹窗：列出在线渠道与本地来源，点击即切换；打开时懒加载全部在线源
+        if (showSourceDialog) {
+            LaunchedEffect(Unit) { onRefreshOnline?.invoke() }
+            AlertDialog(
+                onDismissRequest = { showSourceDialog = false },
+                title = { Text("选择歌词来源", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        if (candidates.isEmpty() && !onlineLoading) {
+                            Text("暂无可用歌词来源", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+                        }
+                        candidates.forEach { c ->
+                            val selected = c.key == selectedKey
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        onSelectSource(c.key)
+                                        showSourceDialog = false
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        c.label,
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                    val sub = buildList {
+                                        add(if (c.online) "在线" else "本地")
+                                        if (c.wordByWord) add("逐字")
+                                    }.joinToString(" · ")
+                                    Text(sub, color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                                }
+                                if (selected) {
+                                    Icon(
+                                        Icons.Filled.Check,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                        if (onlineLoading) {
+                            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("正在获取其他在线来源…", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSourceDialog = false }) {
+                        Text("关闭", color = Color(0xFF1F6FEB))
+                    }
+                },
+                containerColor = Color(0xFF1C1C1E),
+                titleContentColor = Color.White,
+                textContentColor = Color.White
             )
         }
     }
