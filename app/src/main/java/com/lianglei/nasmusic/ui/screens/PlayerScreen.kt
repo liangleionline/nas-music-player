@@ -43,6 +43,7 @@ import com.lianglei.nasmusic.R
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,7 +80,20 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.sin
 
-data class LrcLine(val time: Long, val text: String)
+/** 逐字歌词中的一个字/词：[startMs, endMs] 为相对歌曲开头的时间，text 为该字文本 */
+data class LrcWord(val startMs: Long, val endMs: Long, val text: String)
+
+/**
+ * 一行歌词。
+ * @param words 逐字时间（增强 LRC 的 `<mm:ss.xx>` 或 TTML 的 `<span>`），为空表示整行同步
+ * @param agent 对唱演唱者 id（TTML 的 ttm:agent，如 v1/v2），普通 LRC 为 null
+ */
+data class LrcLine(
+    val time: Long,
+    val text: String,
+    val words: List<LrcWord> = emptyList(),
+    val agent: String? = null
+)
 
 /**
  * 下采样模糊变换：多次 1/2 缩放（BoxBlur 近似高斯模糊）后放大回原尺寸。
@@ -108,33 +122,89 @@ class DownscaleBlurTransformation(private val levels: Int = 5) : Transformation 
     }
 }
 
+/** 行级时间戳 [mm:ss.xx] */
+private val LRC_TIME_TAG = Regex("\\[(\\d+):(\\d+)(?:[.:](\\d+))?]")
+
+/** 逐字时间戳 `<mm:ss.xx>`（增强 LRC / A2 格式，行内每个字前一个） */
+private val LRC_WORD_TAG = Regex("<(\\d+):(\\d+)(?:[.:](\\d+))?>")
+
+/** 逐字 LRC 把同一句按词重复成多行时，相邻同文本行的合并窗口（毫秒）；真正的副歌重复间隔远大于此 */
+private const val LRC_DUP_MERGE_WINDOW_MS = 2000L
+
+private fun lrcTimeToMs(min: String, sec: String, frac: String): Long {
+    // 小数部分位数决定单位：1 位=十分之一秒(×100)，2 位=百分之一秒(×10)，3 位及以上=毫秒(×1)
+    // 注意：kuwo 等中文歌词工具生成的是 3 位毫秒（如 [00:13.217] = 13.217 秒），
+    // 若统一按 2 位 ×10 计算会放大第 3 位 10 倍，导致歌词提前最多 9 秒——这是不同步的根因
+    val ms = when {
+        frac.isEmpty() -> 0L
+        frac.length >= 3 -> frac.take(3).toLong()
+        frac.length == 2 -> frac.toLong() * 10
+        else -> frac.toLong() * 100
+    }
+    return min.toLong() * 60000 + sec.toLong() * 1000 + ms
+}
+
 fun parseLrc(text: String): List<LrcLine> {
-    val lines = mutableListOf<LrcLine>()
+    val rawLines = mutableListOf<LrcLine>()
     // 纯标签行：整行只是一个 [xxx] 标签（ti/ar/al/by/ver/offset 等 LRC 元数据），不显示为歌词
     val tagLine = Regex("^\\[[^\\]]+\\]$")
     text.lines().forEach { line ->
-        val matcher = Regex("\\[(\\d+):(\\d+)(?:[.:](\\d+))?]").findAll(line)
-        val content = line.replace(Regex("\\[\\d+:\\d+([.:]\\d+)?]"), "").trim()
+        val timeMatches = LRC_TIME_TAG.findAll(line).toList()
+        val wordMatches = LRC_WORD_TAG.findAll(line).toList()
+        // 去掉行级时间标签与逐字标签后的纯文本
+        val content = line.replace(LRC_TIME_TAG, "").replace(LRC_WORD_TAG, "").trim()
         // 过滤 LRC 元数据标签行（如 [ver:v1.0]、[ti:标题]、[ar:歌手]）：它们没有时间戳，
         // 常见于把整个 .lrc 文件内嵌进 ID3 USLT 的情况，不当作歌词显示
         if (content.isEmpty() || tagLine.matches(content)) return@forEach
-        matcher.forEach { m ->
-            val min = m.groupValues[1].toLong()
-            val sec = m.groupValues[2].toLong()
-            val frac = m.groupValues[3]
-            // 小数部分位数决定单位：1 位=十分之一秒(×100)，2 位=百分之一秒(×10)，3 位及以上=毫秒(×1)
-            // 注意：kuwo 等中文歌词工具生成的是 3 位毫秒（如 [00:13.217] = 13.217 秒），
-            // 若统一按 2 位 ×10 计算会放大第 3 位 10 倍，导致歌词提前最多 9 秒——这是不同步的根因
-            val ms = when {
-                frac.isEmpty() -> 0L
-                frac.length >= 3 -> frac.take(3).toLong()
-                frac.length == 2 -> frac.toLong() * 10
-                else -> frac.toLong() * 100
+
+        // 解析逐字词：每个 `<time>` 到下一个 `<time>` 之间的文本属于该词
+        val words = if (wordMatches.isNotEmpty()) {
+            wordMatches.mapIndexed { i, m ->
+                val start = lrcTimeToMs(m.groupValues[1], m.groupValues[2], m.groupValues[3])
+                val end = if (i + 1 < wordMatches.size)
+                    lrcTimeToMs(wordMatches[i + 1].groupValues[1], wordMatches[i + 1].groupValues[2], wordMatches[i + 1].groupValues[3])
+                else start + 500
+                val segStart = m.range.last + 1
+                val segEnd = if (i + 1 < wordMatches.size) wordMatches[i + 1].range.first else line.length
+                val wtext = line.substring(segStart, segEnd).trim()
+                LrcWord(start, end.coerceAtLeast(start + 1L), wtext)
+            }.filter { it.text.isNotEmpty() }
+        } else {
+            emptyList()
+        }
+
+        val lineStart = timeMatches.firstOrNull()?.let {
+            lrcTimeToMs(it.groupValues[1], it.groupValues[2], it.groupValues[3])
+        } ?: words.firstOrNull()?.startMs ?: 0L
+
+        if (timeMatches.isEmpty()) {
+            // 没有行级时间戳但有逐字标签：用第一个词的时间作为整行时间
+            if (words.isNotEmpty()) rawLines.add(LrcLine(lineStart, content, words))
+        } else {
+            // 一行内多个行级时间戳（如 [t1][t2]文本）各生成一条，保持原有行为
+            timeMatches.forEach { m ->
+                val t = lrcTimeToMs(m.groupValues[1], m.groupValues[2], m.groupValues[3])
+                rawLines.add(LrcLine(t, content, words))
             }
-            lines.add(LrcLine(min * 60000 + sec * 1000 + ms, content))
         }
     }
-    return lines.sortedBy { it.time }
+
+    // 合并"逐字 LRC 把整句按词重复成多行"的情况：相邻同文本、时间间隔很短（≤2s）的行合并为一行，
+    // 时间取最早；真正的副歌重复（间隔通常数秒以上）不会被合并。
+    val merged = mutableListOf<LrcLine>()
+    var prevRawTime = Long.MIN_VALUE
+    rawLines.sortedBy { it.time }.forEach { l ->
+        val last = merged.lastOrNull()
+        // 与"上一条原始行"的时间差比较（不是合并后最早时间），避免逐字重复长链在中途断开
+        if (last != null && last.text == l.text && l.time - prevRawTime <= LRC_DUP_MERGE_WINDOW_MS) {
+            val words = if (last.words.isEmpty() && l.words.isNotEmpty()) l.words else last.words
+            merged[merged.size - 1] = last.copy(words = words)
+        } else {
+            merged.add(l)
+        }
+        prevRawTime = l.time
+    }
+    return merged
 }
 
 /** 假名（平假名/片假名/半角片假名）判断 */
@@ -246,20 +316,33 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
         lrcLines = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val file = File(song.data)
+                // 侧车歌词优先级：同名 .ttml（TTML 对唱/逐字）> 同名 .lrc > 内嵌标签
+                val ttmlFile = File(file.parentFile, file.nameWithoutExtension + ".ttml")
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
-                val parsed: List<LrcLine> = if (lrcFile.exists()) {
-                    lyricSource = "LRC"
-                    parseLrc(lrcFile.readText())
-                } else {
-                    val embedded = readEmbeddedLyricsCached(song, ctx) // 本地读标签区 / 飞牛 URL Range 读头尾，带磁盘缓存
-                    if (embedded.isNotEmpty()) { lyricSource = "EMBEDDED"; parseLrc(embedded) }
-                    else { lyricSource = ""; emptyList() }
+                val parsed: List<LrcLine> = when {
+                    ttmlFile.exists() -> {
+                        lyricSource = "TTML"
+                        parseLyricsAuto(ttmlFile.readText())
+                    }
+                    lrcFile.exists() -> {
+                        lyricSource = "LRC"
+                        parseLrc(lrcFile.readText())
+                    }
+                    else -> {
+                        val embedded = readEmbeddedLyricsCached(song, ctx) // 本地读标签区 / 飞牛 URL Range 读头尾，带磁盘缓存
+                        if (embedded.isNotEmpty()) { lyricSource = "EMBEDDED"; parseLyricsAuto(embedded) }
+                        else { lyricSource = ""; emptyList() }
+                    }
                 }
-                // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）
+                // 拆分行：同一行混排"日文原文+翻译"的拆成两行（日文行 + 翻译行，同一时间戳）；
+                // 带逐字时间的行（TTML/增强 LRC）保持整行，不做拆分，避免破坏逐字对齐
                 parsed.flatMap { line ->
-                    val (jp, trans) = splitLrcLine(line.text)
-                    if (trans != null) listOf(LrcLine(line.time, jp), LrcLine(line.time, trans))
-                    else listOf(line)
+                    if (line.words.isNotEmpty()) listOf(line)
+                    else {
+                        val (jp, trans) = splitLrcLine(line.text)
+                        if (trans != null) listOf(LrcLine(line.time, jp), LrcLine(line.time, trans))
+                        else listOf(line)
+                    }
                 }
             } catch (e: Exception) {
                 lyricSource = ""
@@ -612,16 +695,16 @@ private fun android.content.Context.findActivity(): android.app.Activity? {
  *
  * v1.5.25：缓存不再是"一次写入永久命中"。NAS 上替换了音频文件（比如用户把歌拷出来改了内嵌歌词
  * 再传回去）时 URL 不变，旧实现会一直显示改之前的词，连重启 APP 都没用（缓存文件在磁盘上）。
- * 现在缓存文件头带一行来源指纹 `#v2 size=<曲库文件大小> total=<服务器当前总长>`：
+ * 现在缓存文件头带一行来源指纹 `#v3 size=<曲库文件大小> total=<服务器当前总长>`：
  *   - 曲库里的大小和指纹不一致 → 失效重读；
  *   - 直接向服务器发一个 `Range: bytes=0-0` 小请求问当前总长，和指纹不一致 → 失效重读；
  *   - 请求失败（网络抖动）保留缓存，不让歌词凭空消失；
- *   - 老格式（没有 `#v2` 头）一律视为失效，升级后第一次进播放页就会刷成最新歌词。
+ *   - 老格式（没有 `#v3` 头，含 v1/v2）一律视为失效，升级后第一次进播放页就会刷成最新歌词。
  *
  * 本地文件（song.data 为路径）直接读文件头/尾标签区；
  * 飞牛 NAS（song.data 为流式 URL）用 HTTP Range 请求读头/尾 1MB。
  * 支持：MP3(ID3v2.2/2.3/2.4 USLT/ULT+SYLT/SLT)、FLAC(Vorbis Comment LYRICS)、M4A(iTunes ©lyr)。
- * 纯文本（无时间戳）歌词按行生成 4 秒间隔时间戳。
+ * 内嵌歌词原样缓存（纯文本/LRC/TTML），解析统一走 parseLyricsAuto；纯文本兜底补时间戳在解析层完成。
  */
 internal suspend fun readEmbeddedLyricsCached(song: Song, ctx: android.content.Context): String {
     val cacheDir = File(ctx.cacheDir, "lyrics")
@@ -636,7 +719,7 @@ internal suspend fun readEmbeddedLyricsCached(song: Song, ctx: android.content.C
         try {
             if (!cacheDir.exists()) cacheDir.mkdirs()
             val total = sourceTotalBytes(song) ?: 0L
-            cacheFile.writeText("#v2 size=${song.fileSize} total=$total\n" + lyrics)
+            cacheFile.writeText("#v3 size=${song.fileSize} total=$total\n" + lyrics)
         } catch (e: Exception) {
         }
     }
@@ -649,12 +732,12 @@ private fun lyricCacheName(song: Song): String =
 
 /**
  * 缓存文本还能用吗？能用返回歌词正文，否则返回 null 让调用方重新读文件。
- * 头部格式：`#v2 size=<曲库文件大小> total=<服务器当前文件总长>`（任一为 0 表示未知）。
+ * 头部格式：`#v3 size=<曲库文件大小> total=<服务器当前文件总长>`（任一为 0 表示未知）。
  */
 private suspend fun usableCachedLyrics(song: Song, raw: String): String? {
     if (raw.isEmpty()) return null
     val head = raw.substringBefore('\n')
-    if (!head.startsWith("#v2 ")) return null
+    if (!head.startsWith("#v3 ")) return null
     val body = raw.substringAfter('\n', "")
     if (body.isEmpty()) return null
     val size = head.substringAfter("size=", "").substringBefore(' ').trim().toLongOrNull() ?: 0L
@@ -841,8 +924,8 @@ private fun id3Terminator(b: ByteArray, start: Int, encoding: Int): Int {
     return -1
 }
 
-/** 纯文本歌词 → 逐行 4 秒间隔的 LRC；已含时间戳的行原样保留 */
-private fun plainToLrc(text: String): String {
+/** 纯文本歌词 → 逐行 4 秒间隔的 LRC；已含时间戳的行原样保留。供 parseLyricsAuto 兜底调用 */
+internal fun plainToLrc(text: String): String {
     if (text.isBlank()) return ""
     val timeTag = Regex("\\[\\d+:\\d+([.:]\\d+)?]")
     val sb = StringBuilder()
@@ -866,7 +949,7 @@ private fun fmtLrcTime(ms: Long): String {
     return String.format(java.util.Locale.US, "[%02d:%02d.%02d]", m, s, cs)
 }
 
-/** 解析 MP3 的 ID3v2 内嵌歌词（USLT/ULT + SYLT/SLT），bytes 含 ID3 头（从 0 开始），返回 LRC 文本 */
+/** 解析 MP3 的 ID3v2 内嵌歌词（USLT/ULT + SYLT/SLT），bytes 含 ID3 头（从 0 开始），返回歌词原始文本（LRC/纯文本/TTML） */
 private fun readId3LyricsBytes(bytes: ByteArray): String {
     if (bytes.size < 10) return ""
     val header = bytes
@@ -919,11 +1002,13 @@ private fun readId3LyricsBytes(bytes: ByteArray): String {
         }
         pos += frameHeaderLen + frameSize
     }
-    if (uslt.isNotEmpty()) return plainToLrc(uslt)
-    return plainToLrc(sylt.toString())
+    // USLT/ULT 原样返回（可能是纯文本、LRC 或 TTML XML），由 parseLyricsAuto 统一识别；
+    // SYLT/SLT 已在上面拼成带时间戳的 LRC 文本，直接返回
+    if (uslt.isNotEmpty()) return uslt
+    return sylt.toString()
 }
 
-/** 解析 FLAC 的 Vorbis Comment 歌词（LYRICS/UNSYNCEDLYRICS/SYNCEDLYRICS），bytes 含 fLaC 头，返回 LRC 文本 */
+/** 解析 FLAC 的 Vorbis Comment 歌词（LYRICS/UNSYNCEDLYRICS/SYNCEDLYRICS），bytes 含 fLaC 头，返回歌词原始文本（LRC/纯文本/TTML） */
 private fun readFlacLyricsBytes(bytes: ByteArray): String {
     if (bytes.size < 8 || String(bytes, 0, 4, Charsets.ISO_8859_1) != "fLaC") return ""
     var p = 4
@@ -962,7 +1047,8 @@ private fun readFlacLyricsBytes(bytes: ByteArray): String {
         if (bytes[p].toInt() and 0x80 != 0) break // last metadata block
         p += 4 + len
     }
-    return plainToLrc(lyrics)
+    // 原样返回（可能是纯文本/LRC/TTML），由 parseLyricsAuto 统一识别
+    return lyrics
 }
 
 /** 在 bytes 的 [start,end) 内查找指定类型 box，返回其 payload 区（起始、结束）；找不到返回 null */
@@ -1001,7 +1087,8 @@ private fun readM4aLyricsBytes(bytes: ByteArray): String {
     val textEnd = if (data != null) data.second else lyr.second
     if (textStart >= textEnd || textStart >= bytes.size) return ""
     val n = minOf(textEnd, bytes.size) - textStart
-    return plainToLrc(String(bytes, textStart, n, Charsets.UTF_8))
+    // 原样返回（可能是纯文本/LRC/TTML），由 parseLyricsAuto 统一识别
+    return String(bytes, textStart, n, Charsets.UTF_8)
 }
 
 private fun fmtTime(ms: Long): String {
@@ -1521,15 +1608,38 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
                         val isJp = line.text.any { c -> isKana(c) }
                         val isLastInGroup = li == g.lastIndex
                         if (gi == activeGroupIdx && line === activeJp) {
-                            // 当前句：整行亮起（白色加粗）；过长自动换行，不截断
-                            Text(
-                                line.text,
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = Int.MAX_VALUE,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            // 当前句：整行亮起（白色加粗）；过长自动换行，不截断。
+                            // 带逐字时间（TTML / 增强 LRC）且字词覆盖整句时，按播放进度做卡拉 OK 逐字填充：
+                            // 已唱字白色，未唱字半透明灰。
+                            val wordsCoverText = line.words.isNotEmpty() &&
+                                line.words.joinToString("") { it.text }.replace(Regex("\\s"), "") ==
+                                line.text.replace(Regex("\\s"), "")
+                            if (wordsCoverText) {
+                                val annotated = buildAnnotatedString {
+                                    line.words.forEach { w ->
+                                        val sung = w.startMs <= pos
+                                        withStyle(SpanStyle(color = if (sung) Color.White else Color.White.copy(alpha = 0.42f))) {
+                                            append(w.text)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    annotated,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = Int.MAX_VALUE,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                Text(
+                                    line.text,
+                                    color = Color.White,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = Int.MAX_VALUE,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         } else {
                             Text(
                                 line.text,
