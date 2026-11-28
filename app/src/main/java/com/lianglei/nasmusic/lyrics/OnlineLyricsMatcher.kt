@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 data class OnlineMatch(val lines: List<LrcLine>, val sourceKey: String)
 
 object OnlineLyricsMatcher {
-    private const val PROTOCOL_VERSION = "nas-lyrics-1"
+    private const val PROTOCOL_VERSION = "nas-lyrics-2"
     private const val NEGATIVE_CACHE_TTL_MS = 5 * 60 * 1000L
 
     private val client: OkHttpClient by lazy {

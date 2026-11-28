@@ -10,10 +10,11 @@ object LyricsRawParser {
     // 行首一个或多个时间标签：[mm:ss.xx] 或 [起ms,时长ms]
     private val LINE_HEADER = Regex("""^\s*((?:\[\d+[,:]\d+(?:\.\d+)?\])+)""")
     private val HEADER_TOKEN = Regex("""\[([^\]]+)]""")
-    // 逐字标记：QQ/YRC 的 (起ms,时长ms)、酷狗 KRC 的 <起ms,时长ms>
-    private val WORD_COMMA = Regex("""\((\d+),(\d+)\)""")
-    private val WORD_ANGLE_MS = Regex("""<(\d+),(\d+)>""")
-    // 增强 LRC 的 <mm:ss.xx>（绝对时间）
+    // 逐字标记：网易 YRC / QQ QRC 的 (起ms,时长ms[,字段])、酷狗 KRC 的 <起ms,时长ms[,字段]>
+    // YRC/KRC 为三字段且标记在字前；QQ QRC 为两字段且标记在字后，解析时按左右文本自动识别方向。
+    private val WORD_PAREN = Regex("""\((\d+),(\d+)(?:,\d+)?\)""")
+    private val WORD_ANGLE_MS = Regex("""<(\d+),(\d+)(?:,\d+)?>""")
+    // 增强 LRC 的 <mm:ss.xx>（绝对时间，标记在字前）
     private val WORD_ANGLE_TS = Regex("""<(\d+):(\d{1,2})(?:\.(\d{1,3}))?>""")
     // QQ 原生 QRC 的 XML 外壳
     private val QQ_XML = Regex(
@@ -52,13 +53,16 @@ object LyricsRawParser {
         val (lineStart, lineDur) = firstHeader?.let { parseHeaderTime(it) } ?: (0L to 0L)
         val lineEnd = if (lineDur > 0) lineStart + lineDur else null
         data class Marker(val start: Long, val end: Long?, val range: IntRange)
-        data class Resolved(val start: Long, val end: Long, val range: IntRange)
         val markers = ArrayList<Marker>()
-        WORD_COMMA.findAll(body).forEach { m ->
-            markers.add(Marker(m.groupValues[1].toLong(), m.groupValues[1].toLong() + m.groupValues[2].toLong(), m.range))
+        WORD_PAREN.findAll(body).forEach { m ->
+            val start = m.groupValues[1].toLong()
+            val dur = m.groupValues[2].toLong()
+            markers.add(Marker(start, start + dur, m.range))
         }
         WORD_ANGLE_MS.findAll(body).forEach { m ->
-            markers.add(Marker(m.groupValues[1].toLong(), m.groupValues[1].toLong() + m.groupValues[2].toLong(), m.range))
+            val start = m.groupValues[1].toLong()
+            val dur = m.groupValues[2].toLong()
+            markers.add(Marker(start, start + dur, m.range))
         }
         WORD_ANGLE_TS.findAll(body).forEach { m ->
             val start = parseMmSs(m.groupValues[1], m.groupValues[2], m.groupValues[3])
@@ -68,24 +72,46 @@ object LyricsRawParser {
         if (markers.isEmpty()) {
             return ParsedBody(body.trim(), emptyList())
         }
-        // 绝对时间标记（增强 LRC）的结束时间取下一个标记起点，最后一个取行尾或估算
-        val resolved = markers.mapIndexed { i, marker ->
+
+        // 判定标记在字前（网易 YRC / 酷狗 KRC / 增强 LRC）还是字后（QQ QRC）：
+        // 统计每个标记左、右相邻文本段，哪一侧非空更多就按该方向取词。
+        var prefixVotes = 0
+        var suffixVotes = 0
+        markers.forEachIndexed { i, marker ->
+            val leftStart = if (i == 0) 0 else markers[i - 1].range.last + 1
+            val rightEnd = if (i + 1 < markers.size) markers[i + 1].range.first else body.length
+            val left = body.substring(leftStart, marker.range.first).trim()
+            val right = body.substring(marker.range.last + 1, rightEnd).trim()
+            if (right.isNotEmpty()) prefixVotes++
+            if (left.isNotEmpty()) suffixVotes++
+        }
+        val prefixOriented = prefixVotes >= suffixVotes
+
+        val words = ArrayList<RawWord>()
+        val textBuilder = StringBuilder()
+        markers.forEachIndexed { i, marker ->
+            val segStart: Int
+            val segEnd: Int
+            if (prefixOriented) {
+                segStart = marker.range.last + 1
+                segEnd = if (i + 1 < markers.size) markers[i + 1].range.first else body.length
+            } else {
+                segStart = if (i == 0) 0 else markers[i - 1].range.last + 1
+                segEnd = marker.range.first
+            }
+            val wordText = body.substring(segStart, segEnd).trim()
+            if (wordText.isEmpty()) return@forEachIndexed
+            textBuilder.append(wordText)
             val end = marker.end ?: when {
                 i + 1 < markers.size -> markers[i + 1].start
                 lineEnd != null -> lineEnd
                 else -> marker.start + 500
             }
-            Resolved(marker.start, end, marker.range)
-        }
-        val words = ArrayList<RawWord>()
-        resolved.forEachIndexed { i, marker ->
-            val textEnd = if (i + 1 < resolved.size) resolved[i + 1].range.first else body.length
-            val text = body.substring(marker.range.last + 1, textEnd).trim()
-            if (text.isNotEmpty() && marker.end > marker.start) {
-                words.add(RawWord(marker.start, marker.end, text))
+            if (end > marker.start) {
+                words.add(RawWord(marker.start, end, wordText))
             }
         }
-        val joined = words.joinToString("") { it.text }
+        val joined = textBuilder.toString()
         val text = joined.ifBlank { body.trim() }
         return ParsedBody(text, words)
     }
