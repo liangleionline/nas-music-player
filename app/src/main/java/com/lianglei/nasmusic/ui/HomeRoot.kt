@@ -735,14 +735,21 @@ class SwipeDrawerLayout @JvmOverloads constructor(
 
     /**
      * 跟手位移：抽屉按 1:1 往左退出屏幕，右侧页面同步往右挪同样距离。
-     * frac = 1 表示抽屉完全展开（抽屉 translationX = 0，页面 translationX = 抽屉宽度）。
+     * frac = 1 表示抽屉完全展开（抽屉视觉 left = 0，页面 translationX = 抽屉宽度）。
+     *
+     * 注意：DrawerLayout 收起时把左侧抽屉的布局 left 放在 -w（onScreen=0），展开时才是 0
+     * （onScreen=1），原生拖动靠 offsetLeftAndRight 改 left。这里只改 translationX，
+     * 必须按「目标视觉位置 - 当前布局 left」计算，不能直接写 -w*(1-frac)：
+     * 收起态 base left 已是 -w，直接写会双重偏移，抽屉全程停在屏外，松手结算才被
+     * openDrawer 归位——表现为拖动时抽屉一片空白、松手才显示内容。
      */
     private fun applyManualFraction(frac: Float) {
         val d = leftDrawer() ?: return
         val w = d.width.toFloat()
         if (w <= 0f) return
         manualFrac = frac.coerceIn(0f, 1f)
-        d.translationX = -w * (1f - manualFrac)
+        val targetLeft = -w * (1f - manualFrac)
+        d.translationX = targetLeft - d.left
         contentView()?.translationX = w * manualFrac
     }
 
@@ -813,6 +820,9 @@ class SwipeDrawerLayout @JvmOverloads constructor(
                 val wantOpen = !openedAtDown && dx > slop
                 if (horizontal && (wantClose || wantOpen)) {
                     manualDrag = true
+                    // 收起态经过 closeDrawer(false) 结算后抽屉被置为 INVISIBLE，
+                    // 手动拉开时必须先恢复 VISIBLE，否则拖动过程中抽屉仍不绘制（松手才出现）
+                    if (wantOpen) leftDrawer()?.visibility = View.VISIBLE
                     // 先给页面一个 CANCEL，让列表停住，避免它和抽屉位移抢手势
                     val cancel = MotionEvent.obtain(ev)
                     cancel.action = MotionEvent.ACTION_CANCEL
