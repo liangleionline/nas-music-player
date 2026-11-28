@@ -84,7 +84,7 @@
     <string name="fn_title">连接飞牛 NAS</string>
     <string name="fn_history">历史连接</string>
     <string name="fn_addr_label">NAS 地址</string>
-    <string name="fn_addr_placeholder">如 https://nas.example.com:2443</string>
+    <string name="fn_addr_placeholder">如 https://nas.example.com:443</string>
     <string name="fn_user_label">用户名</string>
     <string name="fn_pwd_label">密码</string>
     <string name="fn_connect_btn">连接</string>

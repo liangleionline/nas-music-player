@@ -27,7 +27,7 @@
 用户输入的地址形式多样，统一按以下规则解析：
 
 ```kotlin
-// 输入示例：192.168.1.100 / nas.example.com / https://nas.example.com:2443
+// 输入示例：192.168.1.100 / nas.example.com / https://nas.example.com:443
 // 无 scheme 时默认 http；无端口时默认 5666
 // API 前缀固定为 /music/api/v1
 baseUrl = "<scheme>://<host>:<port>/music/api/v1"

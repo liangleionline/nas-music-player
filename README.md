@@ -52,9 +52,13 @@
 
 ## 版本与更新日志
 
-最新版本：见顶部 `version` 徽章（当前 **v1.5.32**，versionCode 212）
+最新版本：见顶部 `version` 徽章（当前 **v1.5.33**，versionCode 213）
 
 Release 页面每次发版保留**最新 3 个版本**的 APK，更早的版本连同说明一起清理；累计下载量与最新版下载量看顶部 `downloads`、`latest downloads` 徽章，单个版本精确次数可在 Release 页对应 APK 右侧查看。
+
+### v1.5.33（versionCode 213）
+
+- **修正飞牛 NAS 登录页地址输入框的占位示例端口**：浅灰提示由 `https://nas.example.com:2443` 改为 `https://nas.example.com:443`（443 为标准 HTTPS 端口）。仅改示例文案，实际连接默认端口仍为局域网 HTTP 的 5666，解析与连接逻辑不变；接口文档与代码注释中的同一示例同步更正。
 
 ### v1.5.32（versionCode 212）
 

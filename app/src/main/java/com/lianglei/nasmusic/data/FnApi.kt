@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
  * Accepts user input like:
  *   - 192.168.1.100            (defaults to http, port 5666)
  *   - nas.example.com           (defaults to http, port 5666)
- *   - https://nas.example.com:244  (explicit scheme + port)
+ *   - https://nas.example.com:443  (explicit scheme + port)
  * API base: <scheme>://<host>:<port>/music/api/v1/
  */
 object FnApi {
