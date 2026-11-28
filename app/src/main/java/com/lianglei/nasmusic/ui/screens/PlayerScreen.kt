@@ -59,6 +59,8 @@ import androidx.compose.ui.graphics.painter.Painter
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.lianglei.nasmusic.data.Song
+import com.lianglei.nasmusic.data.LyricMatchPrefs
+import com.lianglei.nasmusic.lyrics.OnlineLyricsMatcher
 import coil.transform.Transformation
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -311,12 +313,23 @@ fun PlayerScreen(onOpenQueue: () -> Unit = {}, backgroundRunning: Boolean = true
     var lrcLines by remember { mutableStateOf(emptyList<LrcLine>()) }
     // 歌词来源标签（对齐设计图左下角"词 EMBEDDED"）：EMBEDDED=内嵌标签 / LRC=同目录 .lrc 文件
     var lyricSource by remember { mutableStateOf("") }
-    LaunchedEffect(song?.id) {
+    // 在线歌词自动匹配开关（设置页可关，默认开）；开关变化时重新加载当前歌曲歌词
+    val autoMatchEnabled by LyricMatchPrefs.enabled.collectAsState()
+    LaunchedEffect(song?.id, autoMatchEnabled) {
         if (song == null) { lrcLines = emptyList(); lyricSource = ""; return@LaunchedEffect }
         lrcLines = withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
+                // 1) 在线匹配优先：开关开时先查网易云/QQ音乐/酷狗，成功即用（含逐字/翻译）。
+                //    匹配失败、无结果或网络异常时静默降级到下面的本地歌词，不打断播放。
+                if (autoMatchEnabled) {
+                    val online = OnlineLyricsMatcher.match(ctx, song)
+                    if (online != null && online.lines.isNotEmpty()) {
+                        lyricSource = online.sourceKey.uppercase()
+                        return@withContext online.lines
+                    }
+                }
+                // 2) 本地兜底：同名 .ttml（TTML 对唱/逐字）> 同名 .lrc > 内嵌标签
                 val file = File(song.data)
-                // 侧车歌词优先级：同名 .ttml（TTML 对唱/逐字）> 同名 .lrc > 内嵌标签
                 val ttmlFile = File(file.parentFile, file.nameWithoutExtension + ".ttml")
                 val lrcFile = File(file.parentFile, file.nameWithoutExtension + ".lrc")
                 val parsed: List<LrcLine> = when {

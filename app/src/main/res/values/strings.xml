@@ -177,6 +177,8 @@
     <string name="cover_prefetch_dialog_desc">播放中连上 WiFi 时，后台把曲库封面抓到本地，列表与播放页秒出封面。</string>
     <string name="cover_enable">打开此功能</string>
     <string name="cover_disable">关闭此功能</string>
+    <string name="lyric_match_title">自动匹配歌词</string>
+    <string name="lyric_match_desc">播放时优先在线匹配逐字歌词（网易云 / QQ音乐 / 酷狗）；失败自动改用内嵌或同目录歌词</string>
     <string name="update_check_title">检查更新</string>
     <string name="update_check_desc">当前版本 v%1$s</string>
     <string name="update_check">检查更新</string>

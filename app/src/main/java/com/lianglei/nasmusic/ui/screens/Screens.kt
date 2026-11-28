@@ -928,6 +928,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val coverEnabled by com.lianglei.nasmusic.data.CoverPrefetcher.enabled.collectAsStateWithLifecycle()
     val coverProgress by com.lianglei.nasmusic.data.CoverPrefetcher.progress.collectAsStateWithLifecycle()
     val checkingUpdate by com.lianglei.nasmusic.data.UpdateCenter.checking.collectAsStateWithLifecycle()
+    val lyricMatchEnabled by com.lianglei.nasmusic.data.LyricMatchPrefs.enabled.collectAsStateWithLifecycle()
 
     // 两个缓存的实际占用会随播放 / 后台预取变化，定时刷一次展示值
     LaunchedEffect(Unit) {
@@ -1055,6 +1056,29 @@ fun SettingsScreen(onBack: () -> Unit) {
             ) {
                 Text(if (clearingCover) stringResource(R.string.clearing) else stringResource(R.string.clear_cache), fontSize = 13.sp)
             }
+        }
+
+        // 自动匹配歌词（v1.5.36）：默认开，播放页优先在线匹配逐字歌词；失败自动回退内嵌/同目录歌词
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.MusicNote, null, tint = Color(0xFF00897B), modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.lyric_match_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(R.string.lyric_match_desc),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
+                )
+            }
+            Switch(
+                checked = lyricMatchEnabled,
+                onCheckedChange = { enabled ->
+                    com.lianglei.nasmusic.data.LyricMatchPrefs.setEnabled(context, enabled)
+                }
+            )
         }
 
         // 检查更新（v1.5.17）：查本仓库最新 Release，有更新直接下载 APK
