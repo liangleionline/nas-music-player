@@ -133,6 +133,9 @@ private val LRC_WORD_TAG = Regex("<(\\d+):(\\d+)(?:[.:](\\d+))?>")
 /** 逐字 LRC 把同一句按词重复成多行时，相邻同文本行的合并窗口（毫秒）；真正的副歌重复间隔远大于此 */
 private const val LRC_DUP_MERGE_WINDOW_MS = 2000L
 
+/** 逐字歌词唱到某个字时的渐亮补间时长（毫秒）：由半透明灰极短过渡到纯白，避免瞬间硬亮 */
+private const val WORD_LIGHT_UP_MS = 160
+
 private fun lrcTimeToMs(min: String, sec: String, frac: String): Long {
     // 小数部分位数决定单位：1 位=十分之一秒(×100)，2 位=百分之一秒(×10)，3 位及以上=毫秒(×1)
     // 注意：kuwo 等中文歌词工具生成的是 3 位毫秒（如 [00:13.217] = 13.217 秒），
@@ -1628,10 +1631,26 @@ private fun LyricPanelContent(lrcLines: List<LrcLine>, lyricSource: String) {
                                 line.words.joinToString("") { it.text }.replace(Regex("\\s"), "") ==
                                 line.text.replace(Regex("\\s"), "")
                             if (wordsCoverText) {
+                                // 每个字的颜色走极短补间：唱到该字时由半透明灰平滑渐亮到纯白，避免直接亮起的硬切感。
+                                // animateColorAsState 是 @Composable，需先在组合作用域算好颜色，再在 buildAnnotatedString 中使用。
+                                val wordColors = line.words.map { w ->
+                                    val targetColor = if (w.startMs <= pos) {
+                                        Color.White
+                                    } else {
+                                        Color.White.copy(alpha = 0.42f)
+                                    }
+                                    animateColorAsState(
+                                        targetValue = targetColor,
+                                        animationSpec = tween(
+                                            durationMillis = WORD_LIGHT_UP_MS,
+                                            easing = FastOutSlowInEasing
+                                        ),
+                                        label = "lyricWordColor"
+                                    ).value
+                                }
                                 val annotated = buildAnnotatedString {
-                                    line.words.forEach { w ->
-                                        val sung = w.startMs <= pos
-                                        withStyle(SpanStyle(color = if (sung) Color.White else Color.White.copy(alpha = 0.42f))) {
+                                    line.words.forEachIndexed { i, w ->
+                                        withStyle(SpanStyle(color = wordColors[i])) {
                                             append(w.text)
                                         }
                                     }
